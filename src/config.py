@@ -37,6 +37,10 @@ COMPANIES = {
         'url': 'https://www.amazon.jobs/en/search?base_query=&loc_query=India&type=area&longitude=77.21676&latitude=28.63141&country=IND',
         'scraper': 'amazon'
     },
+    'AWS': {
+        'url': 'https://www.amazon.jobs/en/search?offset=0&result_limit=10&sort=relevant&business_category%5B%5D=amazon-web-services&distanceType=Mi&radius=24km&latitude=&longitude=&loc_group_id=&loc_query=India&base_query=&city=&country=IND&region=&county=&query_options=&',
+        'scraper': 'aws'
+    },
     'Accenture': {
         'url': 'https://www.accenture.com/in-en/careers/jobsearch?ct=Ahmedabad%7CBengaluru%7CBhubaneswar%7CChennai%7CCoimbatore%7CGandhinagar%7CGurugram%7CHyderabad%7CIndore%7CJaipur%7CKochi%7CKolkata%7CMumbai%7CNagpur%7CNavi%20Mumbai%7CNew%20Delhi%7CNoida%7CPune%7CThiruvananthapuram',
         'scraper': 'accenture'
@@ -44,6 +48,14 @@ COMPANIES = {
     'JLL': {
         'url': 'https://jll.wd1.myworkdayjobs.com/en-GB/jllcareers',
         'scraper': 'jll'
+    },
+    'Bain': {
+        'url': 'https://www.bain.com/careers/find-a-role/?filters=offices(275,276,274)%7C',
+        'scraper': 'bain'
+    },
+    'BCG': {
+        'url': 'https://careers.bcg.com/global/en/search-results?rk=page-targeted-jobs-page54-prod-ds-Nusa6pGk&sortBy=Most%20relevant',
+        'scraper': 'bcg'
     }
 }
 

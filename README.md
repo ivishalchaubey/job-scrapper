@@ -135,6 +135,8 @@ python run.py scrape --company Amazon
 python run.py scrape --company Accenture
 python run.py scrape --company JLL
 python run/py scrape --company AWS
+python run.py scrape --company Bain
+python run.py scrape --company BCG
 ```
 
 ### Export to XML

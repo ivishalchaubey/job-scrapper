@@ -10,8 +10,11 @@ sys.path.append(str(Path(__file__).resolve().parent))
 
 from src.database.db import JobDatabase
 from src.scrapers.amazon_scraper import AmazonScraper
+from src.scrapers.aws_scraper import AWSScraper
 from src.scrapers.accenture_scraper import AccentureScraper
 from src.scrapers.jll_scraper import JLLScraper
+from src.scrapers.bain_scraper import BainScraper
+from src.scrapers.bcg_scraper import BCGScraper
 from src.utils.xml_generator import XMLGenerator
 from src.utils.logger import setup_logger
 from src.config import LOGS_DIR
@@ -28,10 +31,16 @@ def scrape_company(company_name):
         # Select scraper
         if company_name.lower() == 'amazon':
             scraper = AmazonScraper()
+        elif company_name.lower() == 'aws':
+            scraper = AWSScraper()
         elif company_name.lower() == 'accenture':
             scraper = AccentureScraper()
         elif company_name.lower() == 'jll':
             scraper = JLLScraper()
+        elif company_name.lower() == 'bain':
+            scraper = BainScraper()
+        elif company_name.lower() == 'bcg':
+            scraper = BCGScraper()
         else:
             logger.error(f"Unknown company: {company_name}")
             return False
@@ -62,7 +71,7 @@ def scrape_company(company_name):
 
 def scrape_all():
     """Scrape all companies"""
-    companies = ['Amazon', 'Accenture', 'JLL']
+    companies = ['Amazon', 'AWS', 'Accenture', 'JLL']
     results = {}
     
     logger.info("Starting scrape for all companies")
@@ -97,7 +106,7 @@ def main():
     parser = argparse.ArgumentParser(description='Job Scraper System')
     parser.add_argument('action', choices=['scrape', 'export', 'api', 'clean'],
                        help='Action to perform')
-    parser.add_argument('--company', choices=['Amazon', 'Accenture', 'JLL'],
+    parser.add_argument('--company', choices=['Amazon', 'AWS', 'Accenture', 'JLL', 'Bain', 'BCG'],
                        help='Specific company to scrape/export')
     
     args = parser.parse_args()
