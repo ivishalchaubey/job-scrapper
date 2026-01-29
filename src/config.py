@@ -1,5 +1,9 @@
 import os
 from pathlib import Path
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Base directories
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -12,8 +16,14 @@ DATA_DIR.mkdir(exist_ok=True)
 LOGS_DIR.mkdir(exist_ok=True)
 OUTPUT_DIR.mkdir(exist_ok=True)
 
-# Database
-DATABASE_PATH = DATA_DIR / 'jobs.db'
+# Database - PostgreSQL
+DATABASE_CONFIG = {
+    'host': os.getenv('DB_HOST', 'localhost'),
+    'port': os.getenv('DB_PORT', '5432'),
+    'database': os.getenv('DB_NAME', 'jobs_db'),
+    'user': os.getenv('DB_USER', 'postgres'),
+    'password': os.getenv('DB_PASSWORD', 'postgres')
+}
 
 # Scraper settings
 SCRAPE_TIMEOUT = 30

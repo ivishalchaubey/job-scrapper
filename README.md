@@ -1,12 +1,12 @@
 # Job Scraper System
 
-Production-ready job scraping system for Amazon, Accenture, and JLL career pages using Python, Selenium, and SQLite.
+Production-ready job scraping system for Amazon, Accenture, and JLL career pages using Python, Selenium, and PostgreSQL.
 
 ## Features
 
 - ✅ Scrapes jobs from 3 different career page structures (Amazon, Accenture, JLL/Workday)
 - ✅ Selenium with Chrome headless browser
-- ✅ SQLite database with stable external_id tracking
+- ✅ PostgreSQL database with stable external_id tracking
 - ✅ XML export following Scoutit's opportunity schema
 - ✅ REST API for data access
 - ✅ Scraping run history and logging
@@ -29,7 +29,7 @@ python-job-scrape/
 │   │   ├── logger.py           # Logging utility
 │   │   └── xml_generator.py   # XML export generator
 │   └── config.py               # Configuration settings
-├── data/                       # SQLite database (auto-created)
+├── data/                       # Application data (auto-created)
 ├── logs/                       # Log files (auto-created)
 ├── output/                     # XML exports (auto-created)
 ├── run.py                      # Main runner script
@@ -39,7 +39,54 @@ python-job-scrape/
 
 ## Setup
 
-### 1. Create Virtual Environment
+### 1. Install PostgreSQL
+
+**macOS (Homebrew):**
+
+```bash
+brew install postgresql@15
+brew services start postgresql@15
+```
+
+**Ubuntu/Debian:**
+
+```bash
+sudo apt-get install postgresql postgresql-contrib
+sudo systemctl start postgresql
+```
+
+**Windows:**
+Download from [postgresql.org](https://www.postgresql.org/download/)
+
+### 2. Create Database
+
+```bash
+# Create the database (use your system username)
+psql postgres -c "CREATE DATABASE jobs_db;"
+
+# Verify
+psql -l
+```
+
+### 3. Configure Environment
+
+Copy the example environment file and update with your database credentials:
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env` and set your database username (typically your system username on macOS):
+
+```env
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=jobs_db
+DB_USER=your_username  # Your system username on macOS
+DB_PASSWORD=           # Leave blank if no password set
+```
+
+### 4. Create Virtual Environment
 
 ```bash
 python3 -m venv venv
@@ -48,13 +95,26 @@ source venv/bin/activate  # On macOS/Linux
 venv\Scripts\activate  # On Windows
 ```
 
-### 2. Install Dependencies
+### 5. Install Dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 3. Verify Installation
+### 6. Test Database Connection
+
+```bash
+python test_db.py
+```
+
+You should see:
+
+```
+✓ Database connection successful!
+✓ Tables created/verified!
+```
+
+### 7. Verify Installation
 
 ```bash
 python -c "from selenium import webdriver; print('Selenium installed successfully')"
@@ -74,6 +134,7 @@ python run.py scrape
 python run.py scrape --company Amazon
 python run.py scrape --company Accenture
 python run.py scrape --company JLL
+python run/py scrape --company AWS
 ```
 
 ### Export to XML
@@ -194,15 +255,16 @@ Logs are saved in `logs/` directory:
 - Console output with timestamps
 - Error tracking and debugging info
 
-## Database Location
+## Database
 
-SQLite database: `data/jobs.db`
+PostgreSQL database: `jobs_db`
 
-You can view it directly using:
+You can view it using:
 
-- DB Browser for SQLite
-- sqlite3 CLI: `sqlite3 data/jobs.db`
-- Any SQLite client
+- psql CLI: `psql jobs_db`
+- pgAdmin
+- Any PostgreSQL client
+- TablePlus, DBeaver, etc.
 
 ## Features Implemented
 
