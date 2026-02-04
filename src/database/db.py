@@ -5,12 +5,13 @@ from pathlib import Path
 import sys
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 
+from src.database.base import BaseJobDatabase
 from src.config import DATABASE_CONFIG
 from src.utils.logger import setup_logger
 
 logger = setup_logger('database')
 
-class JobDatabase:
+class PostgresJobDatabase(BaseJobDatabase):
     def __init__(self, db_config=None):
         self.db_config = db_config or DATABASE_CONFIG
         self.init_database()
@@ -199,3 +200,7 @@ class JobDatabase:
             with conn.cursor(row_factory=dict_row) as cursor:
                 cursor.execute('SELECT * FROM scraping_runs ORDER BY run_date DESC LIMIT 20')
                 return cursor.fetchall()
+
+
+# Backward compatibility alias
+JobDatabase = PostgresJobDatabase

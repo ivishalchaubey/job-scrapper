@@ -5,14 +5,14 @@ from pathlib import Path
 import sys
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 
-from src.database.db import JobDatabase
+from src.database import get_database
 from src.utils.xml_generator import XMLGenerator
 from src.utils.logger import setup_logger
 
 app = Flask(__name__)
 CORS(app)
 
-db = JobDatabase()
+db = get_database()
 xml_gen = XMLGenerator()
 logger = setup_logger('api')
 
@@ -35,12 +35,8 @@ def index():
 def get_all_jobs():
     """Get all jobs as JSON"""
     try:
-        with db.get_connection() as conn:
-            conn.row_factory = lambda c, r: dict(zip([col[0] for col in c.description], r))
-            cursor = conn.cursor()
-            cursor.execute('SELECT * FROM jobs WHERE status = "active"')
-            jobs = cursor.fetchall()
-        
+        jobs = db.get_all_jobs()
+
         return jsonify({
             'success': True,
             'count': len(jobs),
@@ -54,12 +50,8 @@ def get_all_jobs():
 def get_company_jobs(company_name):
     """Get jobs for a specific company"""
     try:
-        with db.get_connection() as conn:
-            conn.row_factory = lambda c, r: dict(zip([col[0] for col in c.description], r))
-            cursor = conn.cursor()
-            cursor.execute('SELECT * FROM jobs WHERE company_name = ? AND status = "active"', (company_name,))
-            jobs = cursor.fetchall()
-        
+        jobs = db.get_jobs_by_company(company_name)
+
         return jsonify({
             'success': True,
             'company': company_name,
@@ -76,18 +68,17 @@ def get_stats():
     try:
         counts = db.get_job_counts_by_company()
         history = db.get_scraping_history()
-        
+
         return jsonify({
             'success': True,
-            'job_counts': [{'company': c[0], 'count': c[1]} for c in counts],
+            'job_counts': [{'company': c['company_name'], 'count': c['count']} for c in counts],
             'scraping_history': [
                 {
-                    'id': h[0],
-                    'company': h[1],
-                    'run_date': h[2],
-                    'jobs_scraped': h[3],
-                    'status': h[4],
-                    'error': h[5]
+                    'company': h['company_name'],
+                    'run_date': str(h['run_date']),
+                    'jobs_scraped': h['jobs_scraped'],
+                    'status': h['status'],
+                    'error': h.get('error_message')
                 } for h in history
             ]
         })
@@ -101,9 +92,9 @@ def export_xml():
     try:
         xml_file = xml_gen.generate_xml()
         return send_file(
-            xml_file, 
+            xml_file,
             mimetype='application/xml',
-            as_attachment=True, 
+            as_attachment=True,
             download_name=f'jobs_{datetime.now().strftime("%Y%m%d_%H%M%S")}.xml'
         )
     except Exception as e:
@@ -118,7 +109,7 @@ def export_company_xml(company_name):
         return send_file(
             xml_file,
             mimetype='application/xml',
-            as_attachment=True, 
+            as_attachment=True,
             download_name=f'{company_name.lower()}_jobs_{datetime.now().strftime("%Y%m%d_%H%M%S")}.xml'
         )
     except Exception as e:

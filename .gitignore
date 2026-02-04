@@ -45,3 +45,5 @@ chromedriver.exe
 
 # Environment variables
 .env
+
+company-list.xlsx
