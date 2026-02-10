@@ -99,3 +99,15 @@ These scrapers are fully functional but return 0 jobs because the company has no
 - **Platform:** PeopleStrong
 - **URL:** `https://starhealthcareers.peoplestrong.com/job/joblist`
 - **Issue:** Page loads correctly and shows "No Jobs Available". No positions listed.
+
+### United Breweries (Heineken India)
+- **File:** `src/scrapers/unitedbreweries_scraper.py`
+- **Platform:** iCIMS/SuccessFactors (Heineken global careers)
+- **URL:** `https://careers.theheinekencompany.com/India/search/?createNewAlert=false&q=&locationsearch=India`
+- **Issue:** Scraper works correctly including age gate bypass (fills DOB inputs and clicks Enter). Page loads and shows "There are currently no open positions matching India". Heineken has 0 India openings at this time.
+
+### DBS Bank
+- **File:** `src/scrapers/dbsbank_scraper.py`
+- **Platform:** Custom DBS careers portal with category-based navigation
+- **URL:** `https://www.dbs.com/careers/jobs.page?market=India`
+- **Issue:** Intermittent - the scraper navigates category pages (`job-listing.page?category=...&market=India`) and clicks "Load More" buttons to extract jobs from `div.job` cards. Returns 228 jobs when the site loads fully, but sometimes returns 0 when category links fail to render or the page loads slowly. Likely a timing/network sensitivity issue on DBS's end.

@@ -151,6 +151,33 @@ from src.scrapers.shoppersstop_scraper import ShoppersStopScraper
 from src.scrapers.starbucks_scraper import StarbucksScraper
 from src.scrapers.sunpharma_scraper import SunPharmaScraper
 
+# Batch 3 - New scrapers (25 more)
+from src.scrapers.airindia_scraper import AirIndiaScraper
+from src.scrapers.tataaig_scraper import TataAIGScraper
+from src.scrapers.tatainternational_scraper import TataInternationalScraper
+from src.scrapers.tataprojects_scraper import TataProjectsScraper
+from src.scrapers.trent_scraper import TrentScraper
+from src.scrapers.bajajelectricals_scraper import BajajElectricalsScraper
+from src.scrapers.olam_scraper import OlamScraper
+from src.scrapers.unitedbreweries_scraper import UnitedBreweriesScraper
+from src.scrapers.tatapower_scraper import TataPowerScraper
+from src.scrapers.natwestgroup_scraper import NatWestGroupScraper
+from src.scrapers.hitachi_scraper import HitachiScraper
+from src.scrapers.mckesson_scraper import McKessonScraper
+from src.scrapers.birlasoft_scraper import BirlasoftScraper
+from src.scrapers.coforge_scraper import CoforgeScraper
+from src.scrapers.dhl_scraper import DHLScraper
+from src.scrapers.ericsson_scraper import EricssonScraper
+from src.scrapers.vois_scraper import VOISScraper
+from src.scrapers.schneiderelectric_scraper import SchneiderElectricScraper
+from src.scrapers.siemens_scraper import SiemensScraper
+from src.scrapers.deutschebank_scraper import DeutscheBankScraper
+from src.scrapers.bnpparibas_scraper import BNPParibasScraper
+from src.scrapers.bp_scraper import BPScraper
+from src.scrapers.continental_scraper import ContinentalScraper
+from src.scrapers.dbsbank_scraper import DBSBankScraper
+from src.scrapers.novartis_scraper import NovartisScraper
+
 from src.utils.xml_generator import XMLGenerator
 from src.utils.logger import setup_logger
 from src.config import LOGS_DIR
@@ -311,6 +338,34 @@ SCRAPER_MAP = {
     'shoppers stop': ShoppersStopScraper,
     'starbucks': StarbucksScraper,
     'sun pharma': SunPharmaScraper,
+    # Batch 3 - New scrapers (25 more)
+    'air india': AirIndiaScraper,
+    'tata aig': TataAIGScraper,
+    'tata international': TataInternationalScraper,
+    'tata projects': TataProjectsScraper,
+    'trent': TrentScraper,
+    'bajaj electricals': BajajElectricalsScraper,
+    'olam': OlamScraper,
+    'united breweries': UnitedBreweriesScraper,
+    'tata power': TataPowerScraper,
+    'natwest group': NatWestGroupScraper,
+    'natwest': NatWestGroupScraper,
+    'hitachi': HitachiScraper,
+    'mckesson': McKessonScraper,
+    'birlasoft': BirlasoftScraper,
+    'coforge': CoforgeScraper,
+    'dhl': DHLScraper,
+    'ericsson': EricssonScraper,
+    'vois': VOISScraper,
+    'schneider electric': SchneiderElectricScraper,
+    'siemens': SiemensScraper,
+    'deutsche bank': DeutscheBankScraper,
+    'bnp paribas': BNPParibasScraper,
+    'bp': BPScraper,
+    'continental': ContinentalScraper,
+    'dbs bank': DBSBankScraper,
+    'dbs': DBSBankScraper,
+    'novartis': NovartisScraper,
 }
 
 ALL_COMPANY_CHOICES = [
@@ -344,7 +399,13 @@ ALL_COMPANY_CHOICES = [
     'Jubilant FoodWorks', 'KPIT Technologies', 'Lowes', 'Maruti Suzuki',
     'Max Life Insurance', 'MetLife', 'Muthoot Finance', 'Netflix', 'Nike',
     'Oracle', 'Persistent Systems', 'Pfizer', 'Piramal Group', 'Qualcomm',
-    'Salesforce', 'Shoppers Stop', 'Starbucks', 'Sun Pharma'
+    'Salesforce', 'Shoppers Stop', 'Starbucks', 'Sun Pharma',
+    # Batch 3 - New scrapers (25 more)
+    'Air India', 'Tata AIG', 'Tata International', 'Tata Projects', 'Trent',
+    'Bajaj Electricals', 'Olam', 'United Breweries', 'Tata Power',
+    'NatWest Group', 'Hitachi', 'McKesson', 'Birlasoft', 'Coforge', 'DHL',
+    'Ericsson', 'VOIS', 'Schneider Electric', 'Siemens', 'Deutsche Bank',
+    'BNP Paribas', 'BP', 'Continental', 'DBS Bank', 'Novartis'
 ]
 
 def scrape_company(company_name):

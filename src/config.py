@@ -345,6 +345,107 @@ COMPANIES = {
     'Synchrony': {
         'url': 'https://www.synchronycareers.com/job-search-results/?location=India&country=IN&radius=25',
         'scraper': 'synchrony'
+    },
+    # Batch 3 - New scrapers (25 more)
+    'Air India': {
+        'url': 'https://careers.airindia.com/search/?createNewAlert=false&q=&locationsearch=',
+        'scraper': 'airindia'
+    },
+    'Tata AIG': {
+        'url': 'https://careers.tataaig.com/search/?createNewAlert=false&q=&locationsearch=',
+        'scraper': 'tataaig'
+    },
+    'Tata International': {
+        'url': 'https://careers.tatainternational.com/search/?createNewAlert=false&q=&locationsearch=India',
+        'scraper': 'tatainternational'
+    },
+    'Tata Projects': {
+        'url': 'https://careers.tataprojects.com/search/?createNewAlert=false&q=&optionsFacetsDD_location=&optionsFacetsDD_customfield3=&optionsFacetsDD_customfield4=&optionsFacetsDD_dept=&optionsFacetsDD_customfield1=',
+        'scraper': 'tataprojects'
+    },
+    'Trent': {
+        'url': 'https://careers.trentlimited.com/search/?createNewAlert=false&q=&locationsearch=&optionsFacetsDD_dept=&optionsFacetsDD_customfield1=',
+        'scraper': 'trent'
+    },
+    'Bajaj Electricals': {
+        'url': 'https://careers.bajajelectricals.com/search/?createNewAlert=false&q=&locationsearch=',
+        'scraper': 'bajajelectricals'
+    },
+    'Olam': {
+        'url': 'https://careers.olamgroup.com/search/?createNewAlert=false&q=&locationsearch=India&optionsFacetsDD_customfield3=&optionsFacetsDD_customfield1=',
+        'scraper': 'olam'
+    },
+    'United Breweries': {
+        'url': 'https://careers.theheinekencompany.com/India/search/?createNewAlert=false&q=&locationsearch=India',
+        'scraper': 'unitedbreweries'
+    },
+    'Tata Power': {
+        'url': 'https://careers.tatapower.com/search/?createNewAlert=false&q=&locationsearch=India&optionsFacetsDD_dept=&optionsFacetsDD_customfield1=&optionsFacetsDD_customfield2=',
+        'scraper': 'tatapower'
+    },
+    'NatWest Group': {
+        'url': 'https://jobs.natwestgroup.com/search/jobs/in/country/india',
+        'scraper': 'natwestgroup'
+    },
+    'Hitachi': {
+        'url': 'https://careers.hitachi.com/search/jobs/in/country/india',
+        'scraper': 'hitachi'
+    },
+    'McKesson': {
+        'url': 'https://careers.mckesson.com/en/search-jobs/India/733/2/1269750/22/79/50/2',
+        'scraper': 'mckesson'
+    },
+    'Birlasoft': {
+        'url': 'https://jobs.birlasoft.com/go/India/684744/',
+        'scraper': 'birlasoft'
+    },
+    'Coforge': {
+        'url': 'https://careers.coforge.com/coforge/',
+        'scraper': 'coforge'
+    },
+    'DHL': {
+        'url': 'https://careers.dhl.com/global/en/search-results?selected_fields=%7b%22businessUnit%22:%5b%22eCommerce%20Solutions%22%5d,%22country%22:%5b%22India%22%5d%7d',
+        'scraper': 'dhl'
+    },
+    'Ericsson': {
+        'url': 'https://jobs.ericsson.com/careers?page=1&jobPipeline=careersite&utm_source=ericsson.com&utm_medium=referral&utm_campaign=search_widget&start=0&pid=563121774185158&sort_by=hot',
+        'scraper': 'ericsson'
+    },
+    'VOIS': {
+        'url': 'https://jobs.vodafone.com/careers?start=0&location=India&pid=563018693369050&sort_by=distance&filter_include_remote=1&filter_brand=vois',
+        'scraper': 'vois'
+    },
+    'Schneider Electric': {
+        'url': 'https://careers.se.com/jobs?country=India&page=1',
+        'scraper': 'schneiderelectric'
+    },
+    'Siemens': {
+        'url': 'https://jobs.siemens.com/en_US/externaljobs/SearchJobs/?42414=%5B812053%5D&42414_format=17570&listFilterMode=1&folderRecordsPerPage=6&',
+        'scraper': 'siemens'
+    },
+    'Deutsche Bank': {
+        'url': 'https://careers.db.com/professionals/search-roles/#/professional/results/?country=81',
+        'scraper': 'deutschebank'
+    },
+    'BNP Paribas': {
+        'url': 'https://group.bnpparibas/en/careers/all-job-offers/india',
+        'scraper': 'bnpparibas'
+    },
+    'BP': {
+        'url': 'https://careers.bp.com/listing?production_bp_jobs%5BrefinementList%5D%5Blocation_list%5D%5B0%5D=India',
+        'scraper': 'bp'
+    },
+    'Continental': {
+        'url': 'https://jobs.continental.com/en/#/?location=%7B%22title%22:%22India%22,%22type%22:%22country%22,%22countryCode%22:%22in%22%7D',
+        'scraper': 'continental'
+    },
+    'DBS Bank': {
+        'url': 'https://www.dbs.com/careers/jobs.page?market=India',
+        'scraper': 'dbsbank'
+    },
+    'Novartis': {
+        'url': 'https://www.novartis.com/in-en/careers/career-search?country%5B0%5D=LOC_IN&field_alternative_country%5B0%5D=LOC_IN',
+        'scraper': 'novartis'
     }
 }
 
