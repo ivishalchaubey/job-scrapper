@@ -4,13 +4,10 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
 import hashlib
 import time
 import sys
 from pathlib import Path
-import os
-import stat
 
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 
@@ -18,6 +15,8 @@ from src.utils.logger import setup_logger
 from src.config import SCRAPE_TIMEOUT, HEADLESS_MODE, FETCH_FULL_JOB_DETAILS, MAX_PAGES_TO_SCRAPE
 
 logger = setup_logger('abbott_scraper')
+
+CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0.7559.133_fresh/chromedriver-mac-arm64/chromedriver'
 
 
 class AbbottScraper:
@@ -33,31 +32,19 @@ class AbbottScraper:
         chrome_options.add_argument('--disable-dev-shm-usage')
         chrome_options.add_argument('--disable-gpu')
         chrome_options.add_argument('--window-size=1920,1080')
-        chrome_options.add_argument('--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36')
+        chrome_options.add_argument('--user-agent=AppleWebKit/537.36')
         chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-
-        driver_path = ChromeDriverManager().install()
-        driver_path_obj = Path(driver_path)
-        if driver_path_obj.name != 'chromedriver':
-            parent = driver_path_obj.parent
-            actual_driver = parent / 'chromedriver'
-            if actual_driver.exists():
-                driver_path = str(actual_driver)
-            else:
-                for file in parent.rglob('chromedriver'):
-                    if file.is_file() and not file.name.endswith('.zip'):
-                        driver_path = str(file)
-                        break
+        chrome_options.add_experimental_option('useAutomationExtension', False)
+        chrome_options.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
 
         try:
-            current_permissions = os.stat(driver_path).st_mode
-            os.chmod(driver_path, current_permissions | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+            service = Service(CHROMEDRIVER_PATH)
+            driver = webdriver.Chrome(service=service, options=chrome_options)
         except Exception as e:
-            logger.warning(f"Could not set permissions: {str(e)}")
-
-        service = Service(driver_path)
-        driver = webdriver.Chrome(service=service, options=chrome_options)
-        driver.set_page_load_timeout(SCRAPE_TIMEOUT)
+            logger.warning(f"Service driver failed: {str(e)}, trying fallback")
+            driver = webdriver.Chrome(options=chrome_options)
+        driver.execute_cdp_cmd('Network.setUserAgentOverride', {"userAgent": 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'})
+        driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
         return driver
 
     def generate_external_id(self, job_id, company):
@@ -72,15 +59,26 @@ class AbbottScraper:
             driver = self.setup_driver()
             logger.info(f"Starting {self.company_name} scraping from {self.url}")
             driver.get(self.url)
-            wait = WebDriverWait(driver, SCRAPE_TIMEOUT)
-            time.sleep(5)
+            wait = WebDriverWait(driver, 10)
 
+            # Wait 15s for Phenom SPA to render
+            time.sleep(15)
+
+            # Try to detect Phenom job listings - use correct Phenom selectors
             try:
                 wait.until(EC.presence_of_element_located((
-                    By.CSS_SELECTOR, "[class*='job'], [class*='search-result'], a[href*='/job/']"
+                    By.CSS_SELECTOR, "li[data-ph-at-id='job-listing'], li.job-cart, div.job-title, a.au-target, div.ph-facet-and-search-results-area"
                 )))
+                logger.info("Phenom job listings detected")
             except:
-                logger.warning("Timeout waiting for listings")
+                logger.warning("Timeout waiting for Phenom job listings")
+
+            # Scroll to trigger lazy loading - Phenom uses infinite scroll
+            for _ in range(5):
+                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                time.sleep(2)
+            driver.execute_script("window.scrollTo(0, 0);")
+            time.sleep(2)
 
             current_page = 1
             while current_page <= max_pages:
@@ -110,8 +108,10 @@ class AbbottScraper:
             for sel_type, sel_val in [
                 (By.CSS_SELECTOR, 'a[aria-label="Next"]'),
                 (By.CSS_SELECTOR, 'button[aria-label="Next"]'),
+                (By.CSS_SELECTOR, 'a[data-ph-at-id="pagination-next-btn"]'),
                 (By.XPATH, '//a[contains(text(), "Next")]'),
                 (By.CSS_SELECTOR, '.pagination-next a'),
+                (By.CSS_SELECTOR, 'a[data-ph-at-id="next-page"]'),
             ]:
                 try:
                     btn = driver.find_element(sel_type, sel_val)
@@ -132,31 +132,182 @@ class AbbottScraper:
             time.sleep(2)
 
             job_elements = []
-            selectors = [
-                "[class*='search-result']",
-                "[class*='job-card']",
-                "[class*='job-listing']",
-                "a[href*='/job/']",
-                "[role='listitem']",
-                ".card",
+
+            # PRIMARY: Use JavaScript to extract directly from div.job-title elements
+            # Abbott's Phenom implementation: div.job-title > span (inside parent a tag with job URL)
+            # li.job-cart is the FAVORITES widget, NOT job listings - do NOT use it
+            logger.info("Trying JS-based Phenom extraction from div.job-title")
+            js_jobs = driver.execute_script("""
+                var results = [];
+                // Method 1: div.job-title span (most reliable for Abbott)
+                var jobTitles = document.querySelectorAll('div.job-title');
+                for (var i = 0; i < jobTitles.length; i++) {
+                    var titleSpan = jobTitles[i].querySelector('span');
+                    var titleText = titleSpan ? titleSpan.innerText.trim() : jobTitles[i].innerText.trim();
+                    // Parent is an <a> tag with the job URL
+                    var parentA = jobTitles[i].closest('a');
+                    var url = parentA ? parentA.href : '';
+                    if (!url) {
+                        // Look for sibling or nearby link
+                        var parentLi = jobTitles[i].closest('li');
+                        if (parentLi) {
+                            var link = parentLi.querySelector('a[href*="/job/"]');
+                            url = link ? link.href : '';
+                        }
+                    }
+                    if (titleText && titleText.length > 2) {
+                        results.push({title: titleText, url: url});
+                    }
+                }
+                // Method 2: a[href*="/job/"] links as fallback
+                if (results.length === 0) {
+                    var jobLinks = document.querySelectorAll('a[href*="/job/"]');
+                    for (var i = 0; i < jobLinks.length; i++) {
+                        var text = jobLinks[i].innerText.trim();
+                        var href = jobLinks[i].href || '';
+                        if (text.length > 2 && text.length < 200) {
+                            results.push({title: text.split('\\n')[0].trim(), url: href});
+                        }
+                    }
+                }
+                return results;
+            """)
+
+            if js_jobs and len(js_jobs) > 0:
+                logger.info(f"JS Phenom extraction found {len(js_jobs)} jobs from div.job-title")
+                seen_titles = set()
+                for jdx, jdata in enumerate(js_jobs):
+                    title = jdata.get('title', '').strip()
+                    url = jdata.get('url', '').strip()
+                    if not title or title in seen_titles or len(title) < 3:
+                        continue
+                    seen_titles.add(title)
+
+                    if url and url.startswith('/'):
+                        url = f"https://www.jobs.abbott{url}"
+
+                    job_id = hashlib.md5((url or title).encode()).hexdigest()[:12]
+                    if url and '/job/' in url:
+                        parts = url.split('/job/')[-1].split('/')
+                        if parts[0]:
+                            job_id = parts[0]
+
+                    jobs.append({
+                        'external_id': self.generate_external_id(job_id, self.company_name),
+                        'company_name': self.company_name,
+                        'title': title,
+                        'apply_url': url or self.url,
+                        'location': '',
+                        'department': '',
+                        'employment_type': '',
+                        'description': '',
+                        'posted_date': '',
+                        'city': '',
+                        'state': '',
+                        'country': 'India',
+                        'job_function': '',
+                        'experience_level': '',
+                        'salary_range': '',
+                        'remote_type': '',
+                        'status': 'active'
+                    })
+                if jobs:
+                    logger.info(f"Successfully extracted {len(jobs)} jobs via JS")
+                    return jobs
+
+            # SECONDARY: Selenium-based selectors (skip li.job-cart which is favorites widget)
+            phenom_selectors = [
+                "div.job-title",                              # Job title container (best)
+                "a[href*='/job/'][href*='abbott']",           # Job links with abbott domain
+                "li[data-ph-at-id='job-listing']",           # Phenom standard job listing
+                "a[data-ph-at-id='job-link']",               # Phenom standard job link
+                "div.ph-card-container",                       # Phenom card container
+                "section#search-results-list li",             # Search results list items
             ]
 
-            for selector in selectors:
+            short_wait = WebDriverWait(driver, 8)
+            for selector in phenom_selectors:
                 try:
+                    short_wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, selector)))
                     elements = driver.find_elements(By.CSS_SELECTOR, selector)
                     if elements:
                         job_elements = elements
-                        logger.info(f"Found {len(elements)} listings using: {selector}")
+                        logger.info(f"Found {len(elements)} listings using Phenom selector: {selector}")
                         break
                 except:
                     continue
 
+            # Secondary: broader selectors
             if not job_elements:
-                links = driver.find_elements(By.TAG_NAME, 'a')
-                job_links = [l for l in links if '/job/' in (l.get_attribute('href') or '') and l.text.strip()]
-                if job_links:
-                    job_elements = job_links
+                broader_selectors = [
+                    "[class*='search-result'] li",
+                    "[class*='job-card']",
+                    "[class*='job-listing']",
+                    "a[href*='/job/']",
+                    "[role='listitem']",
+                    ".card",
+                ]
+                for selector in broader_selectors:
+                    try:
+                        elements = driver.find_elements(By.CSS_SELECTOR, selector)
+                        if elements:
+                            job_elements = elements
+                            logger.info(f"Found {len(elements)} listings using broader selector: {selector}")
+                            break
+                    except:
+                        continue
 
+            # FINAL FALLBACK: Generic JS-based link extraction
+            if not job_elements and not jobs:
+                logger.info("Trying generic JS-based link extraction fallback")
+                js_links = driver.execute_script("""
+                    var results = [];
+                    var links = document.querySelectorAll('a[href]');
+                    for (var i = 0; i < links.length; i++) {
+                        var href = links[i].href || '';
+                        var text = (links[i].innerText || '').trim();
+                        if (text.length > 3 && text.length < 200 && href.length > 10) {
+                            if (href.includes('/job') || href.includes('/position') || href.includes('/career') || href.includes('/opening')) {
+                                results.push({title: text.split('\\n')[0].trim(), url: href});
+                            }
+                        }
+                    }
+                    return results;
+                """)
+                if js_links:
+                    logger.info(f"Generic JS fallback found {len(js_links)} links")
+                    seen_urls = set()
+                    for jdx, link_data in enumerate(js_links):
+                        title = link_data.get('title', '')
+                        url = link_data.get('url', '')
+                        if not title or not url or len(title) < 3 or url in seen_urls:
+                            continue
+                        seen_urls.add(url)
+                        job_id = hashlib.md5(url.encode()).hexdigest()[:12]
+                        if url and url.startswith('/'):
+                            url = f"https://www.jobs.abbott{url}"
+                        job_data = {
+                            'external_id': self.generate_external_id(job_id, self.company_name),
+                            'company_name': self.company_name,
+                            'title': title,
+                            'apply_url': url,
+                            'location': '',
+                            'department': '',
+                            'employment_type': '',
+                            'description': '',
+                            'posted_date': '',
+                            'city': '',
+                            'state': '',
+                            'country': 'India',
+                            'job_function': '',
+                            'experience_level': '',
+                            'salary_range': '',
+                            'remote_type': '',
+                            'status': 'active'
+                        }
+                        jobs.append(job_data)
+
+            # Process Selenium-found elements
             for idx, elem in enumerate(job_elements, 1):
                 try:
                     job = self._extract_job(elem, driver, wait, idx)
@@ -175,39 +326,87 @@ class AbbottScraper:
             title = ""
             job_url = ""
 
-            if job_elem.tag_name == 'a':
+            tag_name = job_elem.tag_name
+
+            if tag_name == 'a':
                 title = job_elem.text.strip().split('\n')[0]
                 job_url = job_elem.get_attribute('href')
+            elif tag_name == 'div':
+                # Could be div.job-title - extract span text
+                try:
+                    span = job_elem.find_element(By.TAG_NAME, 'span')
+                    title = span.text.strip()
+                except:
+                    title = job_elem.text.strip().split('\n')[0]
+                # Look for nearest link
+                try:
+                    parent_li = job_elem.find_element(By.XPATH, './ancestor::li')
+                    link = parent_li.find_element(By.CSS_SELECTOR, "a.au-target, a[href*='/job/'], a[data-ph-at-id='job-link']")
+                    job_url = link.get_attribute('href')
+                    if not title:
+                        title = link.text.strip().split('\n')[0]
+                except:
+                    pass
             else:
-                for sel in ["h3 a", "h2 a", "a[href*='/job/']", "[class*='title'] a", "a"]:
+                # li element (job-cart or job-listing)
+                # Try Phenom-specific selectors first
+                phenom_title_selectors = [
+                    "div.job-title span",
+                    "div.job-title",
+                    "a.au-target",
+                    "a[data-ph-at-id='job-link']",
+                    "a[href*='/job/']",
+                    "h3 a", "h2 a",
+                    "[class*='title'] a",
+                    "a"
+                ]
+                for sel in phenom_title_selectors:
                     try:
                         elem = job_elem.find_element(By.CSS_SELECTOR, sel)
-                        title = elem.text.strip()
-                        job_url = elem.get_attribute('href')
+                        text = elem.text.strip()
+                        href = elem.get_attribute('href') or ''
+                        if text:
+                            title = text.split('\n')[0]
+                        if href and '/job/' in href:
+                            job_url = href
                         if title:
                             break
                     except:
                         continue
 
+                # If we have title but no URL, try to find any link
+                if title and not job_url:
+                    try:
+                        link = job_elem.find_element(By.CSS_SELECTOR, "a[href*='/job/'], a.au-target, a[href]")
+                        job_url = link.get_attribute('href')
+                    except:
+                        pass
+
             if not title:
                 title = job_elem.text.strip().split('\n')[0]
             if not title or not job_url:
-                return None
+                # Allow jobs without URL if they have a title
+                if not title:
+                    return None
+                if not job_url:
+                    job_url = self.url
 
             if job_url and job_url.startswith('/'):
                 job_url = f"https://www.jobs.abbott{job_url}"
 
-            job_id = hashlib.md5(job_url.encode()).hexdigest()[:12]
-            if '/job/' in job_url:
+            job_id = hashlib.md5((job_url or title).encode()).hexdigest()[:12]
+            if job_url and '/job/' in job_url:
                 parts = job_url.split('/job/')[-1].split('/')
                 if parts[0]:
                     job_id = parts[0]
 
+            # Extract location from Phenom card
             location = ""
             department = ""
-            for line in job_elem.text.split('\n')[1:]:
+            all_text = job_elem.text.strip()
+            for line in all_text.split('\n')[1:]:
                 line_s = line.strip()
-                if any(c in line_s for c in ['India', 'Mumbai', 'Delhi', 'Bangalore', 'Chennai', 'Pune', 'Gurgaon']):
+                if any(c in line_s for c in ['India', 'Mumbai', 'Delhi', 'Bangalore', 'Chennai', 'Pune', 'Gurgaon', 'Hyderabad', 'Kolkata']):
                     location = line_s
                 elif line_s and not department and len(line_s) < 60:
                     department = line_s
@@ -232,7 +431,7 @@ class AbbottScraper:
                 'status': 'active'
             }
 
-            if FETCH_FULL_JOB_DETAILS and job_url:
+            if FETCH_FULL_JOB_DETAILS and job_url and job_url != self.url:
                 try:
                     details = self._fetch_details(driver, job_url)
                     if details:

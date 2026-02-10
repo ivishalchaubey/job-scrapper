@@ -4,7 +4,6 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
 import hashlib
 import time
 import sys
@@ -34,31 +33,21 @@ class BookMyShowScraper:
         chrome_options.add_argument('--disable-dev-shm-usage')
         chrome_options.add_argument('--disable-gpu')
         chrome_options.add_argument('--window-size=1920,1080')
-        chrome_options.add_argument('--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36')
+        chrome_options.add_argument('--user-agent=AppleWebKit/537.36')
         chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+        chrome_options.add_experimental_option('useAutomationExtension', False)
+        chrome_options.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
 
-        driver_path = ChromeDriverManager().install()
-        driver_path_obj = Path(driver_path)
-        if driver_path_obj.name != 'chromedriver':
-            parent = driver_path_obj.parent
-            actual_driver = parent / 'chromedriver'
-            if actual_driver.exists():
-                driver_path = str(actual_driver)
-            else:
-                for file in parent.rglob('chromedriver'):
-                    if file.is_file() and not file.name.endswith('.zip'):
-                        driver_path = str(file)
-                        break
+        driver_path = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0.7559.133_fresh/chromedriver-mac-arm64/chromedriver'
 
         try:
-            current_permissions = os.stat(driver_path).st_mode
-            os.chmod(driver_path, current_permissions | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+            service = Service(driver_path)
+            driver = webdriver.Chrome(service=service, options=chrome_options)
         except Exception as e:
-            logger.warning(f"Could not set permissions: {str(e)}")
-
-        service = Service(driver_path)
-        driver = webdriver.Chrome(service=service, options=chrome_options)
-        driver.set_page_load_timeout(SCRAPE_TIMEOUT)
+            logger.warning(f"Service driver failed: {str(e)}, trying fallback")
+            driver = webdriver.Chrome(options=chrome_options)
+        driver.execute_cdp_cmd('Network.setUserAgentOverride', {"userAgent": 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'})
+        driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
         return driver
 
     def generate_external_id(self, job_id, company):
@@ -73,17 +62,21 @@ class BookMyShowScraper:
             driver = self.setup_driver()
             logger.info(f"Starting {self.company_name} scraping from {self.url}")
             driver.get(self.url)
-            wait = WebDriverWait(driver, SCRAPE_TIMEOUT)
-            time.sleep(5)
 
+            # Wait for Trakstar page to fully render
+            time.sleep(12)
+
+            # Wait for the openings list container
+            wait = WebDriverWait(driver, 5)
             try:
                 wait.until(EC.presence_of_element_located((
-                    By.CSS_SELECTOR, "[class*='opening'], [class*='job'], a[href*='openings'], .job-listing"
+                    By.CSS_SELECTOR, "div.js-openings-list"
                 )))
+                logger.info("Found openings list container")
             except:
-                logger.warning("Timeout waiting for listings")
+                logger.warning("Timeout waiting for div.js-openings-list, will try selectors anyway")
 
-            jobs = self._scrape_page(driver, wait)
+            jobs = self._scrape_page(driver)
             all_jobs.extend(jobs)
 
             logger.info(f"Total jobs scraped: {len(all_jobs)}")
@@ -95,24 +88,23 @@ class BookMyShowScraper:
             if driver:
                 driver.quit()
 
-    def _scrape_page(self, driver, wait):
+    def _scrape_page(self, driver):
         jobs = []
         scraped_ids = set()
 
         try:
+            # Scroll down to ensure all cards are loaded
             for _ in range(3):
                 driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                time.sleep(2)
+                time.sleep(1)
 
+            # Trakstar platform selectors in priority order
             job_elements = []
             selectors = [
-                "[class*='opening']",
-                "[class*='job-listing']",
-                "[class*='job-card']",
-                "a[href*='openings']",
-                "a[href*='/jobs/']",
-                ".card",
-                "li[class*='job']",
+                "div.js-careers-page-job-list-item",
+                "div.js-card.list-item",
+                "div.js-card",
+                "div.list-item-clickable",
             ]
 
             for selector in selectors:
@@ -125,43 +117,162 @@ class BookMyShowScraper:
                 except:
                     continue
 
+            # Fallback: use JavaScript to extract directly from the Trakstar DOM
             if not job_elements:
-                all_links = driver.find_elements(By.TAG_NAME, 'a')
-                job_links = [l for l in all_links if l.text.strip() and len(l.text.strip()) > 5 and ('opening' in (l.get_attribute('href') or '').lower() or 'job' in (l.get_attribute('href') or '').lower())]
-                if job_links:
-                    job_elements = job_links
+                logger.info("No elements found with CSS selectors, trying JS extraction from Trakstar DOM")
+                js_jobs = driver.execute_script("""
+                    var results = [];
+                    var cards = document.querySelectorAll('div.js-openings-list .js-card, div.opening-list .list-item');
+                    if (cards.length === 0) {
+                        cards = document.querySelectorAll('a[href*="/jobs/"]');
+                    }
+                    cards.forEach(function(card) {
+                        var titleEl = card.querySelector('h3.js-job-list-opening-name, h3.rb-h3, h3');
+                        var title = titleEl ? titleEl.innerText.trim() : '';
+                        var linkEl = card.tagName === 'A' ? card : card.querySelector('a[href*="/jobs/"]');
+                        var url = linkEl ? linkEl.href : '';
+                        var cityEl = card.querySelector('span.meta-job-location-city');
+                        var stateEl = card.querySelector('span.meta-job-location-state');
+                        var countryEl = card.querySelector('span.meta-job-location-country');
+                        var city = cityEl ? cityEl.innerText.trim() : '';
+                        var state = stateEl ? stateEl.innerText.trim() : '';
+                        var country = countryEl ? countryEl.innerText.trim() : '';
+                        var deptEl = card.querySelector('div.js-job-list-opening-meta, div.rb-text-4');
+                        var dept = deptEl ? deptEl.innerText.trim() : '';
+                        if (title && url) {
+                            results.push({
+                                title: title,
+                                url: url,
+                                city: city,
+                                state: state,
+                                country: country,
+                                department: dept
+                            });
+                        }
+                    });
+                    return results;
+                """)
 
+                if js_jobs:
+                    logger.info(f"JS extraction found {len(js_jobs)} jobs")
+                    for jl in js_jobs:
+                        title = jl.get('title', '').strip()
+                        url = jl.get('url', '').strip()
+                        city = jl.get('city', '').strip()
+                        state = jl.get('state', '').strip()
+                        country = jl.get('country', '').strip() or 'India'
+                        department = jl.get('department', '').strip()
+
+                        if not title or not url:
+                            continue
+
+                        # Extract job ID from URL like /jobs/12345/
+                        job_id = self._extract_job_id_from_url(url)
+
+                        location_parts = [p for p in [city, state, country] if p]
+                        location = ', '.join(location_parts)
+
+                        job_data = {
+                            'external_id': self.generate_external_id(job_id, self.company_name),
+                            'company_name': self.company_name,
+                            'title': title,
+                            'apply_url': url,
+                            'location': location,
+                            'department': department,
+                            'employment_type': '',
+                            'description': '',
+                            'posted_date': '',
+                            'city': city,
+                            'state': state,
+                            'country': country if country else 'India',
+                            'job_function': '',
+                            'experience_level': '',
+                            'salary_range': '',
+                            'remote_type': 'Remote' if 'remote' in location.lower() else '',
+                            'status': 'active'
+                        }
+                        if job_data['external_id'] not in scraped_ids:
+                            jobs.append(job_data)
+                            scraped_ids.add(job_data['external_id'])
+                            logger.info(f"JS Extracted: {title} | {location}")
+                    return jobs
+
+            # Process Selenium elements
             for idx, elem in enumerate(job_elements, 1):
                 try:
-                    job = self._extract_job(elem, driver, wait, idx)
+                    job = self._extract_job(elem, driver, idx)
                     if job and job['external_id'] not in scraped_ids:
                         jobs.append(job)
                         scraped_ids.add(job['external_id'])
-                        logger.info(f"Extracted: {job.get('title', 'N/A')}")
+                        logger.info(f"Extracted: {job.get('title', 'N/A')} | {job.get('location', '')}")
                 except Exception as e:
-                    logger.error(f"Error {idx}: {str(e)}")
+                    logger.error(f"Error extracting job {idx}: {str(e)}")
         except Exception as e:
-            logger.error(f"Error: {str(e)}")
+            logger.error(f"Error in _scrape_page: {str(e)}")
         return jobs
 
-    def _extract_job(self, job_elem, driver, wait, idx):
+    def _extract_job_id_from_url(self, url):
+        """Extract numeric job ID from Trakstar URL like /jobs/12345/"""
+        try:
+            parts = url.rstrip('/').split('/')
+            for part in reversed(parts):
+                if part.isdigit():
+                    return part
+            # Fallback: hash the URL
+            return f"bms_{hashlib.md5(url.encode()).hexdigest()[:8]}"
+        except:
+            return f"bms_{hashlib.md5(url.encode()).hexdigest()[:8]}"
+
+    def _extract_job(self, job_elem, driver, idx):
         try:
             title = ""
             job_url = ""
+            city = ""
+            state = ""
+            country = ""
+            department = ""
 
-            if job_elem.tag_name == 'a':
-                title = job_elem.text.strip().split('\n')[0]
-                job_url = job_elem.get_attribute('href')
-            else:
-                for sel in ["h3 a", "h2 a", "a[href*='opening']", "a[href*='job']", "[class*='title'] a", "a"]:
-                    try:
-                        elem = job_elem.find_element(By.CSS_SELECTOR, sel)
-                        title = elem.text.strip()
-                        job_url = elem.get_attribute('href')
-                        if title:
-                            break
-                    except:
-                        continue
+            # Extract title from h3.js-job-list-opening-name
+            title_selectors = [
+                "h3.js-job-list-opening-name",
+                "h3.rb-h3",
+                "h3",
+            ]
+            for sel in title_selectors:
+                try:
+                    elem = job_elem.find_element(By.CSS_SELECTOR, sel)
+                    title = elem.text.strip()
+                    if title:
+                        break
+                except:
+                    continue
+
+            # Extract URL from anchor tag
+            url_selectors = [
+                "a[href*='/jobs/']",
+                "a",
+            ]
+            for sel in url_selectors:
+                try:
+                    elem = job_elem.find_element(By.CSS_SELECTOR, sel)
+                    href = elem.get_attribute('href')
+                    if href and '/jobs/' in href:
+                        job_url = href
+                        break
+                    elif href and not job_url:
+                        job_url = href
+                except:
+                    continue
+
+            # If the card itself is wrapped in a link or is a link
+            if not job_url:
+                try:
+                    parent_a = job_elem.find_element(By.XPATH, "./ancestor::a[@href]")
+                    href = parent_a.get_attribute('href')
+                    if href:
+                        job_url = href
+                except:
+                    pass
 
             if not title:
                 title = job_elem.text.strip().split('\n')[0]
@@ -170,19 +281,41 @@ class BookMyShowScraper:
             if not job_url:
                 job_url = self.url
 
-            job_id = f"bms_{idx}_{hashlib.md5(title.encode()).hexdigest()[:8]}"
-            if 'opening' in job_url:
-                parts = job_url.rstrip('/').split('/')
-                job_id = parts[-1] if parts[-1] else job_id
+            # Extract location from specific Trakstar span elements
+            try:
+                city_elem = job_elem.find_element(By.CSS_SELECTOR, "span.meta-job-location-city")
+                city = city_elem.text.strip()
+            except:
+                pass
 
-            location = ""
-            department = ""
-            for line in job_elem.text.split('\n')[1:]:
-                line_s = line.strip()
-                if any(c in line_s for c in ['Mumbai', 'Bangalore', 'Delhi', 'India', 'Remote']):
-                    location = line_s
-                elif line_s and not department and len(line_s) < 60:
-                    department = line_s
+            try:
+                state_elem = job_elem.find_element(By.CSS_SELECTOR, "span.meta-job-location-state")
+                state = state_elem.text.strip()
+            except:
+                pass
+
+            try:
+                country_elem = job_elem.find_element(By.CSS_SELECTOR, "span.meta-job-location-country")
+                country = country_elem.text.strip()
+            except:
+                pass
+
+            # Extract department
+            try:
+                dept_elem = job_elem.find_element(By.CSS_SELECTOR, "div.js-job-list-opening-meta")
+                department = dept_elem.text.strip()
+            except:
+                try:
+                    dept_elem = job_elem.find_element(By.CSS_SELECTOR, "div.rb-text-4")
+                    department = dept_elem.text.strip()
+                except:
+                    pass
+
+            location_parts = [p for p in [city, state, country] if p]
+            location = ', '.join(location_parts)
+
+            # Get job ID from URL
+            job_id = self._extract_job_id_from_url(job_url)
 
             job_data = {
                 'external_id': self.generate_external_id(job_id, self.company_name),
@@ -194,13 +327,13 @@ class BookMyShowScraper:
                 'employment_type': '',
                 'description': '',
                 'posted_date': '',
-                'city': '',
-                'state': '',
-                'country': 'India',
+                'city': city,
+                'state': state,
+                'country': country if country else 'India',
                 'job_function': '',
                 'experience_level': '',
                 'salary_range': '',
-                'remote_type': 'Remote' if 'Remote' in job_elem.text else '',
+                'remote_type': 'Remote' if 'remote' in location.lower() else '',
                 'status': 'active'
             }
 
@@ -212,10 +345,9 @@ class BookMyShowScraper:
                 except:
                     pass
 
-            job_data.update(self.parse_location(job_data.get('location', '')))
             return job_data
         except Exception as e:
-            logger.error(f"Error: {str(e)}")
+            logger.error(f"Error in _extract_job: {str(e)}")
             return None
 
     def _fetch_details(self, driver, job_url):
@@ -240,7 +372,7 @@ class BookMyShowScraper:
             driver.close()
             driver.switch_to.window(original)
         except Exception as e:
-            logger.error(f"Error: {str(e)}")
+            logger.error(f"Error fetching details: {str(e)}")
             try:
                 if len(driver.window_handles) > 1:
                     driver.close()
@@ -248,22 +380,6 @@ class BookMyShowScraper:
             except:
                 pass
         return details
-
-    def parse_location(self, location_str):
-        result = {'city': '', 'state': '', 'country': 'India'}
-        if not location_str:
-            return result
-        parts = [p.strip() for p in location_str.split(',')]
-        if len(parts) >= 1:
-            result['city'] = parts[0]
-        if len(parts) >= 3:
-            result['state'] = parts[1]
-            result['country'] = parts[2]
-        elif len(parts) == 2:
-            result['country'] = parts[1]
-        if 'India' in location_str:
-            result['country'] = 'India'
-        return result
 
 
 if __name__ == "__main__":

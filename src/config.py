@@ -35,10 +35,10 @@ DATABASE_CONFIG = {
 }
 
 # Scraper settings
-SCRAPE_TIMEOUT = 30
+SCRAPE_TIMEOUT = 30  # WebDriverWait timeout (seconds). Page load timeout should be set to 120 in each scraper.
 HEADLESS_MODE = True
-MAX_PAGES_TO_SCRAPE = 1  # Maximum pages to scrape per company
-FETCH_FULL_JOB_DETAILS = True  # Set to True to click into each job for full details (slower)
+MAX_PAGES_TO_SCRAPE = 15  # Maximum pages to scrape per company (15 pages = ~150 jobs for most sites)
+FETCH_FULL_JOB_DETAILS = False  # Set to True to click into each job for full details (slower)
 
 # Company URLs
 COMPANIES = {

@@ -4,13 +4,17 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
 import hashlib
 import time
 import sys
 from pathlib import Path
 import os
 import stat
+
+try:
+    import requests
+except ImportError:
+    requests = None
 
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 
@@ -19,12 +23,16 @@ from src.config import SCRAPE_TIMEOUT, HEADLESS_MODE, FETCH_FULL_JOB_DETAILS, MA
 
 logger = setup_logger('samsung_scraper')
 
+CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0.7559.133_fresh/chromedriver-mac-arm64/chromedriver'
+
 
 class SamsungScraper:
     def __init__(self):
         self.company_name = 'Samsung'
         # Workday platform - India locations
-        self.url = 'https://sec.wd3.myworkdayjobs.com/Samsung_Careers?locations=0c974e8c1228010867596ab21b3c3469&locations=189767dd6c9201004b83aa89a5295a80'
+        self.url = 'https://sec.wd3.myworkdayjobs.com/Samsung_Careers?locations=0c974e8c1228010867596ab21b3c3469'
+        self.api_url = 'https://sec.wd3.myworkdayjobs.com/wday/cxs/sec/Samsung_Careers/jobs'
+        self.base_job_url = 'https://sec.wd3.myworkdayjobs.com/Samsung_Careers'
 
     def setup_driver(self):
         chrome_options = Options()
@@ -36,8 +44,10 @@ class SamsungScraper:
         chrome_options.add_argument('--window-size=1920,1080')
         chrome_options.add_argument('--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36')
         chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+        chrome_options.add_experimental_option('useAutomationExtension', False)
+        chrome_options.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
 
-        driver_path = ChromeDriverManager().install()
+        driver_path = CHROMEDRIVER_PATH
         driver_path_obj = Path(driver_path)
         if driver_path_obj.name != 'chromedriver':
             parent = driver_path_obj.parent
@@ -58,7 +68,8 @@ class SamsungScraper:
 
         service = Service(driver_path)
         driver = webdriver.Chrome(service=service, options=chrome_options)
-        driver.set_page_load_timeout(SCRAPE_TIMEOUT)
+        driver.execute_cdp_cmd('Network.setUserAgentOverride', {"userAgent": 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'})
+        driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
         return driver
 
     def generate_external_id(self, job_id, company):
@@ -66,20 +77,157 @@ class SamsungScraper:
         return hashlib.md5(unique_string.encode()).hexdigest()
 
     def scrape(self, max_pages=MAX_PAGES_TO_SCRAPE):
+        all_jobs = []
+
+        # Primary method: Workday API via requests
+        if requests is not None:
+            try:
+                api_jobs = self._scrape_via_api(max_pages)
+                if api_jobs:
+                    logger.info(f"API method returned {len(api_jobs)} jobs")
+                    return api_jobs
+                else:
+                    logger.warning("API method returned 0 jobs, falling back to Selenium")
+            except Exception as e:
+                logger.warning(f"API method failed: {str(e)}, falling back to Selenium")
+        else:
+            logger.warning("requests library not available, using Selenium only")
+
+        # Fallback: Selenium-based scraping
+        return self._scrape_via_selenium(max_pages)
+
+    def _scrape_via_api(self, max_pages=MAX_PAGES_TO_SCRAPE):
+        """Scrape Samsung jobs using Workday API directly."""
+        all_jobs = []
+        limit = 20
+        max_results = max_pages * limit
+
+        headers = {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        }
+
+        offset = 0
+        while offset < max_results:
+            payload = {
+                "appliedFacets": {
+                    "locations": [
+                        "0c974e8c1228010867596ab21b3c3469",
+                        "189767dd6c9201004b83aa89a5295a80"
+                    ]
+                },
+                "limit": limit,
+                "offset": offset,
+                "searchText": ""
+            }
+
+            try:
+                logger.info(f"Fetching API page offset={offset}")
+                response = requests.post(self.api_url, json=payload, headers=headers, timeout=30)
+                response.raise_for_status()
+                data = response.json()
+
+                total = data.get('total', 0)
+                postings = data.get('jobPostings', [])
+
+                if not postings:
+                    logger.info(f"No more postings at offset {offset}")
+                    break
+
+                logger.info(f"API returned {len(postings)} postings (total available: {total})")
+
+                for posting in postings:
+                    try:
+                        title = posting.get('title', '')
+                        if not title:
+                            continue
+
+                        external_path = posting.get('externalPath', '')
+                        apply_url = f"{self.base_job_url}{external_path}" if external_path else self.url
+
+                        location = posting.get('locationsText', '')
+                        posted_date = posting.get('postedOn', '')
+
+                        # Extract job ID from externalPath (e.g., /en-US/job/R12345)
+                        job_id = ''
+                        if external_path:
+                            parts = external_path.strip('/').split('/')
+                            if parts:
+                                job_id = parts[-1]
+                        if not job_id:
+                            job_id = f"samsung_{hashlib.md5(title.encode()).hexdigest()[:12]}"
+
+                        # Extract additional info from bulletFields
+                        bullet_fields = posting.get('bulletFields', [])
+                        remote_type = ''
+                        employment_type = ''
+                        for field in bullet_fields:
+                            if isinstance(field, str):
+                                if 'On-site' in field or 'Remote' in field or 'Hybrid' in field:
+                                    remote_type = field
+                                elif 'Full' in field or 'Part' in field or 'Contract' in field:
+                                    employment_type = field
+
+                        location_parts = self.parse_location(location)
+
+                        job_data = {
+                            'external_id': self.generate_external_id(job_id, self.company_name),
+                            'company_name': self.company_name,
+                            'title': title,
+                            'description': '',
+                            'location': location,
+                            'city': location_parts.get('city', ''),
+                            'state': location_parts.get('state', ''),
+                            'country': 'India',
+                            'employment_type': employment_type,
+                            'department': '',
+                            'apply_url': apply_url,
+                            'posted_date': posted_date,
+                            'job_function': '',
+                            'experience_level': '',
+                            'salary_range': '',
+                            'remote_type': remote_type,
+                            'status': 'active'
+                        }
+
+                        all_jobs.append(job_data)
+                        logger.info(f"Added job: {title}")
+
+                    except Exception as e:
+                        logger.error(f"Error processing posting: {str(e)}")
+                        continue
+
+                offset += limit
+
+                # Stop if we've fetched all available
+                if offset >= total:
+                    logger.info(f"Fetched all {total} available jobs")
+                    break
+
+            except Exception as e:
+                logger.error(f"API request failed at offset {offset}: {str(e)}")
+                break
+
+        logger.info(f"Total jobs from API: {len(all_jobs)}")
+        return all_jobs
+
+    def _scrape_via_selenium(self, max_pages=MAX_PAGES_TO_SCRAPE):
+        """Fallback: scrape Samsung jobs using Selenium."""
         driver = None
         all_jobs = []
 
         try:
             driver = self.setup_driver()
-            logger.info(f"Starting {self.company_name} scraping from {self.url}")
+            logger.info(f"Starting {self.company_name} Selenium scraping from {self.url}")
 
             driver.get(self.url)
             wait = WebDriverWait(driver, SCRAPE_TIMEOUT)
-            time.sleep(8)  # Workday takes longer
+            time.sleep(12)
 
             try:
                 wait.until(EC.presence_of_element_located((
-                    By.CSS_SELECTOR, 'a[data-automation-id="jobTitle"]'
+                    By.CSS_SELECTOR, 'li[data-automation-id="listItem"]'
                 )))
                 logger.info("Job listings loaded")
             except Exception as e:
@@ -98,11 +246,11 @@ class SamsungScraper:
                     time.sleep(5)
                 current_page += 1
 
-            logger.info(f"Total jobs scraped: {len(all_jobs)}")
+            logger.info(f"Total jobs scraped via Selenium: {len(all_jobs)}")
             return all_jobs
 
         except Exception as e:
-            logger.error(f"Error during scraping: {str(e)}")
+            logger.error(f"Error during Selenium scraping: {str(e)}")
             return all_jobs
         finally:
             if driver:
@@ -140,130 +288,131 @@ class SamsungScraper:
             return False
 
     def _scrape_page(self, driver, wait):
+        """Scrape jobs from current Workday page"""
         jobs = []
-        scraped_ids = set()
+        time.sleep(3)
 
-        try:
-            time.sleep(5)
+        workday_selectors = [
+            (By.CSS_SELECTOR, 'li[data-automation-id="listItem"]'),
+            (By.CSS_SELECTOR, 'li.css-1q2dra3'),
+            (By.CSS_SELECTOR, 'ul li[class*="job"]'),
+            (By.XPATH, '//ul[@aria-label="Search Results"]/li'),
+        ]
 
-            # Use stable data-automation-id selectors for Workday
-            job_elements = []
-            selectors = [
-                'section[data-automation-id="jobResults"] ul[role="list"] > li',
-                'section[data-automation-id="jobResults"] ul[aria-label] > li',
-            ]
+        job_cards = []
+        for selector_type, selector_value in workday_selectors:
+            try:
+                wait.until(EC.presence_of_element_located((selector_type, selector_value)))
+                job_cards = driver.find_elements(selector_type, selector_value)
+                if job_cards and len(job_cards) > 0:
+                    logger.info(f"Found {len(job_cards)} jobs using selector: {selector_value}")
+                    break
+            except:
+                continue
 
-            for selector in selectors:
+        if not job_cards:
+            logger.warning("No job cards found using standard selectors")
+            return jobs
+
+        for idx, card in enumerate(job_cards):
+            try:
+                card_text = card.text
+                if not card_text or len(card_text) < 10:
+                    continue
+
+                job_title = ""
+                job_link = ""
+
                 try:
-                    elements = driver.find_elements(By.CSS_SELECTOR, selector)
-                    if elements:
-                        job_elements = elements
-                        logger.info(f"Found {len(job_elements)} listings using selector: {selector}")
-                        break
+                    title_link = card.find_element(By.TAG_NAME, 'a')
+                    job_title = title_link.get_attribute('aria-label') or title_link.text.strip()
+                    job_link = title_link.get_attribute('href')
                 except:
+                    job_title = card_text.split('\n')[0].strip()
+
+                if not job_title or len(job_title) < 3:
                     continue
 
-            if not job_elements:
-                logger.warning("Could not find job listings")
-                return jobs
+                job_id = ""
+                lines = card_text.split('\n')
+                for line in lines:
+                    line_stripped = line.strip()
+                    if (line_stripped.startswith('R') and line_stripped[1:].isdigit()) or \
+                       (line_stripped.startswith('REQ') and len(line_stripped) < 15):
+                        job_id = line_stripped
+                        break
 
-            for idx, job_elem in enumerate(job_elements, 1):
-                try:
-                    job_data = self._extract_job_from_element(job_elem, driver, wait, idx)
-                    if job_data and job_data['external_id'] not in scraped_ids:
-                        jobs.append(job_data)
-                        scraped_ids.add(job_data['external_id'])
-                        logger.info(f"Extracted job {len(jobs)}: {job_data.get('title', 'N/A')}")
-                except Exception as e:
-                    logger.error(f"Error extracting job {idx}: {str(e)}")
-                    continue
+                if not job_id:
+                    if job_link and '/job/' in job_link:
+                        job_id = job_link.split('/job/')[-1].split('/')[0]
+                    else:
+                        job_id = f"samsung_{hashlib.md5(job_title.encode()).hexdigest()[:12]}"
 
-        except Exception as e:
-            logger.error(f"Error scraping page: {str(e)}")
+                location = ""
+                city = ""
+                state = ""
+                remote_type = ""
+                posted_date = ""
+
+                for line in lines:
+                    line_stripped = line.strip()
+
+                    if ',' in line_stripped and len(line_stripped.split(',')) >= 2:
+                        parts = line_stripped.split(',')
+                        if len(parts[1].strip()) <= 3 or 'India' in line_stripped:
+                            location = line_stripped
+                            city = parts[0].strip()
+                            state = parts[1].strip()
+
+                    if 'On-site' in line_stripped:
+                        remote_type = 'On-site'
+                    elif 'Remote' in line_stripped:
+                        remote_type = 'Remote'
+                    elif 'Hybrid' in line_stripped:
+                        remote_type = 'Hybrid'
+
+                    if 'Posted' in line_stripped:
+                        posted_date = line_stripped.replace('Posted', '').strip()
+
+                job_data = {
+                    'external_id': self.generate_external_id(job_id, self.company_name),
+                    'company_name': self.company_name,
+                    'title': job_title,
+                    'description': '',
+                    'location': location,
+                    'city': city,
+                    'state': state,
+                    'country': 'India',
+                    'employment_type': '',
+                    'department': '',
+                    'apply_url': job_link if job_link else self.url,
+                    'posted_date': posted_date,
+                    'job_function': '',
+                    'experience_level': '',
+                    'salary_range': '',
+                    'remote_type': remote_type,
+                    'status': 'active'
+                }
+
+                if FETCH_FULL_JOB_DETAILS and job_link and job_link != self.url:
+                    try:
+                        full_details = self._fetch_job_details(driver, job_link)
+                        if full_details:
+                            job_data.update(full_details)
+                    except Exception as e:
+                        logger.warning(f"Could not fetch details for {job_title}: {str(e)}")
+
+                location_parts = self.parse_location(job_data.get('location', ''))
+                job_data.update(location_parts)
+
+                jobs.append(job_data)
+                logger.info(f"Successfully added job: {job_title}")
+
+            except Exception as e:
+                logger.error(f"Error extracting job {idx}: {str(e)}")
+                continue
 
         return jobs
-
-    def _extract_job_from_element(self, job_elem, driver, wait, idx):
-        try:
-            # Extract title and URL from the stable jobTitle link
-            title = ""
-            job_url = ""
-            try:
-                title_link = job_elem.find_element(By.CSS_SELECTOR, 'a[data-automation-id="jobTitle"]')
-                title = title_link.text.strip()
-                job_url = title_link.get_attribute('href')
-            except:
-                pass
-
-            if not title or len(title) < 3:
-                return None
-
-            # Extract job ID from subtitle (e.g. R54639)
-            job_id = ""
-            try:
-                subtitle = job_elem.find_element(By.CSS_SELECTOR, 'ul[data-automation-id="subtitle"] li')
-                job_id = subtitle.text.strip()
-            except:
-                pass
-
-            if not job_id:
-                if job_url and '/job/' in job_url:
-                    job_id = job_url.split('/job/')[-1].split('/')[0]
-                else:
-                    job_id = f"samsung_{idx}_{hashlib.md5(title.encode()).hexdigest()[:12]}"
-
-            # Extract location from data-automation-id="locations"
-            location = ""
-            try:
-                loc_elem = job_elem.find_element(By.CSS_SELECTOR, 'div[data-automation-id="locations"] dd')
-                location = loc_elem.text.strip()
-            except:
-                pass
-
-            # Extract posted date from data-automation-id="postedOn"
-            posted_date = ""
-            try:
-                date_elem = job_elem.find_element(By.CSS_SELECTOR, 'div[data-automation-id="postedOn"] dd')
-                posted_date = date_elem.text.strip()
-            except:
-                pass
-
-            job_data = {
-                'external_id': self.generate_external_id(job_id, self.company_name),
-                'company_name': self.company_name,
-                'title': title,
-                'description': '',
-                'location': location,
-                'city': '',
-                'state': '',
-                'country': 'India',
-                'employment_type': '',
-                'department': '',
-                'apply_url': job_url if job_url else self.url,
-                'posted_date': posted_date,
-                'job_function': '',
-                'experience_level': '',
-                'salary_range': '',
-                'remote_type': '',
-                'status': 'active'
-            }
-
-            if FETCH_FULL_JOB_DETAILS and job_url and job_url != self.url:
-                try:
-                    details = self._fetch_job_details(driver, job_url)
-                    if details:
-                        job_data.update(details)
-                except Exception as e:
-                    logger.warning(f"Could not fetch details for {title}: {str(e)}")
-
-            location_parts = self.parse_location(job_data.get('location', ''))
-            job_data.update(location_parts)
-
-            return job_data
-
-        except Exception as e:
-            logger.error(f"Error extracting job data: {str(e)}")
-            return None
 
     def _fetch_job_details(self, driver, job_url):
         details = {}
@@ -290,7 +439,6 @@ class SamsungScraper:
                 except:
                     continue
 
-            # Employment type
             try:
                 emp_elem = driver.find_element(By.XPATH, '//dd[contains(text(), "Full time") or contains(text(), "Part time") or contains(text(), "Contract")]')
                 if emp_elem.text.strip():
@@ -298,7 +446,6 @@ class SamsungScraper:
             except:
                 pass
 
-            # Location
             try:
                 loc_elem = driver.find_element(By.CSS_SELECTOR, 'dd[data-automation-id="locations"]')
                 if loc_elem.text.strip():
@@ -306,7 +453,6 @@ class SamsungScraper:
             except:
                 pass
 
-            # Posted date
             try:
                 date_elem = driver.find_element(By.CSS_SELECTOR, 'dd[data-automation-id="postedOn"]')
                 if date_elem.text.strip():

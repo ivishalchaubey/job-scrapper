@@ -4,13 +4,17 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
 import hashlib
 import time
 import sys
 from pathlib import Path
 import os
 import stat
+
+try:
+    import requests as req_lib
+except ImportError:
+    req_lib = None
 
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 
@@ -19,11 +23,14 @@ from src.config import SCRAPE_TIMEOUT, HEADLESS_MODE, FETCH_FULL_JOB_DETAILS, MA
 
 logger = setup_logger('pepsico_scraper')
 
+CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0.7559.133_fresh/chromedriver-mac-arm64/chromedriver'
+
 
 class PepsiCoScraper:
     def __init__(self):
         self.company_name = 'PepsiCo'
         self.url = 'https://www.pepsicojobs.com/main/jobs?stretchUnit=MILES&stretch=10&location=India&woe=12&regionCode=IN'
+        self.api_url = 'https://www.pepsicojobs.com/api/jobs'
 
     def setup_driver(self):
         chrome_options = Options()
@@ -35,8 +42,10 @@ class PepsiCoScraper:
         chrome_options.add_argument('--window-size=1920,1080')
         chrome_options.add_argument('--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36')
         chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+        chrome_options.add_experimental_option('useAutomationExtension', False)
+        chrome_options.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
 
-        driver_path = ChromeDriverManager().install()
+        driver_path = CHROMEDRIVER_PATH
         driver_path_obj = Path(driver_path)
         if driver_path_obj.name != 'chromedriver':
             parent = driver_path_obj.parent
@@ -57,7 +66,8 @@ class PepsiCoScraper:
 
         service = Service(driver_path)
         driver = webdriver.Chrome(service=service, options=chrome_options)
-        driver.set_page_load_timeout(SCRAPE_TIMEOUT)
+        driver.execute_cdp_cmd('Network.setUserAgentOverride', {"userAgent": 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'})
+        driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
         return driver
 
     def generate_external_id(self, job_id, company):
@@ -65,15 +75,110 @@ class PepsiCoScraper:
         return hashlib.md5(unique_string.encode()).hexdigest()
 
     def scrape(self, max_pages=MAX_PAGES_TO_SCRAPE):
+        # Primary: API-based scraping (fast, reliable)
+        if req_lib is not None:
+            try:
+                api_jobs = self._scrape_via_api(max_pages)
+                if api_jobs:
+                    logger.info(f"API method returned {len(api_jobs)} jobs")
+                    return api_jobs
+                logger.warning("API returned 0 jobs, falling back to Selenium")
+            except Exception as e:
+                logger.warning(f"API failed: {str(e)}, falling back to Selenium")
+
+        return self._scrape_via_selenium(max_pages)
+
+    def _scrape_via_api(self, max_pages=MAX_PAGES_TO_SCRAPE):
+        """Scrape PepsiCo jobs using Phenom API."""
+        all_jobs = []
+        limit = 20
+        max_results = max_pages * limit
+        page = 1
+
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'application/json',
+        }
+
+        while len(all_jobs) < max_results:
+            try:
+                params = {'location': 'India', 'page': page, 'limit': limit, 'locale': 'en'}
+                logger.info(f"Fetching API page {page}")
+                response = req_lib.get(self.api_url, params=params, headers=headers, timeout=30)
+                response.raise_for_status()
+                data = response.json()
+
+                total = data.get('totalCount', 0)
+                jobs_list = data.get('jobs', [])
+                if not jobs_list:
+                    break
+
+                logger.info(f"API page {page}: {len(jobs_list)} jobs (total: {total})")
+
+                for job_raw in jobs_list:
+                    try:
+                        job_data_raw = job_raw.get('data', job_raw)
+                        title = job_data_raw.get('title', '')
+                        if not title:
+                            continue
+
+                        req_id = str(job_data_raw.get('req_id', job_data_raw.get('slug', '')))
+                        city = job_data_raw.get('city', '')
+                        state = job_data_raw.get('state', '')
+                        country = job_data_raw.get('country', 'India')
+                        location = job_data_raw.get('location_name', '')
+                        if not location and city:
+                            location = f"{city}, {state}" if state else city
+                        apply_url = job_data_raw.get('apply_url', '')
+                        if not apply_url:
+                            slug = job_data_raw.get('slug', req_id)
+                            apply_url = f"https://www.pepsicojobs.com/main/jobs/{slug}"
+
+                        job_data = {
+                            'external_id': self.generate_external_id(req_id, self.company_name),
+                            'company_name': self.company_name,
+                            'title': title,
+                            'description': (job_data_raw.get('description', '') or '')[:3000],
+                            'location': location,
+                            'city': city,
+                            'state': state,
+                            'country': country if country else 'India',
+                            'employment_type': job_data_raw.get('employment_type', ''),
+                            'department': job_data_raw.get('category', ''),
+                            'apply_url': apply_url,
+                            'posted_date': job_data_raw.get('posted_date', ''),
+                            'job_function': '',
+                            'experience_level': '',
+                            'salary_range': '',
+                            'remote_type': job_data_raw.get('location_type', ''),
+                            'status': 'active'
+                        }
+                        all_jobs.append(job_data)
+                    except Exception as e:
+                        logger.error(f"Error processing job: {str(e)}")
+                        continue
+
+                if len(all_jobs) >= total:
+                    break
+                page += 1
+            except Exception as e:
+                logger.error(f"API request failed: {str(e)}")
+                break
+
+        logger.info(f"Total jobs from API: {len(all_jobs)}")
+        return all_jobs
+
+    def _scrape_via_selenium(self, max_pages=MAX_PAGES_TO_SCRAPE):
+        """Fallback: Selenium-based scraping."""
         driver = None
         all_jobs = []
 
         try:
             driver = self.setup_driver()
-            logger.info(f"Starting {self.company_name} scraping from {self.url}")
+            logger.info(f"Starting {self.company_name} Selenium scraping from {self.url}")
             driver.get(self.url)
             wait = WebDriverWait(driver, SCRAPE_TIMEOUT)
-            time.sleep(5)
+            time.sleep(10)
 
             try:
                 wait.until(EC.presence_of_element_located((
@@ -128,16 +233,24 @@ class PepsiCoScraper:
         scraped_ids = set()
 
         try:
-            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            # Scroll multiple times to trigger lazy loading
+            for _scroll_i in range(3):
+                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                time.sleep(2)
+            driver.execute_script("window.scrollTo(0, 0);")
             time.sleep(2)
 
             job_elements = []
             selectors = [
+                "a[href*='/job/']",
                 "[class*='job-card']",
                 "[class*='job-listing']",
-                "a[href*='/job/']",
+                "li[class*='result']",
                 "[class*='search-result']",
+                "div.job-card",
+                "a.job-link",
                 "[role='listitem']",
+                "article",
                 ".card",
             ]
 

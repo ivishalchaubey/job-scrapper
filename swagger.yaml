@@ -1,0 +1,783 @@
+openapi: 3.0.0
+info:
+  title: Job Scraper API
+  description: |
+    Comprehensive Job Scraping API for 125+ companies across India.
+    
+    This API provides access to job listings scraped from major companies including:
+    - Tech Giants (Google, Microsoft, Apple, IBM, etc.)
+    - Financial Services (Goldman Sachs, HDFC Bank, ICICI Bank, etc.)
+    - E-commerce (Flipkart, Amazon, Myntra, Meesho, etc.)
+    - Consulting (McKinsey, Deloitte, EY, PwC, etc.)
+    - And 100+ more companies
+    
+    ## Features
+    - Real-time job data from 125 companies
+    - Comprehensive job details including location, department, and experience level
+    - XML export in Scoutit schema format
+    - Scraping history and statistics
+    - MongoDB/PostgreSQL backend support
+    
+  version: 2.0.0
+  contact:
+    name: Job Scraper Team
+    email: support@jobscraper.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:8000
+    description: Local development server
+  - url: http://localhost:5000
+    description: Alternative local server
+
+tags:
+  - name: Jobs
+    description: Job listings endpoints
+  - name: Statistics
+    description: Scraping statistics and analytics
+  - name: Export
+    description: Data export functionality
+  - name: Scrapers
+    description: Scraper management and execution
+  - name: System
+    description: System information
+
+paths:
+  /:
+    get:
+      tags:
+        - System
+      summary: API Information
+      description: Get API version and available endpoints
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Job Scraper API
+                  version:
+                    type: string
+                    example: 2.0.0
+                  total_scrapers:
+                    type: integer
+                    example: 125
+                  endpoints:
+                    type: object
+
+  /api/jobs:
+    get:
+      tags:
+        - Jobs
+      summary: Get All Jobs
+      description: Retrieve all job listings from database
+      parameters:
+        - name: limit
+          in: query
+          description: Maximum number of jobs to return
+          schema:
+            type: integer
+            default: 100
+            maximum: 1000
+        - name: offset
+          in: query
+          description: Number of jobs to skip (for pagination)
+          schema:
+            type: integer
+            default: 0
+        - name: location
+          in: query
+          description: Filter by location (city)
+          schema:
+            type: string
+        - name: department
+          in: query
+          description: Filter by department
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  count:
+                    type: integer
+                    example: 150
+                  jobs:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Job'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/jobs/{company_name}:
+    get:
+      tags:
+        - Jobs
+      summary: Get Jobs by Company
+      description: Retrieve all jobs for a specific company
+      parameters:
+        - name: company_name
+          in: path
+          required: true
+          description: Select a company from the list
+          schema:
+            type: string
+            enum:
+              - Amazon
+              - AWS
+              - Accenture
+              - JLL
+              - Bain
+              - BCG
+              - Infosys
+              - Loreal
+              - Mahindra
+              - Marico
+              - Meta
+              - Microsoft
+              - Morgan Stanley
+              - Nestle
+              - Nvidia
+              - Samsung
+              - Swiggy
+              - TCS
+              - Tata Consumer
+              - Tech Mahindra
+              - Varun Beverages
+              - Wipro
+              - PepsiCo
+              - BookMyShow
+              - Abbott
+              - Google
+              - IBM
+              - Apple
+              - Intel
+              - Dell
+              - Cisco
+              - HCLTech
+              - Cognizant
+              - Capgemini
+              - Deloitte
+              - EY
+              - KPMG
+              - PwC
+              - Goldman Sachs
+              - JPMorgan Chase
+              - Citigroup
+              - HDFC Bank
+              - ICICI Bank
+              - Axis Bank
+              - Kotak Mahindra Bank
+              - Bank of America
+              - HSBC
+              - Standard Chartered
+              - Flipkart
+              - Walmart
+              - Myntra
+              - Meesho
+              - Zepto
+              - Paytm
+              - Zomato
+              - PhonePe
+              - Ola Electric
+              - Uber
+              - Nykaa
+              - BigBasket
+              - Delhivery
+              - IndiGo
+              - Jio
+              - ITC Limited
+              - Larsen & Toubro
+              - Reliance Industries
+              - Adani Group
+              - Tata Steel
+              - Tata Motors
+              - Hindustan Unilever
+              - Procter & Gamble
+              - Colgate-Palmolive
+              - Asian Paints
+              - Godrej Group
+              - Bajaj Auto
+              - McKinsey
+              - Parle Agro
+              - Zoho
+              - Aditya Birla
+              - Adobe
+              - Mondelez
+              - Reckitt
+              - Coca-Cola
+              - State Bank of India
+              - Tesla
+              - AbbVie
+              - American Express
+              - Angel One
+              - AT&T
+              - Boeing
+              - Cipla
+              - Cummins
+              - Cyient
+              - Dr Reddys
+              - Royal Enfield
+              - Eli Lilly
+              - ExxonMobil
+              - FedEx
+              - Fortis Healthcare
+              - Hero FinCorp
+              - Hero MotoCorp
+              - Hindalco
+              - Honeywell
+              - HP
+              - IIFL
+              - Johnson & Johnson
+              - JSW Energy
+              - Jubilant FoodWorks
+              - KPIT Technologies
+              - Lowes
+              - Maruti Suzuki
+              - Max Life Insurance
+              - MetLife
+              - Muthoot Finance
+              - Netflix
+              - Nike
+              - Oracle
+              - Persistent Systems
+              - Pfizer
+              - Piramal Group
+              - Qualcomm
+              - Salesforce
+              - Shoppers Stop
+              - Starbucks
+              - Sun Pharma
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  company:
+                    type: string
+                  count:
+                    type: integer
+                  jobs:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Job'
+        '404':
+          description: Company not found
+        '500':
+          description: Server error
+
+  /api/stats:
+    get:
+      tags:
+        - Statistics
+      summary: Get Statistics
+      description: Get job counts by company and scraping history
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  job_counts:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        company:
+                          type: string
+                        count:
+                          type: integer
+                  scraping_history:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ScrapingRun'
+
+  /api/companies:
+    get:
+      tags:
+        - System
+      summary: List All Companies
+      description: Get list of all 125 supported companies
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  total:
+                    type: integer
+                    example: 125
+                  companies:
+                    type: array
+                    items:
+                      type: string
+
+  /api/scrape/{company_name}:
+    post:
+      tags:
+        - Scrapers
+      summary: Trigger Scraping for Company
+      description: Start a scraping job for specific company
+      parameters:
+        - name: company_name
+          in: path
+          required: true
+          description: Select a company to scrape
+          schema:
+            type: string
+            enum:
+              - Amazon
+              - AWS
+              - Accenture
+              - JLL
+              - Bain
+              - BCG
+              - Infosys
+              - Loreal
+              - Mahindra
+              - Marico
+              - Meta
+              - Microsoft
+              - Morgan Stanley
+              - Nestle
+              - Nvidia
+              - Samsung
+              - Swiggy
+              - TCS
+              - Tata Consumer
+              - Tech Mahindra
+              - Varun Beverages
+              - Wipro
+              - PepsiCo
+              - BookMyShow
+              - Abbott
+              - Google
+              - IBM
+              - Apple
+              - Intel
+              - Dell
+              - Cisco
+              - HCLTech
+              - Cognizant
+              - Capgemini
+              - Deloitte
+              - EY
+              - KPMG
+              - PwC
+              - Goldman Sachs
+              - JPMorgan Chase
+              - Citigroup
+              - HDFC Bank
+              - ICICI Bank
+              - Axis Bank
+              - Kotak Mahindra Bank
+              - Bank of America
+              - HSBC
+              - Standard Chartered
+              - Flipkart
+              - Walmart
+              - Myntra
+              - Meesho
+              - Zepto
+              - Paytm
+              - Zomato
+              - PhonePe
+              - Ola Electric
+              - Uber
+              - Nykaa
+              - BigBasket
+              - Delhivery
+              - IndiGo
+              - Jio
+              - ITC Limited
+              - Larsen & Toubro
+              - Reliance Industries
+              - Adani Group
+              - Tata Steel
+              - Tata Motors
+              - Hindustan Unilever
+              - Procter & Gamble
+              - Colgate-Palmolive
+              - Asian Paints
+              - Godrej Group
+              - Bajaj Auto
+              - McKinsey
+              - Parle Agro
+              - Zoho
+              - Aditya Birla
+              - Adobe
+              - Mondelez
+              - Reckitt
+              - Coca-Cola
+              - State Bank of India
+              - Tesla
+              - AbbVie
+              - American Express
+              - Angel One
+              - AT&T
+              - Boeing
+              - Cipla
+              - Cummins
+              - Cyient
+              - Dr Reddys
+              - Royal Enfield
+              - Eli Lilly
+              - ExxonMobil
+              - FedEx
+              - Fortis Healthcare
+              - Hero FinCorp
+              - Hero MotoCorp
+              - Hindalco
+              - Honeywell
+              - HP
+              - IIFL
+              - Johnson & Johnson
+              - JSW Energy
+              - Jubilant FoodWorks
+              - KPIT Technologies
+              - Lowes
+              - Maruti Suzuki
+              - Max Life Insurance
+              - MetLife
+              - Muthoot Finance
+              - Netflix
+              - Nike
+              - Oracle
+              - Persistent Systems
+              - Pfizer
+              - Piramal Group
+              - Qualcomm
+              - Salesforce
+              - Shoppers Stop
+              - Starbucks
+              - Sun Pharma
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                max_pages:
+                  type: integer
+                  default: 1
+                  description: Maximum pages to scrape
+      responses:
+        '200':
+          description: Scraping started successfully
+        '400':
+          description: Invalid company name
+        '500':
+          description: Server error
+
+  /api/export/xml:
+    get:
+      tags:
+        - Export
+      summary: Export All Jobs as XML
+      description: Download all jobs in Scoutit XML schema format
+      responses:
+        '200':
+          description: XML file download
+          content:
+            application/xml:
+              schema:
+                type: string
+                format: binary
+        '500':
+          description: Server error
+
+  /api/export/xml/{company_name}:
+    get:
+      tags:
+        - Export
+      summary: Export Company Jobs as XML
+      description: Download jobs for specific company in XML format
+      parameters:
+        - name: company_name
+          in: path
+          required: true
+          description: Select a company to export
+          schema:
+            type: string
+            enum:
+              - Amazon
+              - AWS
+              - Accenture
+              - JLL
+              - Bain
+              - BCG
+              - Infosys
+              - Loreal
+              - Mahindra
+              - Marico
+              - Meta
+              - Microsoft
+              - Morgan Stanley
+              - Nestle
+              - Nvidia
+              - Samsung
+              - Swiggy
+              - TCS
+              - Tata Consumer
+              - Tech Mahindra
+              - Varun Beverages
+              - Wipro
+              - PepsiCo
+              - BookMyShow
+              - Abbott
+              - Google
+              - IBM
+              - Apple
+              - Intel
+              - Dell
+              - Cisco
+              - HCLTech
+              - Cognizant
+              - Capgemini
+              - Deloitte
+              - EY
+              - KPMG
+              - PwC
+              - Goldman Sachs
+              - JPMorgan Chase
+              - Citigroup
+              - HDFC Bank
+              - ICICI Bank
+              - Axis Bank
+              - Kotak Mahindra Bank
+              - Bank of America
+              - HSBC
+              - Standard Chartered
+              - Flipkart
+              - Walmart
+              - Myntra
+              - Meesho
+              - Zepto
+              - Paytm
+              - Zomato
+              - PhonePe
+              - Ola Electric
+              - Uber
+              - Nykaa
+              - BigBasket
+              - Delhivery
+              - IndiGo
+              - Jio
+              - ITC Limited
+              - Larsen & Toubro
+              - Reliance Industries
+              - Adani Group
+              - Tata Steel
+              - Tata Motors
+              - Hindustan Unilever
+              - Procter & Gamble
+              - Colgate-Palmolive
+              - Asian Paints
+              - Godrej Group
+              - Bajaj Auto
+              - McKinsey
+              - Parle Agro
+              - Zoho
+              - Aditya Birla
+              - Adobe
+              - Mondelez
+              - Reckitt
+              - Coca-Cola
+              - State Bank of India
+              - Tesla
+              - AbbVie
+              - American Express
+              - Angel One
+              - AT&T
+              - Boeing
+              - Cipla
+              - Cummins
+              - Cyient
+              - Dr Reddys
+              - Royal Enfield
+              - Eli Lilly
+              - ExxonMobil
+              - FedEx
+              - Fortis Healthcare
+              - Hero FinCorp
+              - Hero MotoCorp
+              - Hindalco
+              - Honeywell
+              - HP
+              - IIFL
+              - Johnson & Johnson
+              - JSW Energy
+              - Jubilant FoodWorks
+              - KPIT Technologies
+              - Lowes
+              - Maruti Suzuki
+              - Max Life Insurance
+              - MetLife
+              - Muthoot Finance
+              - Netflix
+              - Nike
+              - Oracle
+              - Persistent Systems
+              - Pfizer
+              - Piramal Group
+              - Qualcomm
+              - Salesforce
+              - Shoppers Stop
+              - Starbucks
+              - Sun Pharma
+      responses:
+        '200':
+          description: XML file download
+          content:
+            application/xml:
+              schema:
+                type: string
+                format: binary
+
+  /api/health:
+    get:
+      tags:
+        - System
+      summary: Health Check
+      description: Check if API and database are healthy
+      responses:
+        '200':
+          description: System healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                  database:
+                    type: string
+                    example: connected
+                  scrapers:
+                    type: integer
+                    example: 125
+
+components:
+  schemas:
+    Job:
+      type: object
+      properties:
+        external_id:
+          type: string
+          description: Unique MD5 hash identifier
+          example: "a1b2c3d4e5f6g7h8i9j0"
+        company_name:
+          type: string
+          example: "Google"
+        title:
+          type: string
+          example: "Senior Software Engineer"
+        description:
+          type: string
+          example: "We are looking for a talented engineer..."
+        location:
+          type: string
+          example: "Bangalore, Karnataka, India"
+        city:
+          type: string
+          example: "Bangalore"
+        state:
+          type: string
+          example: "Karnataka"
+        country:
+          type: string
+          example: "India"
+        employment_type:
+          type: string
+          example: "Full-time"
+        department:
+          type: string
+          example: "Engineering"
+        apply_url:
+          type: string
+          format: uri
+          example: "https://careers.google.com/jobs/12345"
+        posted_date:
+          type: string
+          format: date
+        job_function:
+          type: string
+          example: "Software Development"
+        experience_level:
+          type: string
+          example: "Mid-Senior level"
+        salary_range:
+          type: string
+          example: "15-25 LPA"
+        remote_type:
+          type: string
+          enum: [Remote, Hybrid, On-site]
+          example: "Hybrid"
+        status:
+          type: string
+          enum: [active, inactive]
+          default: active
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    ScrapingRun:
+      type: object
+      properties:
+        company_name:
+          type: string
+        run_date:
+          type: string
+          format: date-time
+        jobs_scraped:
+          type: integer
+        status:
+          type: string
+          enum: [success, failed]
+        error:
+          type: string
+          nullable: true
+
+    Error:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: string
+          example: "Error message description"

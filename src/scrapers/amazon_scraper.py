@@ -4,7 +4,6 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
 import hashlib
 import time
 from datetime import datetime
@@ -17,10 +16,12 @@ from src.config import SCRAPE_TIMEOUT, HEADLESS_MODE, FETCH_FULL_JOB_DETAILS, MA
 
 logger = setup_logger('amazon_scraper')
 
+CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0.7559.133_fresh/chromedriver-mac-arm64/chromedriver'
+
 class AmazonScraper:
     def __init__(self):
         self.company_name = 'Amazon'
-        self.url = 'https://www.amazon.jobs/en/search?base_query=&loc_query=India&type=area&longitude=77.21676&latitude=28.63141&country=IND'
+        self.url = 'https://www.amazon.jobs/en/search?base_query=&loc_query=India'
     
     def setup_driver(self):
         """Set up Chrome driver with options"""
@@ -37,7 +38,7 @@ class AmazonScraper:
         
         try:
             # Install and get the correct chromedriver path
-            driver_path = ChromeDriverManager().install()
+            driver_path = CHROMEDRIVER_PATH
             logger.info(f"ChromeDriver installed at: {driver_path}")
             
             # Fix for macOS ARM - ensure we use the actual chromedriver binary
@@ -69,6 +70,7 @@ class AmazonScraper:
         """Scrape jobs from Amazon careers page with pagination support"""
         jobs = []
         driver = None
+        seen_job_ids = set()  # Track unique jobs to avoid duplicates
         
         try:
             logger.info(f"Starting scrape for {self.company_name}")
@@ -77,33 +79,72 @@ class AmazonScraper:
             
             # Wait for page to load
             wait = WebDriverWait(driver, SCRAPE_TIMEOUT)
-            time.sleep(5)  # Wait for dynamic content
+            logger.info("Waiting for initial page load...")
+            time.sleep(8)  # Wait longer for dynamic content to load
+            
+            # Wait for job results to appear
+            try:
+                wait.until(EC.presence_of_element_located((By.TAG_NAME, 'a')))
+                logger.info("Page content loaded")
+            except:
+                logger.warning("Timeout waiting for page content")
+            
+            # Scroll to trigger any lazy loading
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight/2);")
+            time.sleep(3)
             
             current_page = 1
+            consecutive_empty_pages = 0
             
             while current_page <= max_pages:
                 logger.info(f"Scraping page {current_page} of {max_pages}")
                 
                 # Scrape current page
                 page_jobs = self._scrape_page(driver, wait)
-                jobs.extend(page_jobs)
                 
-                logger.info(f"Scraped {len(page_jobs)} jobs from page {current_page}")
+                # Filter out duplicates
+                unique_page_jobs = []
+                for job in page_jobs:
+                    job_id = job['external_id']
+                    if job_id not in seen_job_ids:
+                        seen_job_ids.add(job_id)
+                        unique_page_jobs.append(job)
                 
-                # Try to navigate to next page
+                jobs.extend(unique_page_jobs)
+                
+                logger.info(f"Scraped {len(unique_page_jobs)} unique jobs from page {current_page} (total: {len(jobs)})")
+                
+                # Check if we got no jobs
+                if len(unique_page_jobs) == 0:
+                    consecutive_empty_pages += 1
+                    logger.warning(f"No jobs found on page {current_page} (consecutive empty: {consecutive_empty_pages})")
+                    
+                    # If we get 2 consecutive empty pages, stop
+                    if consecutive_empty_pages >= 2:
+                        logger.info("Got 2 consecutive empty pages, stopping pagination")
+                        break
+                else:
+                    consecutive_empty_pages = 0
+                
+                # Try to load more jobs
                 if current_page < max_pages:
                     if not self._go_to_next_page(driver, current_page):
-                        logger.info("No more pages available")
+                        logger.info("No more jobs available to load")
                         break
-                    time.sleep(3)  # Wait for next page to load
+                    time.sleep(5)  # Wait for new jobs to load
+                    
+                    # Scroll to top to see newly loaded jobs
+                    driver.execute_script("window.scrollTo(0, 0);")
+                    time.sleep(2)
                 
                 current_page += 1
             
-            logger.info(f"Successfully scraped {len(jobs)} total jobs from {self.company_name}")
+            logger.info(f"Successfully scraped {len(jobs)} total unique jobs from {self.company_name}")
             
         except Exception as e:
             logger.error(f"Error scraping {self.company_name}: {str(e)}")
-            raise
+            # Don't raise, return what we have
+            logger.info(f"Returning {len(jobs)} jobs collected before error")
         
         finally:
             if driver:
@@ -112,68 +153,247 @@ class AmazonScraper:
         return jobs
     
     def _go_to_next_page(self, driver, current_page):
-        """Navigate to the next page"""
+        """Load more jobs by clicking the 'Load more jobs' button"""
         try:
-            # Method 1: Click on next page number
-            next_page_num = current_page + 1
-            next_page_selectors = [
-                (By.XPATH, f'//a[text()="{next_page_num}"]'),
-                (By.CSS_SELECTOR, f'a[aria-label="Page {next_page_num}"]'),
-                (By.XPATH, '//a[@aria-label="Next page"]'),
-                (By.XPATH, '//button[contains(text(), "Next")]'),
-                (By.CSS_SELECTOR, 'a.pagination-next'),
-            ]
+            # Amazon uses a "Load more jobs" button instead of traditional pagination
+            logger.info(f"Looking for 'Load more jobs' button to load page {current_page + 1}")
             
-            for selector_type, selector_value in next_page_selectors:
+            # Scroll to bottom gradually to trigger any lazy loading
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight/2);")
+            time.sleep(1)
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            time.sleep(3)
+            
+            # Get all buttons on the page
+            all_buttons = driver.find_elements(By.TAG_NAME, 'button')
+            logger.info(f"Found {len(all_buttons)} buttons on page")
+            
+            load_more_button = None
+            
+            # Search through all buttons for one with "load more" text
+            for button in all_buttons:
                 try:
-                    next_button = driver.find_element(selector_type, selector_value)
-                    driver.execute_script("arguments[0].scrollIntoView();", next_button)
-                    time.sleep(1)
-                    next_button.click()
-                    logger.info(f"Clicked next page button using selector: {selector_value}")
-                    return True
+                    button_text = button.text.strip().lower()
+                    if button_text and ('load more' in button_text or 'loadmore' in button_text):
+                        load_more_button = button
+                        logger.info(f"Found 'Load more' button with text: '{button.text}'")
+                        break
                 except:
                     continue
             
-            # Method 2: Modify URL with offset parameter
+            # If not found by text, try by common class patterns
+            if not load_more_button:
+                button_selectors = [
+                    (By.XPATH, "//button[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'load more')]"),
+                    (By.XPATH, "//button[contains(@class, 'load')]"),
+                    (By.CSS_SELECTOR, "button[class*='load']"),
+                    (By.CSS_SELECTOR, "button[class*='Load']"),
+                    (By.XPATH, "//button[contains(@aria-label, 'load')]"),
+                    (By.XPATH, "//button[contains(@aria-label, 'Load')]"),
+                ]
+                
+                for selector_type, selector_value in button_selectors:
+                    try:
+                        buttons = driver.find_elements(selector_type, selector_value)
+                        for button in buttons:
+                            button_text = button.text.strip().lower()
+                            aria_label = button.get_attribute('aria-label') or ''
+                            if ('load' in button_text and 'more' in button_text) or ('load' in aria_label.lower() and 'more' in aria_label.lower()):
+                                load_more_button = button
+                                logger.info(f"Found 'Load more' button using selector: {selector_value}")
+                                break
+                        if load_more_button:
+                            break
+                    except:
+                        continue
+            
+            if not load_more_button:
+                logger.warning("No 'Load more jobs' button found - trying URL-based pagination as fallback")
+                # Log all buttons for debugging
+                button_texts = []
+                for btn in all_buttons[:10]:  # Just first 10
+                    try:
+                        text = btn.text.strip()
+                        if text:
+                            button_texts.append(text)
+                    except:
+                        pass
+                if button_texts:
+                    logger.info(f"Available buttons: {', '.join(button_texts[:5])}")
+                
+                # Fallback: Try URL-based pagination with offset
+                return self._try_url_pagination(driver, current_page)
+            
+            # Check if button is visible and enabled
+            if not load_more_button.is_displayed():
+                logger.warning("'Load more' button exists but is not visible")
+                return False
+            
+            # Scroll button into view
+            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", load_more_button)
+            time.sleep(1)
+            
+            # Click the button
+            try:
+                load_more_button.click()
+                logger.info("Clicked 'Load more jobs' button")
+            except:
+                # Fallback: use JavaScript click
+                driver.execute_script("arguments[0].click();", load_more_button)
+                logger.info("Clicked 'Load more jobs' button using JavaScript")
+            
+            # Wait for new jobs to load
+            time.sleep(4)
+            
+            # Scroll to load any lazy-loaded content
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight/2);")
+            time.sleep(2)
+            
+            logger.info(f"Successfully loaded more jobs for page {current_page + 1}")
+            return True
+                
+        except Exception as e:
+            logger.error(f"Error loading more jobs: {str(e)}")
+            return False
+    
+    def _try_url_pagination(self, driver, current_page):
+        """Fallback method: try URL-based pagination with offset parameter"""
+        try:
+            # Amazon might use offset parameter: each page shows 10 jobs
+            # So offset should be: 10, 20, 30, etc. (0 is the first page)
+            new_offset = current_page * 10
+            
+            # Build new URL with updated offset
+            base_url = 'https://www.amazon.jobs/en/search'
+            params = f'?base_query=&loc_query=India&offset={new_offset}'
+            new_url = base_url + params
+            
+            logger.info(f"Trying URL pagination with offset {new_offset}: {new_url}")
+            
+            # Store current job count to verify new jobs loaded
             current_url = driver.current_url
-            if 'offset=' in current_url:
-                # Update offset
-                import re
-                new_offset = current_page * 10  # Assuming 10 jobs per page
-                new_url = re.sub(r'offset=\d+', f'offset={new_offset}', current_url)
-                driver.get(new_url)
-                logger.info(f"Navigated to next page via URL modification")
+            driver.get(new_url)
+            
+            # Wait for page to load
+            time.sleep(5)
+            
+            # Scroll to trigger lazy loading
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight/2);")
+            time.sleep(2)
+            driver.execute_script("window.scrollTo(0, 0);")
+            time.sleep(2)
+            
+            # Verify URL changed or we're on a different page
+            new_current_url = driver.current_url
+            if new_current_url != current_url or f'offset={new_offset}' in new_current_url:
+                logger.info(f"Successfully navigated using URL pagination")
                 return True
             else:
-                # Add offset parameter
-                separator = '&' if '?' in current_url else '?'
-                new_url = f"{current_url}{separator}offset={current_page * 10}"
-                driver.get(new_url)
-                logger.info(f"Navigated to next page via URL modification")
+                logger.warning(f"URL pagination might not have worked")
+                # Try anyway - maybe the URL doesn't reflect the offset
                 return True
                 
         except Exception as e:
-            logger.error(f"Error navigating to next page: {str(e)}")
+            logger.error(f"Error in URL pagination: {str(e)}")
             return False
     
     def _scrape_page(self, driver, wait):
         """Scrape jobs from current page"""
         jobs = []
-        time.sleep(2)  # Wait for page content
         
-        # Try multiple selectors for job listings
+        # Scroll to load all content
+        driver.execute_script("window.scrollTo(0, document.body.scrollHeight/3);")
+        time.sleep(2)
+        driver.execute_script("window.scrollTo(0, document.body.scrollHeight*2/3);")
+        time.sleep(2)
+        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+        time.sleep(3)
+        
+        # Scroll back to top to see all jobs
+        driver.execute_script("window.scrollTo(0, 0);")
+        time.sleep(2)
+        
+        # Amazon's job search results contain "Read more" links with job IDs
+        # Pattern: "Read more about the job <Title>, job Id <ID>"
+        # Extract all job links with job IDs from these "Read more" links
+        
+        logger.info("Searching for job links with IDs...")
+        all_links = driver.find_elements(By.TAG_NAME, 'a')
+        
+        job_info_map = {}  # Map job_id to job info
+        
+        # First pass: Find all "Read more" links with job IDs
+        # Also find title links and match them with job IDs from URLs
+        for link in all_links:
+            try:
+                href = link.get_attribute('href')
+                text = link.text.strip()
+                
+                if not href or '/jobs/' not in href:
+                    continue
+                
+                # Extract job ID from URL: /jobs/3082316/...
+                job_id = None
+                try:
+                    url_parts = href.split('/jobs/')
+                    if len(url_parts) > 1:
+                        job_id_from_url = url_parts[1].split('/')[0].split('?')[0]
+                        if job_id_from_url and (job_id_from_url.isdigit() or len(job_id_from_url) > 5):
+                            job_id = job_id_from_url
+                except:
+                    pass
+                
+                if not job_id:
+                    continue
+                
+                # Method 1: "Read more about the job Title, job Id XXXXX" format
+                if 'job Id' in text and 'Read more' in text:
+                    parts = text.split('job Id')
+                    if len(parts) >= 2:
+                        # Extract title from the text
+                        title_part = parts[0].replace('Read more about the job', '').strip()
+                        # Remove trailing comma and whitespace
+                        title_part = title_part.rstrip(', ')
+                        
+                        if title_part and len(title_part) > 3:
+                            job_info_map[job_id] = {
+                                'title': title_part,
+                                'apply_url': href,
+                                'job_id': job_id
+                            }
+                            continue
+                
+                # Method 2: Regular title link (not "Read more")
+                if text and len(text) > 3 and 'Read more' not in text and 'job Id' not in text:
+                    # This is likely the job title link
+                    if job_id not in job_info_map:
+                        job_info_map[job_id] = {
+                            'title': text.split('\n')[0].strip(),
+                            'apply_url': href,
+                            'job_id': job_id
+                        }
+                
+            except Exception as e:
+                continue
+        
+        logger.info(f"Found {len(job_info_map)} jobs with IDs from 'Read more' links")
+        
+        # Try to find job cards to extract additional information like location
         job_cards = []
         selectors = [
+            # Most accurate Amazon selectors first
             (By.CSS_SELECTOR, 'div.job-tile'),
-            (By.CSS_SELECTOR, 'div[class*="job"]'),
-            (By.XPATH, '//div[contains(@class, "result")]'),
+            (By.CSS_SELECTOR, 'div[data-test="job-tile"]'),
+            (By.CSS_SELECTOR, 'article.job'),
+            (By.CSS_SELECTOR, 'div.job'),
+            (By.CSS_SELECTOR, '[class*="JobCard"]'),
+            (By.CSS_SELECTOR, '[class*="job-listing"]'),
+            (By.XPATH, '//div[contains(@class, "job") and .//a[contains(@href, "/jobs/")]]'),
             (By.TAG_NAME, 'article'),
         ]
         
         for selector_type, selector_value in selectors:
             try:
-                wait.until(EC.presence_of_element_located((selector_type, selector_value)))
                 job_cards = driver.find_elements(selector_type, selector_value)
                 if job_cards and len(job_cards) > 0:
                     logger.info(f"Found {len(job_cards)} job cards using selector: {selector_value}")
@@ -181,56 +401,85 @@ class AmazonScraper:
             except:
                 continue
         
-        if not job_cards:
-            # Fallback: get all job links
-            logger.warning("Standard selectors failed, using fallback method")
-            all_links = driver.find_elements(By.TAG_NAME, 'a')
-            job_links = [link for link in all_links if '/jobs/' in link.get_attribute('href') or 'Job ID' in link.text]
+        # If we have job_info_map from "Read more" links, use that as the primary source
+        if job_info_map:
+            logger.info(f"Using job info map with {len(job_info_map)} jobs")
             
-            for idx, link in enumerate(job_links):
-                try:
-                    job_title = link.text.strip().split('\n')[0]
-                    if not job_title or len(job_title) < 3:
-                        continue
-                        
-                    job_url = link.get_attribute('href')
-                    
-                    # Extract Job ID from nearby text or URL
-                    job_id = f"amazon_{idx}"
+            # If we also have job cards, try to enrich with location data
+            location_map = {}
+            if job_cards:
+                for card in job_cards:
                     try:
-                        parent = link.find_element(By.XPATH, '..')
-                        parent_text = parent.text
-                        if 'Job ID:' in parent_text:
-                            job_id = parent_text.split('Job ID:')[-1].strip().split()[0]
+                        card_text = card.text
+                        if not card_text:
+                            continue
+                        
+                        # Find job ID in card by looking for links
+                        card_links = card.find_elements(By.TAG_NAME, 'a')
+                        card_job_id = None
+                        
+                        for clink in card_links:
+                            clink_text = clink.text.strip()
+                            if 'job Id' in clink_text:
+                                parts = clink_text.split('job Id')
+                                if len(parts) >= 2:
+                                    card_job_id = parts[-1].strip().split()[0].replace(',', '').replace('.', '')
+                                    break
+                        
+                        if not card_job_id:
+                            continue
+                        
+                        # Extract location from card
+                        location = ""
+                        lines = card_text.split('\n')
+                        for line in lines:
+                            # Look for Indian locations
+                            if any(indicator in line for indicator in [', IND', 'India', 'IND,', ', IN']):
+                                location = line.split('|')[0].strip()
+                                break
+                            # Also check for city names
+                            elif any(city_name in line for city_name in ['Bangalore', 'Hyderabad', 'Mumbai', 'Delhi', 'Chennai', 'Pune', 'Gurgaon', 'Noida', 'Bengaluru']):
+                                location = line.strip()
+                                break
+                        
+                        if location:
+                            location_map[card_job_id] = location
                     except:
-                        pass
-                    
-                    job_data = {
-                        'external_id': self.generate_external_id(job_id, self.company_name),
-                        'company_name': self.company_name,
-                        'title': job_title,
-                        'description': '',
-                        'location': '',
-                        'city': '',
-                        'state': '',
-                        'country': 'India',
-                        'employment_type': '',
-                        'department': '',
-                        'apply_url': job_url,
-                        'posted_date': '',
-                        'job_function': '',
-                        'experience_level': '',
-                        'salary_range': '',
-                        'remote_type': '',
-                        'status': 'active'
-                    }
-                    
-                    jobs.append(job_data)
-                    
-                except Exception as e:
-                    logger.error(f"Error in fallback extraction {idx}: {str(e)}")
-                    continue
-        else:
+                        continue
+                
+                logger.info(f"Extracted location data for {len(location_map)} jobs from cards")
+            
+            # Create job data from job_info_map
+            for job_id, job_info in job_info_map.items():
+                location = location_map.get(job_id, '')
+                city, state, _ = self.parse_location(location) if location else ('', '', 'India')
+                
+                job_data = {
+                    'external_id': self.generate_external_id(job_id, self.company_name),
+                    'company_name': self.company_name,
+                    'title': job_info['title'],
+                    'description': '',
+                    'location': location,
+                    'city': city,
+                    'state': state,
+                    'country': 'India',
+                    'employment_type': '',
+                    'department': '',
+                    'apply_url': job_info['apply_url'],
+                    'posted_date': '',
+                    'job_function': '',
+                    'experience_level': '',
+                    'salary_range': '',
+                    'remote_type': '',
+                    'status': 'active'
+                }
+                
+                jobs.append(job_data)
+            
+            return jobs
+        
+        # Fallback: extract from job cards if no job_info_map
+        if job_cards:
             # Extract from job cards
             for idx, card in enumerate(job_cards):
                 try:
@@ -238,45 +487,106 @@ class AmazonScraper:
                     if not card_text or len(card_text) < 10:
                         continue
                     
-                    # Get job title (first link or first line)
+                    # Get job title and link
                     job_title = ""
                     job_link = ""
+                    
+                    # Try multiple methods to find the job title link
                     try:
-                        title_link = card.find_element(By.TAG_NAME, 'a')
-                        job_title = title_link.text.strip()
-                        job_link = title_link.get_attribute('href')
+                        # Method 1: Find link with job URL
+                        title_links = card.find_elements(By.TAG_NAME, 'a')
+                        for link in title_links:
+                            href = link.get_attribute('href')
+                            if href and '/jobs/' in href:
+                                job_link = href
+                                job_title = link.text.strip()
+                                if job_title and len(job_title) > 3:
+                                    break
                     except:
+                        pass
+                    
+                    # Method 2: Try h3 or h2 tags
+                    if not job_title:
+                        try:
+                            title_elem = card.find_element(By.CSS_SELECTOR, 'h3, h2, h1')
+                            job_title = title_elem.text.strip()
+                        except:
+                            pass
+                    
+                    # Method 3: Use first line of card text
+                    if not job_title:
                         job_title = card_text.split('\n')[0].strip()
                     
+                    # Clean up job title
+                    job_title = job_title.split('\n')[0].strip()
                     if not job_title or len(job_title) < 3:
                         continue
                     
-                    # Extract Job ID
-                    job_id = f"amazon_{idx}"
-                    if 'Job ID:' in card_text:
+                    # If no job link found, try to find any link in the card
+                    if not job_link:
                         try:
-                            job_id = card_text.split('Job ID:')[-1].strip().split()[0]
+                            any_link = card.find_element(By.TAG_NAME, 'a')
+                            href = any_link.get_attribute('href')
+                            if href and 'amazon.jobs' in href:
+                                job_link = href
                         except:
                             pass
-                    elif job_link and '/jobs/' in job_link:
-                        job_id = job_link.split('/jobs/')[-1].split('?')[0].split('/')[0]
                     
-                    # Extract location
+                    # Extract Job ID from URL or text
+                    job_id = f"amazon_{idx}"
+                    if 'Job ID:' in card_text or 'Job ID ' in card_text:
+                        try:
+                            # Find the job ID in text
+                            id_text = card_text
+                            if 'Job ID:' in id_text:
+                                job_id = id_text.split('Job ID:')[-1].strip().split()[0]
+                            elif 'Job ID ' in id_text:
+                                job_id = id_text.split('Job ID ')[-1].strip().split()[0]
+                            # Remove any trailing punctuation
+                            job_id = job_id.rstrip('.,;:')
+                        except:
+                            pass
+                    
+                    # Extract from URL if not found in text
+                    if job_id.startswith('amazon_') and job_link and '/jobs/' in job_link:
+                        try:
+                            job_id_part = job_link.split('/jobs/')[1].split('/')[0].split('?')[0]
+                            if job_id_part and (job_id_part.isdigit() or len(job_id_part) > 5):
+                                job_id = job_id_part
+                        except:
+                            pass
+                    
+                    # Extract location - Amazon typically shows it as "City, State, Country"
                     location = ""
                     city = ""
                     state = ""
                     lines = card_text.split('\n')
+                    
                     for line in lines:
-                        if ', IND' in line or 'India' in line:
+                        # Look for Indian locations
+                        if any(indicator in line for indicator in [', IND', 'India', 'IND,', ', IN']):
                             location = line.split('|')[0].strip()
+                            city, state, _ = self.parse_location(location)
+                            break
+                        # Also check for city names
+                        elif any(city_name in line for city_name in ['Bangalore', 'Hyderabad', 'Mumbai', 'Delhi', 'Chennai', 'Pune', 'Gurgaon', 'Noida', 'Bengaluru']):
+                            location = line.strip()
                             city, state, _ = self.parse_location(location)
                             break
                     
                     # Extract posted date
                     posted_date = ""
                     for line in lines:
-                        if 'Posted' in line:
-                            posted_date = line.replace('Posted', '').strip()
+                        if 'Posted' in line or 'posted' in line:
+                            posted_date = line.replace('Posted', '').replace('posted', '').strip()
+                            break
+                    
+                    # Extract department if visible
+                    department = ""
+                    for line in lines:
+                        # Amazon shows department/team info
+                        if any(keyword in line.lower() for keyword in ['team:', 'department:', 'category:']):
+                            department = line.split(':')[-1].strip()
                             break
                     
                     job_data = {
@@ -289,7 +599,7 @@ class AmazonScraper:
                         'state': state,
                         'country': 'India',
                         'employment_type': '',
-                        'department': '',
+                        'department': department,
                         'apply_url': job_link if job_link else self.url,
                         'posted_date': posted_date,
                         'job_function': '',
@@ -301,14 +611,80 @@ class AmazonScraper:
                     
                     # Fetch full details if enabled
                     if FETCH_FULL_JOB_DETAILS and job_link:
-                        full_details = self._fetch_job_details(driver, job_link)
-                        job_data.update(full_details)
+                        try:
+                            full_details = self._fetch_job_details(driver, job_link)
+                            job_data.update(full_details)
+                        except Exception as e:
+                            logger.warning(f"Could not fetch full details for job {job_id}: {str(e)}")
                     
                     jobs.append(job_data)
                     
                 except Exception as e:
                     logger.error(f"Error extracting job {idx}: {str(e)}")
                     continue
+        else:
+            # Final fallback: extract from any job links on the page
+            logger.warning("No job cards or job_info_map found, using final fallback")
+            all_links = driver.find_elements(By.TAG_NAME, 'a')
+            
+            seen_urls = set()
+            for link in all_links:
+                try:
+                    href = link.get_attribute('href')
+                    text = link.text.strip()
+                    
+                    # Skip if not a job link or already seen
+                    if not href or '/jobs/' not in href or 'amazon.jobs' not in href:
+                        continue
+                    if href in seen_urls:
+                        continue
+                    
+                    # Skip "Read more" links
+                    if 'Read more' in text or 'job Id' in text:
+                        continue
+                    
+                    # Must have some text that looks like a job title
+                    if not text or len(text) < 5:
+                        continue
+                    
+                    seen_urls.add(href)
+                    
+                    # Extract job ID from URL
+                    job_id = f"amazon_fallback_{len(jobs)}"
+                    if '/jobs/' in href:
+                        try:
+                            job_id_part = href.split('/jobs/')[1].split('/')[0].split('?')[0]
+                            if job_id_part and (job_id_part.isdigit() or len(job_id_part) > 5):
+                                job_id = job_id_part
+                        except:
+                            pass
+                    
+                    job_data = {
+                        'external_id': self.generate_external_id(job_id, self.company_name),
+                        'company_name': self.company_name,
+                        'title': text.split('\n')[0].strip(),
+                        'description': '',
+                        'location': '',
+                        'city': '',
+                        'state': '',
+                        'country': 'India',
+                        'employment_type': '',
+                        'department': '',
+                        'apply_url': href,
+                        'posted_date': '',
+                        'job_function': '',
+                        'experience_level': '',
+                        'salary_range': '',
+                        'remote_type': '',
+                        'status': 'active'
+                    }
+                    
+                    jobs.append(job_data)
+                    
+                except Exception as e:
+                    continue
+            
+            logger.info(f"Extracted {len(jobs)} jobs using final fallback method")
         
         return jobs
     
@@ -396,8 +772,54 @@ class AmazonScraper:
         if not location_str:
             return '', '', 'India'
         
-        parts = [p.strip() for p in location_str.split(',')]
-        city = parts[0] if len(parts) > 0 else ''
-        state = parts[1] if len(parts) > 1 else ''
+        # Clean up the location string
+        location_str = location_str.strip()
+        
+        # Remove common prefixes
+        location_str = location_str.replace('Location:', '').strip()
+        
+        # Split by comma or pipe
+        if '|' in location_str:
+            parts = [p.strip() for p in location_str.split('|')[0].split(',')]
+        else:
+            parts = [p.strip() for p in location_str.split(',')]
+        
+        city = ''
+        state = ''
+        
+        # Parse based on number of parts
+        if len(parts) >= 3:
+            # Format: "City, State, Country" or "City, State Code, Country"
+            city = parts[0]
+            state = parts[1]
+        elif len(parts) == 2:
+            # Format: "City, State" or "City, Country"
+            city = parts[0]
+            # Check if second part is likely a state or country
+            if parts[1] in ['IND', 'IN', 'India']:
+                state = ''
+            else:
+                state = parts[1]
+        elif len(parts) == 1:
+            # Just city name
+            city = parts[0]
+        
+        # Clean up state codes (e.g., "TS" -> "Telangana", "KA" -> "Karnataka")
+        state_mapping = {
+            'TS': 'Telangana',
+            'KA': 'Karnataka',
+            'MH': 'Maharashtra',
+            'DL': 'Delhi',
+            'TN': 'Tamil Nadu',
+            'HR': 'Haryana',
+            'UP': 'Uttar Pradesh',
+            'WB': 'West Bengal',
+            'GJ': 'Gujarat',
+            'RJ': 'Rajasthan',
+            'PB': 'Punjab',
+        }
+        
+        if state in state_mapping:
+            state = state_mapping[state]
         
         return city, state, 'India'

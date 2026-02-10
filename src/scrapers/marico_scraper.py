@@ -4,7 +4,6 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
 import hashlib
 import time
 import sys
@@ -33,31 +32,21 @@ class MaricoScraper:
         chrome_options.add_argument('--disable-dev-shm-usage')
         chrome_options.add_argument('--disable-gpu')
         chrome_options.add_argument('--window-size=1920,1080')
-        chrome_options.add_argument('--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36')
+        chrome_options.add_argument('--user-agent=AppleWebKit/537.36')
         chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+        chrome_options.add_experimental_option('useAutomationExtension', False)
+        chrome_options.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
 
-        driver_path = ChromeDriverManager().install()
-        driver_path_obj = Path(driver_path)
-        if driver_path_obj.name != 'chromedriver':
-            parent = driver_path_obj.parent
-            actual_driver = parent / 'chromedriver'
-            if actual_driver.exists():
-                driver_path = str(actual_driver)
-            else:
-                for file in parent.rglob('chromedriver'):
-                    if file.is_file() and not file.name.endswith('.zip'):
-                        driver_path = str(file)
-                        break
+        driver_path = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0.7559.133_fresh/chromedriver-mac-arm64/chromedriver'
 
         try:
-            current_permissions = os.stat(driver_path).st_mode
-            os.chmod(driver_path, current_permissions | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+            service = Service(driver_path)
+            driver = webdriver.Chrome(service=service, options=chrome_options)
         except Exception as e:
-            logger.warning(f"Could not set permissions on chromedriver: {str(e)}")
-
-        service = Service(driver_path)
-        driver = webdriver.Chrome(service=service, options=chrome_options)
-        driver.set_page_load_timeout(SCRAPE_TIMEOUT)
+            logger.warning(f"Service driver failed: {str(e)}, trying fallback")
+            driver = webdriver.Chrome(options=chrome_options)
+        driver.execute_cdp_cmd('Network.setUserAgentOverride', {"userAgent": 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'})
+        driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
         return driver
 
     def generate_external_id(self, job_id, company):
@@ -73,19 +62,19 @@ class MaricoScraper:
             logger.info(f"Starting {self.company_name} scraping from {self.url}")
 
             driver.get(self.url)
-            wait = WebDriverWait(driver, SCRAPE_TIMEOUT)
-            time.sleep(5)
 
-            try:
-                wait.until(EC.presence_of_element_located((
-                    By.CSS_SELECTOR, ".job-card, [class*='job-card'], [class*='job-listing'], a[href*='/careers/']"
-                )))
-                logger.info("Job listings loaded")
-            except Exception as e:
-                logger.warning(f"Timeout waiting for job listings: {str(e)}")
+            # Wait 15s for SenseHQ React platform to render
+            time.sleep(15)
 
-            # SenseHQ may use infinite scroll or load more
-            jobs = self._scrape_page(driver, wait)
+            # Scroll multiple times to trigger lazy loading
+            for _ in range(5):
+                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                time.sleep(2)
+            driver.execute_script("window.scrollTo(0, 0);")
+            time.sleep(2)
+
+            # SenseHQ uses React + Emotion CSS-in-JS; scrape with JS
+            jobs = self._scrape_page(driver)
             all_jobs.extend(jobs)
 
             logger.info(f"Total jobs scraped: {len(all_jobs)}")
@@ -99,30 +88,233 @@ class MaricoScraper:
                 driver.quit()
                 logger.info("Browser closed")
 
-    def _scrape_page(self, driver, wait):
+    def _scrape_page(self, driver):
         jobs = []
         scraped_ids = set()
 
         try:
-            # Scroll multiple times for lazy loading
-            for _ in range(3):
-                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                time.sleep(2)
+            # --- Strategy 1: JavaScript extraction for SenseHQ (Emotion CSS-in-JS) ---
+            # The DOM uses dynamic CSS class names like css-8qk9uv, css-beqgbl etc.
+            # Job titles are in spans inside specific container divs.
+            # "View Job" buttons use onClick, not href links.
+            logger.info("Trying JS-based SenseHQ extraction")
+            js_jobs = driver.execute_script("""
+                var results = [];
 
+                // Strategy A: Find "View Job" buttons and extract job info from their parent containers
+                var viewJobButtons = document.querySelectorAll('a, button');
+                var jobContainers = [];
+                for (var i = 0; i < viewJobButtons.length; i++) {
+                    var btn = viewJobButtons[i];
+                    var text = (btn.innerText || '').trim();
+                    if (text === 'View Job' || text === 'View job' || text === 'VIEW JOB') {
+                        // Walk up to find the job card container
+                        var container = btn.parentElement;
+                        // Go up a few levels to get the full job card
+                        for (var j = 0; j < 5; j++) {
+                            if (container && container.parentElement) {
+                                container = container.parentElement;
+                            }
+                        }
+                        if (container) {
+                            jobContainers.push({container: container, btn: btn});
+                        }
+                    }
+                }
+
+                if (jobContainers.length > 0) {
+                    for (var k = 0; k < jobContainers.length; k++) {
+                        var card = jobContainers[k].container;
+                        var allText = card.innerText || '';
+                        var lines = allText.split('\\n').map(function(l) { return l.trim(); }).filter(function(l) { return l.length > 0; });
+
+                        // The title is typically the first meaningful text line (not "View Job" or location/dept)
+                        var title = '';
+                        var location = '';
+                        var department = '';
+
+                        for (var m = 0; m < lines.length; m++) {
+                            var line = lines[m];
+                            if (line === 'View Job' || line === 'View job' || line === 'VIEW JOB') continue;
+                            if (line.length < 3) continue;
+
+                            if (!title) {
+                                // First substantial line is likely the title
+                                title = line;
+                            } else if (!location) {
+                                location = line;
+                            } else if (!department) {
+                                department = line;
+                            }
+                        }
+
+                        // Try to get URL from the View Job button's onclick or href
+                        var url = '';
+                        var btn = jobContainers[k].btn;
+                        url = btn.href || '';
+                        if (!url) {
+                            var onclick = btn.getAttribute('onclick') || '';
+                            var match = onclick.match(/window\\.location\\s*=\\s*['"]([^'"]+)['"]/);
+                            if (match) url = match[1];
+                        }
+                        // Also check if there's an ancestor <a> tag
+                        if (!url) {
+                            var parentA = btn.closest('a');
+                            if (parentA) url = parentA.href || '';
+                        }
+
+                        if (title && title.length > 2) {
+                            results.push({title: title, url: url, location: location, department: department});
+                        }
+                    }
+                }
+
+                // Strategy B: Find spans that look like job titles (longer text, not button text)
+                if (results.length === 0) {
+                    var allSpans = document.querySelectorAll('span');
+                    var candidateTitles = [];
+                    for (var s = 0; s < allSpans.length; s++) {
+                        var span = allSpans[s];
+                        var spanText = span.innerText.trim();
+                        // Job titles are typically 10-100 chars, contain words like Manager, Officer, Executive, Engineer, etc.
+                        if (spanText.length >= 10 && spanText.length <= 150) {
+                            // Check if it looks like a job title
+                            var hasJobWords = /manager|officer|executive|engineer|analyst|lead|head|director|specialist|coordinator|associate|senior|junior|intern|trainee|designer|developer|consultant|supervisor|assistant|professional/i.test(spanText);
+                            // Also accept titles with dash patterns common in Indian companies
+                            var hasDashPattern = /\\s-\\s/.test(spanText);
+                            if (hasJobWords || hasDashPattern) {
+                                // Check it's not a paragraph (no period, short)
+                                if (spanText.indexOf('.') === -1 || spanText.length < 80) {
+                                    candidateTitles.push({el: span, title: spanText});
+                                }
+                            }
+                        }
+                    }
+
+                    for (var t = 0; t < candidateTitles.length; t++) {
+                        var titleEl = candidateTitles[t].el;
+                        var jobTitle = candidateTitles[t].title;
+
+                        // Walk up to find container with more info
+                        var parent = titleEl.parentElement;
+                        for (var p = 0; p < 6; p++) {
+                            if (parent && parent.parentElement) parent = parent.parentElement;
+                        }
+
+                        var locText = '';
+                        var deptText = '';
+                        if (parent) {
+                            var pText = parent.innerText || '';
+                            var pLines = pText.split('\\n').map(function(l) { return l.trim(); }).filter(function(l) { return l.length > 0 && l !== jobTitle && l !== 'View Job' && l !== 'View job'; });
+                            if (pLines.length > 0) locText = pLines[0];
+                            if (pLines.length > 1) deptText = pLines[1];
+                        }
+
+                        results.push({title: jobTitle, url: '', location: locText, department: deptText});
+                    }
+                }
+
+                // Strategy C: Find all divs with data-emotion attribute (Emotion CSS-in-JS)
+                if (results.length === 0) {
+                    var emotionDivs = document.querySelectorAll('div[data-emotion]');
+                    var seen = new Set();
+                    for (var e = 0; e < emotionDivs.length; e++) {
+                        var div = emotionDivs[e];
+                        var divText = div.innerText.trim();
+                        // Look for divs that contain "View Job" text - these are job cards
+                        if (divText.indexOf('View Job') !== -1 || divText.indexOf('View job') !== -1) {
+                            var dLines = divText.split('\\n').map(function(l) { return l.trim(); }).filter(function(l) { return l.length > 3 && l !== 'View Job' && l !== 'View job'; });
+                            if (dLines.length > 0 && !seen.has(dLines[0])) {
+                                seen.add(dLines[0]);
+                                results.push({
+                                    title: dLines[0],
+                                    url: '',
+                                    location: dLines.length > 1 ? dLines[1] : '',
+                                    department: dLines.length > 2 ? dLines[2] : ''
+                                });
+                            }
+                        }
+                    }
+                }
+
+                // Deduplicate by title
+                var unique = [];
+                var seenTitles = new Set();
+                for (var u = 0; u < results.length; u++) {
+                    if (!seenTitles.has(results[u].title)) {
+                        seenTitles.add(results[u].title);
+                        unique.push(results[u]);
+                    }
+                }
+                return unique;
+            """)
+
+            if js_jobs and len(js_jobs) > 0:
+                logger.info(f"JS SenseHQ extraction found {len(js_jobs)} jobs")
+                for jdx, jdata in enumerate(js_jobs):
+                    title = jdata.get('title', '').strip()
+                    url = jdata.get('url', '').strip()
+                    location = jdata.get('location', '').strip()
+                    department = jdata.get('department', '').strip()
+
+                    if not title or len(title) < 3:
+                        continue
+
+                    if not url:
+                        url = self.url
+
+                    job_id = f"marico_{jdx}_{hashlib.md5(title.encode()).hexdigest()[:8]}"
+
+                    job_data = {
+                        'external_id': self.generate_external_id(job_id, self.company_name),
+                        'company_name': self.company_name,
+                        'title': title,
+                        'apply_url': url,
+                        'location': location,
+                        'department': department,
+                        'employment_type': '',
+                        'description': '',
+                        'posted_date': '',
+                        'city': '',
+                        'state': '',
+                        'country': 'India',
+                        'job_function': '',
+                        'experience_level': '',
+                        'salary_range': '',
+                        'remote_type': '',
+                        'status': 'active'
+                    }
+
+                    location_parts = self.parse_location(location)
+                    job_data.update(location_parts)
+
+                    if job_data['external_id'] not in scraped_ids:
+                        jobs.append(job_data)
+                        scraped_ids.add(job_data['external_id'])
+                        logger.info(f"Extracted job {len(jobs)}: {title}")
+
+                if jobs:
+                    return jobs
+
+            # --- Strategy 2: Selenium CSS selector-based extraction ---
+            logger.info("JS extraction returned 0, trying Selenium selectors")
             job_elements = []
             selectors = [
-                ".job-card",
+                "div.job-card",
+                "a[href*='/job-details']",
+                "div.job-listing",
                 "[class*='job-card']",
                 "[class*='job-listing']",
-                "[class*='career-card']",
-                "[class*='opening']",
                 "a[href*='/careers/']",
+                "a[href*='/job/']",
                 ".card",
                 "article",
             ]
 
+            short_wait = WebDriverWait(driver, 5)
             for selector in selectors:
                 try:
+                    short_wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, selector)))
                     elements = driver.find_elements(By.CSS_SELECTOR, selector)
                     if elements:
                         job_elements = elements
@@ -138,11 +330,59 @@ class MaricoScraper:
                 for link in all_links:
                     href = link.get_attribute('href') or ''
                     text = link.text.strip()
-                    if ('/careers/' in href or '/jobs/' in href) and text and len(text) > 5:
+                    if ('/careers/' in href or '/jobs/' in href or '/job/' in href or '/job-details' in href or 'sensehq' in href) and text and len(text) > 5:
                         job_links.append(link)
                 if job_links:
                     job_elements = job_links
                     logger.info(f"Fallback found {len(job_links)} job links")
+
+            # JavaScript fallback for link extraction
+            if not job_elements:
+                logger.info("Trying JavaScript fallback for link extraction")
+                js_links = driver.execute_script("""
+                    var results = [];
+                    document.querySelectorAll('a[href]').forEach(function(link) {
+                        var text = (link.innerText || '').trim();
+                        var href = link.href || '';
+                        if (text.length > 3 && text.length < 200 && href.length > 10) {
+                            if (href.includes('/job') || href.includes('/position') || href.includes('/career') || href.includes('/opening') || href.includes('/requisition')) {
+                                results.push({title: text.split('\\n')[0].trim(), url: href});
+                            }
+                        }
+                    });
+                    return results;
+                """)
+                if js_links:
+                    logger.info(f"JS fallback found {len(js_links)} job links")
+                    for jl in js_links:
+                        title = jl.get('title', '').strip()
+                        url = jl.get('url', '').strip()
+                        if title and url:
+                            job_id = hashlib.md5(url.encode()).hexdigest()[:12]
+                            job_data = {
+                                'external_id': self.generate_external_id(job_id, self.company_name),
+                                'company_name': self.company_name,
+                                'title': title,
+                                'apply_url': url,
+                                'location': '',
+                                'department': '',
+                                'employment_type': '',
+                                'description': '',
+                                'posted_date': '',
+                                'city': '',
+                                'state': '',
+                                'country': 'India',
+                                'job_function': '',
+                                'experience_level': '',
+                                'salary_range': '',
+                                'remote_type': '',
+                                'status': 'active'
+                            }
+                            if job_data['external_id'] not in scraped_ids:
+                                jobs.append(job_data)
+                                scraped_ids.add(job_data['external_id'])
+                                logger.info(f"JS Extracted: {title}")
+                    return jobs
 
             if not job_elements:
                 logger.warning("Could not find job listings")
@@ -150,7 +390,7 @@ class MaricoScraper:
 
             for idx, job_elem in enumerate(job_elements, 1):
                 try:
-                    job_data = self._extract_job_from_element(job_elem, driver, wait, idx)
+                    job_data = self._extract_job_from_element(job_elem, driver, idx)
                     if job_data and job_data['external_id'] not in scraped_ids:
                         jobs.append(job_data)
                         scraped_ids.add(job_data['external_id'])
@@ -164,7 +404,7 @@ class MaricoScraper:
 
         return jobs
 
-    def _extract_job_from_element(self, job_elem, driver, wait, idx):
+    def _extract_job_from_element(self, job_elem, driver, idx):
         try:
             title = ""
             job_url = ""
@@ -176,6 +416,7 @@ class MaricoScraper:
             else:
                 title_selectors = [
                     ".job-title a", ".job-title",
+                    "a[href*='/job-details']",
                     "h3 a", "h2 a", "h4 a",
                     "[class*='title'] a", "[class*='title']",
                     "a[href*='/careers/']",
@@ -221,28 +462,13 @@ class MaricoScraper:
             # Extract location
             location = ""
             try:
-                loc_selectors = [
-                    "[class*='location']",
-                    "[class*='Location']",
-                    ".job-location",
-                ]
-                for selector in loc_selectors:
-                    try:
-                        loc_elem = job_elem.find_element(By.CSS_SELECTOR, selector)
-                        location = loc_elem.text.strip()
-                        if location:
-                            break
-                    except:
-                        continue
-
-                if not location:
-                    all_text = job_elem.text
-                    lines = all_text.split('\n')
-                    for line in lines:
-                        line_s = line.strip()
-                        if any(city in line_s for city in ['Mumbai', 'Delhi', 'Bangalore', 'Chennai', 'Pune', 'Hyderabad', 'India']):
-                            location = line_s
-                            break
+                all_text = job_elem.text
+                lines = all_text.split('\n')
+                for line in lines:
+                    line_s = line.strip()
+                    if any(city in line_s for city in ['Mumbai', 'Delhi', 'Bangalore', 'Chennai', 'Pune', 'Hyderabad', 'India']):
+                        location = line_s
+                        break
             except:
                 pass
 

@@ -4,11 +4,12 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
 import hashlib
 import time
+import traceback
 import sys
 from pathlib import Path
+from datetime import datetime
 import os
 import stat
 
@@ -19,12 +20,17 @@ from src.config import SCRAPE_TIMEOUT, HEADLESS_MODE, FETCH_FULL_JOB_DETAILS, MA
 
 logger = setup_logger('microsoft_scraper')
 
+CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0.7559.133_fresh/chromedriver-mac-arm64/chromedriver'
+
 
 class MicrosoftScraper:
     def __init__(self):
         self.company_name = 'Microsoft'
-        # Eightfold AI platform
         self.url = 'https://jobs.careers.microsoft.com/global/en/search?l=en_us&pg=1&pgSz=20&o=Relevance&flt=true&ref=cms&lc=India'
+        # Microsoft careers moved to Eightfold AI PCSX platform (Nov 2025)
+        self.search_url = 'https://apply.careers.microsoft.com/careers?hl=en&location=India'
+        self.pcsx_api_path = '/api/pcsx/search?domain=microsoft.com&query=&location=India&start={start}&hl=en'
+        self.base_job_url = 'https://apply.careers.microsoft.com/careers/job'
 
     def setup_driver(self):
         chrome_options = Options()
@@ -34,21 +40,27 @@ class MicrosoftScraper:
         chrome_options.add_argument('--disable-dev-shm-usage')
         chrome_options.add_argument('--disable-gpu')
         chrome_options.add_argument('--window-size=1920,1080')
-        chrome_options.add_argument('--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36')
+        chrome_options.add_argument('--user-agent=AppleWebKit/537.36')
         chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+        chrome_options.add_experimental_option('useAutomationExtension', False)
+        chrome_options.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
 
-        driver_path = ChromeDriverManager().install()
-        driver_path_obj = Path(driver_path)
-        if driver_path_obj.name != 'chromedriver':
-            parent = driver_path_obj.parent
-            actual_driver = parent / 'chromedriver'
-            if actual_driver.exists():
-                driver_path = str(actual_driver)
-            else:
-                for file in parent.rglob('chromedriver'):
-                    if file.is_file() and not file.name.endswith('.zip'):
-                        driver_path = str(file)
-                        break
+        driver_path = CHROMEDRIVER_PATH
+        if not os.path.exists(driver_path):
+            logger.warning(f"Fresh chromedriver not found at {driver_path}, trying system chromedriver")
+            from webdriver_manager.chrome import ChromeDriverManager
+            driver_path = ChromeDriverManager().install()
+            driver_path_obj = Path(driver_path)
+            if driver_path_obj.name != 'chromedriver':
+                parent = driver_path_obj.parent
+                actual_driver = parent / 'chromedriver'
+                if actual_driver.exists():
+                    driver_path = str(actual_driver)
+                else:
+                    for file in parent.rglob('chromedriver'):
+                        if file.is_file() and not file.name.endswith('.zip'):
+                            driver_path = str(file)
+                            break
 
         try:
             current_permissions = os.stat(driver_path).st_mode
@@ -56,9 +68,14 @@ class MicrosoftScraper:
         except Exception as e:
             logger.warning(f"Could not set permissions on chromedriver: {str(e)}")
 
-        service = Service(driver_path)
-        driver = webdriver.Chrome(service=service, options=chrome_options)
-        driver.set_page_load_timeout(SCRAPE_TIMEOUT)
+        try:
+            service = Service(driver_path)
+            driver = webdriver.Chrome(service=service, options=chrome_options)
+        except Exception as e:
+            logger.warning(f"Service driver failed: {str(e)}, trying fallback")
+            driver = webdriver.Chrome(options=chrome_options)
+        driver.execute_cdp_cmd('Network.setUserAgentOverride', {"userAgent": 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'})
+        driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
         return driver
 
     def generate_external_id(self, job_id, company):
@@ -66,288 +83,319 @@ class MicrosoftScraper:
         return hashlib.md5(unique_string.encode()).hexdigest()
 
     def scrape(self, max_pages=MAX_PAGES_TO_SCRAPE):
+        """Scrape jobs - try Selenium PCSX API first, then DOM scraping fallback."""
+        # Primary method: Selenium + in-browser PCSX API calls
+        try:
+            api_jobs = self._scrape_via_pcsx_api(max_pages)
+            if api_jobs:
+                logger.info(f"PCSX API method returned {len(api_jobs)} jobs")
+                return api_jobs
+            else:
+                logger.warning("PCSX API returned 0 jobs, falling back to DOM scraping")
+        except Exception as e:
+            logger.warning(f"PCSX API failed: {str(e)}, falling back to DOM scraping")
+
+        # Fallback: Selenium DOM scraping with PCSX selectors
+        return self._scrape_via_selenium(max_pages)
+
+    def _scrape_via_pcsx_api(self, max_pages=MAX_PAGES_TO_SCRAPE):
+        """Use Selenium to load the Eightfold PCSX page, then call the PCSX search API from browser context."""
         driver = None
         all_jobs = []
+        scraped_ids = set()
+        page_size = 10  # PCSX API returns 10 per page
 
         try:
             driver = self.setup_driver()
-            logger.info(f"Starting {self.company_name} scraping from {self.url}")
 
-            driver.get(self.url)
-            wait = WebDriverWait(driver, SCRAPE_TIMEOUT)
-            time.sleep(5)
+            # Visit the Eightfold-powered careers search page to establish session
+            logger.info(f"Loading Microsoft PCSX careers page: {self.search_url}")
+            driver.get(self.search_url)
+            time.sleep(15)  # SPA needs time to render and establish auth
 
+            logger.info(f"Page loaded: {driver.current_url}, title: {driver.title}")
+
+            page = 0
+            while page < max_pages:
+                start = page * page_size
+                api_path = self.pcsx_api_path.format(start=start)
+                logger.info(f"PCSX API: fetching start={start} (page {page + 1}/{max_pages})")
+
+                # Call the PCSX search API from within the browser context (has session cookies)
+                js_code = f"""
+                    try {{
+                        var xhr = new XMLHttpRequest();
+                        xhr.open('GET', '{api_path}', false);
+                        xhr.setRequestHeader('Accept', 'application/json');
+                        xhr.send();
+                        if (xhr.status === 200) {{
+                            return JSON.parse(xhr.responseText);
+                        }}
+                        return {{'_error': true, 'status': xhr.status, 'text': xhr.responseText.substring(0, 300)}};
+                    }} catch(e) {{
+                        return {{'_error': true, 'message': e.message}};
+                    }}
+                """
+
+                try:
+                    data = driver.execute_script(js_code)
+                except Exception as e:
+                    logger.error(f"JS execution failed: {str(e)}")
+                    break
+
+                if not data or not isinstance(data, dict):
+                    logger.warning("PCSX API returned empty or invalid response")
+                    break
+
+                if data.get('_error'):
+                    logger.warning(f"PCSX API error: status={data.get('status')}, {data.get('text', data.get('message', ''))}")
+                    break
+
+                # Parse the PCSX response: {status, error, data: {positions: [...]}}
+                positions = data.get('data', {}).get('positions', [])
+
+                if not positions:
+                    logger.info(f"No more positions at start={start}")
+                    break
+
+                logger.info(f"PCSX API returned {len(positions)} positions at start={start}")
+
+                new_count = 0
+                for pos in positions:
+                    try:
+                        job_data = self._parse_pcsx_position(pos)
+                        if job_data and job_data['external_id'] not in scraped_ids:
+                            all_jobs.append(job_data)
+                            scraped_ids.add(job_data['external_id'])
+                            new_count += 1
+                    except Exception as e:
+                        logger.error(f"Error parsing position: {str(e)}")
+                        continue
+
+                logger.info(f"Page {page + 1}: {new_count} new jobs (total: {len(all_jobs)})")
+
+                # If we got fewer than page_size, no more results
+                if len(positions) < page_size:
+                    logger.info("Received fewer positions than page size, done.")
+                    break
+
+                page += 1
+
+        except Exception as e:
+            logger.error(f"PCSX API scraping failed: {str(e)}")
+            logger.error(traceback.format_exc())
+        finally:
+            if driver:
+                driver.quit()
+
+        logger.info(f"PCSX API total: {len(all_jobs)}")
+        return all_jobs
+
+    def _parse_pcsx_position(self, pos):
+        """Parse a single position from the PCSX search API response."""
+        name = pos.get('name', '').strip()
+        if not name:
+            return None
+
+        job_id = str(pos.get('id', ''))
+        if not job_id:
+            job_id = f"ms_pcsx_{hashlib.md5(name.encode()).hexdigest()[:8]}"
+
+        # Build apply URL
+        position_url = pos.get('positionUrl', '')
+        if position_url:
+            apply_url = f"https://apply.careers.microsoft.com{position_url}?hl=en"
+        else:
+            apply_url = f"{self.base_job_url}/{job_id}?hl=en"
+
+        # Location
+        locations = pos.get('locations', [])
+        if isinstance(locations, list) and locations:
+            location = locations[0] if isinstance(locations[0], str) else str(locations[0])
+        elif isinstance(locations, str):
+            location = locations
+        else:
+            location = 'India'
+
+        # Department
+        department = pos.get('department', '')
+
+        # Work location option (onsite, remote, hybrid)
+        work_location = pos.get('workLocationOption', '')
+
+        # Posted date from timestamp
+        posted_ts = pos.get('postedTs', 0)
+        posted_date = ''
+        if posted_ts:
             try:
-                wait.until(EC.presence_of_element_located((
-                    By.CSS_SELECTOR, "[class*='job-card'], [class*='ms-List'], a[href*='/job/'], [role='listitem']"
-                )))
-                logger.info("Job listings loaded")
-            except Exception as e:
-                logger.warning(f"Timeout waiting for job listings: {str(e)}")
+                posted_date = datetime.fromtimestamp(posted_ts).strftime('%Y-%m-%d')
+            except Exception:
+                pass
 
-            current_page = 1
-            while current_page <= max_pages:
-                logger.info(f"Scraping page {current_page}")
-                jobs = self._scrape_page(driver, wait)
-                all_jobs.extend(jobs)
-                logger.info(f"Page {current_page}: found {len(jobs)} jobs")
+        loc = self.parse_location(location)
 
-                if current_page < max_pages:
-                    if not self._go_to_next_page(driver, current_page):
-                        break
-                    time.sleep(3)
-                current_page += 1
+        return {
+            'external_id': self.generate_external_id(job_id, self.company_name),
+            'company_name': self.company_name,
+            'title': name,
+            'description': '',
+            'location': location,
+            'city': loc.get('city', ''),
+            'state': loc.get('state', ''),
+            'country': loc.get('country', 'India'),
+            'employment_type': '',
+            'department': department,
+            'apply_url': apply_url,
+            'posted_date': posted_date,
+            'job_function': '',
+            'experience_level': '',
+            'salary_range': '',
+            'remote_type': work_location,
+            'status': 'active'
+        }
 
-            logger.info(f"Total jobs scraped: {len(all_jobs)}")
+    def _scrape_via_selenium(self, max_pages=MAX_PAGES_TO_SCRAPE):
+        """Fallback: scrape Microsoft jobs using Selenium DOM scraping with PCSX selectors."""
+        driver = None
+        all_jobs = []
+        scraped_ids = set()
+        page_size = 20  # DOM shows ~20 cards per page
+
+        try:
+            driver = self.setup_driver()
+            logger.info(f"Starting {self.company_name} Selenium DOM scraping")
+
+            for page in range(max_pages):
+                start = page * page_size
+                page_url = f"{self.search_url}&start={start}"
+                logger.info(f"Loading page {page + 1}: {page_url}")
+
+                driver.get(page_url)
+
+                # SPA rendering wait
+                time.sleep(15)
+
+                # Scroll to trigger lazy loading
+                for _ in range(3):
+                    driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                    time.sleep(2)
+                driver.execute_script("window.scrollTo(0, 0);")
+                time.sleep(2)
+
+                logger.info(f"Page loaded: {driver.current_url}")
+
+                # Extract job cards using JS with PCSX-specific selectors
+                jobs = driver.execute_script("""
+                    var results = [];
+                    var cards = document.querySelectorAll('a[class*="card-"]');
+                    for (var i = 0; i < cards.length; i++) {
+                        var card = cards[i];
+                        var href = card.href || '';
+                        if (!href.includes('/careers/job/')) continue;
+
+                        var title_el = card.querySelector('div[class*="title-"]');
+                        var location_el = card.querySelector('div[class*="fieldValue-"]');
+                        var date_el = card.querySelector('div[class*="subData-"]');
+
+                        var title = title_el ? title_el.innerText.trim() : '';
+                        if (!title) {
+                            // Fallback: first line of card text
+                            var text = card.innerText || '';
+                            title = text.split('\\n')[0].trim();
+                        }
+                        if (!title || title.length < 3) continue;
+
+                        results.push({
+                            title: title,
+                            location: location_el ? location_el.innerText.trim() : '',
+                            posted_date: date_el ? date_el.innerText.trim() : '',
+                            url: href,
+                            job_id: href.split('/job/')[1] ? href.split('/job/')[1].split('?')[0] : ''
+                        });
+                    }
+                    return results;
+                """)
+
+                if not jobs:
+                    logger.warning(f"No job cards found on page {page + 1}")
+                    # Try alternative selectors
+                    jobs = driver.execute_script("""
+                        var results = [];
+                        var links = document.querySelectorAll('a[href*="/careers/job/"]');
+                        for (var i = 0; i < links.length; i++) {
+                            var link = links[i];
+                            var text = (link.innerText || '').trim();
+                            var href = link.href || '';
+                            if (text.length < 3 || !href) continue;
+
+                            var lines = text.split('\\n');
+                            results.push({
+                                title: lines[0].trim(),
+                                location: lines.length > 1 ? lines[1].trim() : '',
+                                posted_date: lines.length > 2 ? lines[2].trim() : '',
+                                url: href,
+                                job_id: href.split('/job/')[1] ? href.split('/job/')[1].split('?')[0] : ''
+                            });
+                        }
+                        return results;
+                    """)
+
+                if not jobs:
+                    logger.warning(f"No jobs found on page {page + 1} with any selector, stopping")
+                    break
+
+                new_count = 0
+                for job in jobs:
+                    job_id = job.get('job_id', '')
+                    if not job_id:
+                        job_id = f"ms_dom_{hashlib.md5(job['url'].encode()).hexdigest()[:12]}"
+
+                    ext_id = self.generate_external_id(job_id, self.company_name)
+                    if ext_id in scraped_ids:
+                        continue
+                    scraped_ids.add(ext_id)
+
+                    location = job.get('location', '') or 'India'
+                    loc = self.parse_location(location)
+
+                    all_jobs.append({
+                        'external_id': ext_id,
+                        'company_name': self.company_name,
+                        'title': job['title'],
+                        'description': '',
+                        'location': location,
+                        'city': loc.get('city', ''),
+                        'state': loc.get('state', ''),
+                        'country': loc.get('country', 'India'),
+                        'employment_type': '',
+                        'department': '',
+                        'apply_url': job['url'],
+                        'posted_date': job.get('posted_date', ''),
+                        'job_function': '',
+                        'experience_level': '',
+                        'salary_range': '',
+                        'remote_type': '',
+                        'status': 'active'
+                    })
+                    new_count += 1
+
+                logger.info(f"Page {page + 1}: {new_count} new jobs (total: {len(all_jobs)})")
+
+                if new_count == 0:
+                    logger.info("No new jobs found, stopping pagination")
+                    break
+
+            logger.info(f"Total jobs scraped via Selenium DOM: {len(all_jobs)}")
             return all_jobs
 
         except Exception as e:
-            logger.error(f"Error during scraping: {str(e)}")
+            logger.error(f"Error during Selenium DOM scraping: {str(e)}")
+            logger.error(traceback.format_exc())
             return all_jobs
         finally:
             if driver:
                 driver.quit()
                 logger.info("Browser closed")
-
-    def _go_to_next_page(self, driver, current_page):
-        try:
-            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(2)
-
-            next_selectors = [
-                (By.CSS_SELECTOR, 'button[aria-label="Next page"]'),
-                (By.CSS_SELECTOR, 'button[aria-label="next"]'),
-                (By.XPATH, '//button[contains(@aria-label, "Next")]'),
-                (By.CSS_SELECTOR, '.pagination-next button'),
-                (By.XPATH, '//button[contains(text(), "Next")]'),
-                (By.CSS_SELECTOR, f'button[aria-label="Page {current_page + 1}"]'),
-            ]
-
-            for selector_type, selector_value in next_selectors:
-                try:
-                    next_button = driver.find_element(selector_type, selector_value)
-                    driver.execute_script("arguments[0].scrollIntoView();", next_button)
-                    time.sleep(1)
-                    driver.execute_script("arguments[0].click();", next_button)
-                    logger.info(f"Navigated to page {current_page + 1}")
-                    return True
-                except:
-                    continue
-
-            logger.warning("Could not find next page button")
-            return False
-        except Exception as e:
-            logger.error(f"Error navigating to next page: {str(e)}")
-            return False
-
-    def _scrape_page(self, driver, wait):
-        jobs = []
-        scraped_ids = set()
-
-        try:
-            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(2)
-
-            job_elements = []
-            selectors = [
-                "[class*='ms-List-cell']",
-                "[role='listitem']",
-                "[class*='job-card']",
-                "[class*='cardItem']",
-                "div[data-automationid='ListCell']",
-                "a[href*='/job/']",
-            ]
-
-            for selector in selectors:
-                try:
-                    elements = driver.find_elements(By.CSS_SELECTOR, selector)
-                    if elements:
-                        job_elements = elements
-                        logger.info(f"Found {len(job_elements)} listings using selector: {selector}")
-                        break
-                except:
-                    continue
-
-            # Fallback: find all job links
-            if not job_elements:
-                all_links = driver.find_elements(By.CSS_SELECTOR, "a[href*='/job/']")
-                if all_links:
-                    job_elements = all_links
-                    logger.info(f"Fallback found {len(all_links)} job links")
-
-            if not job_elements:
-                logger.warning("Could not find job listings")
-                return jobs
-
-            for idx, job_elem in enumerate(job_elements, 1):
-                try:
-                    job_data = self._extract_job_from_element(job_elem, driver, wait, idx)
-                    if job_data and job_data['external_id'] not in scraped_ids:
-                        jobs.append(job_data)
-                        scraped_ids.add(job_data['external_id'])
-                        logger.info(f"Extracted job {len(jobs)}: {job_data.get('title', 'N/A')}")
-                except Exception as e:
-                    logger.error(f"Error extracting job {idx}: {str(e)}")
-                    continue
-
-        except Exception as e:
-            logger.error(f"Error scraping page: {str(e)}")
-
-        return jobs
-
-    def _extract_job_from_element(self, job_elem, driver, wait, idx):
-        try:
-            title = ""
-            job_url = ""
-
-            tag_name = job_elem.tag_name
-            if tag_name == 'a':
-                title = job_elem.text.strip().split('\n')[0]
-                job_url = job_elem.get_attribute('href')
-            else:
-                title_selectors = [
-                    "h2 a", "h3 a", "h4 a",
-                    "a[href*='/job/']",
-                    "[class*='title'] a",
-                    "[class*='jobTitle']",
-                    "[aria-label]",
-                    "a"
-                ]
-                for selector in title_selectors:
-                    try:
-                        title_elem = job_elem.find_element(By.CSS_SELECTOR, selector)
-                        title = title_elem.text.strip()
-                        job_url = title_elem.get_attribute('href') or ''
-                        if not title:
-                            title = title_elem.get_attribute('aria-label') or ''
-                        if title:
-                            break
-                    except:
-                        continue
-
-            if not title:
-                text = job_elem.text.strip()
-                if text:
-                    title = text.split('\n')[0].strip()
-
-            if not title or not job_url:
-                return None
-
-            # Extract job ID from URL
-            job_id = ""
-            if '/job/' in job_url:
-                job_id = job_url.split('/job/')[-1].split('/')[0].split('?')[0]
-            if not job_id:
-                job_id = f"ms_{idx}_{hashlib.md5(job_url.encode()).hexdigest()[:8]}"
-
-            # Extract fields from element text
-            location = ""
-            department = ""
-            posted_date = ""
-            employment_type = ""
-
-            all_text = job_elem.text.strip()
-            lines = all_text.split('\n')
-            for line in lines[1:]:
-                line_s = line.strip()
-                if any(city in line_s for city in ['India', 'Bangalore', 'Hyderabad', 'Mumbai', 'Delhi', 'Noida', 'Pune', 'Chennai', 'Gurugram']):
-                    location = line_s
-                elif any(kw in line_s.lower() for kw in ['full-time', 'part-time', 'contract', 'intern']):
-                    employment_type = line_s
-                elif any(kw in line_s.lower() for kw in ['posted', 'days ago', 'hours ago']):
-                    posted_date = line_s
-                elif line_s and not department and len(line_s) < 80:
-                    department = line_s
-
-            job_data = {
-                'external_id': self.generate_external_id(job_id, self.company_name),
-                'company_name': self.company_name,
-                'title': title,
-                'apply_url': job_url,
-                'location': location,
-                'department': department,
-                'employment_type': employment_type,
-                'description': '',
-                'posted_date': posted_date,
-                'city': '',
-                'state': '',
-                'country': 'India',
-                'job_function': '',
-                'experience_level': '',
-                'salary_range': '',
-                'remote_type': '',
-                'status': 'active'
-            }
-
-            if FETCH_FULL_JOB_DETAILS and job_url:
-                try:
-                    details = self._fetch_job_details(driver, job_url)
-                    if details:
-                        job_data.update(details)
-                except Exception as e:
-                    logger.warning(f"Could not fetch details for {title}: {str(e)}")
-
-            location_parts = self.parse_location(job_data.get('location', ''))
-            job_data.update(location_parts)
-
-            return job_data
-
-        except Exception as e:
-            logger.error(f"Error extracting job data: {str(e)}")
-            return None
-
-    def _fetch_job_details(self, driver, job_url):
-        details = {}
-        try:
-            original_window = driver.current_window_handle
-            driver.execute_script("window.open('');")
-            driver.switch_to.window(driver.window_handles[-1])
-
-            driver.get(job_url)
-            time.sleep(3)
-
-            desc_selectors = [
-                "[class*='job-description']",
-                "[class*='jobDescription']",
-                "[class*='description']",
-                "[role='main']",
-                "main"
-            ]
-            for selector in desc_selectors:
-                try:
-                    desc_elem = driver.find_element(By.CSS_SELECTOR, selector)
-                    text = desc_elem.text.strip()
-                    if text and len(text) > 50:
-                        details['description'] = text[:3000]
-                        break
-                except:
-                    continue
-
-            # Experience level
-            exp_selectors = ["[class*='experience']", "[class*='seniority']", "[class*='level']"]
-            for selector in exp_selectors:
-                try:
-                    exp_elem = driver.find_element(By.CSS_SELECTOR, selector)
-                    text = exp_elem.text.strip()
-                    if text and len(text) < 100:
-                        details['experience_level'] = text
-                        break
-                except:
-                    continue
-
-            driver.close()
-            driver.switch_to.window(original_window)
-
-        except Exception as e:
-            logger.error(f"Error fetching job details from {job_url}: {str(e)}")
-            try:
-                if len(driver.window_handles) > 1:
-                    driver.close()
-                    driver.switch_to.window(driver.window_handles[0])
-            except:
-                pass
-
-        return details
 
     def parse_location(self, location_str):
         result = {'city': '', 'state': '', 'country': 'India'}
@@ -370,10 +418,3 @@ class MicrosoftScraper:
 
         return result
 
-
-if __name__ == "__main__":
-    scraper = MicrosoftScraper()
-    jobs = scraper.scrape()
-    print(f"\nTotal jobs found: {len(jobs)}")
-    for job in jobs:
-        print(f"- {job['title']} | {job['location']}")

@@ -4,13 +4,11 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
 import hashlib
 import time
+import os
 import sys
 from pathlib import Path
-import os
-import stat
 
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 
@@ -18,6 +16,8 @@ from src.utils.logger import setup_logger
 from src.config import SCRAPE_TIMEOUT, HEADLESS_MODE, FETCH_FULL_JOB_DETAILS, MAX_PAGES_TO_SCRAPE
 
 logger = setup_logger('swiggy_scraper')
+
+CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0.7559.133_fresh/chromedriver-mac-arm64/chromedriver'
 
 
 class SwiggyScraper:
@@ -33,31 +33,23 @@ class SwiggyScraper:
         chrome_options.add_argument('--disable-dev-shm-usage')
         chrome_options.add_argument('--disable-gpu')
         chrome_options.add_argument('--window-size=1920,1080')
-        chrome_options.add_argument('--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36')
+        chrome_options.add_argument('--user-agent=AppleWebKit/537.36')
         chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-
-        driver_path = ChromeDriverManager().install()
-        driver_path_obj = Path(driver_path)
-        if driver_path_obj.name != 'chromedriver':
-            parent = driver_path_obj.parent
-            actual_driver = parent / 'chromedriver'
-            if actual_driver.exists():
-                driver_path = str(actual_driver)
-            else:
-                for file in parent.rglob('chromedriver'):
-                    if file.is_file() and not file.name.endswith('.zip'):
-                        driver_path = str(file)
-                        break
+        chrome_options.add_experimental_option('useAutomationExtension', False)
+        chrome_options.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
 
         try:
-            current_permissions = os.stat(driver_path).st_mode
-            os.chmod(driver_path, current_permissions | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+            if os.path.exists(CHROMEDRIVER_PATH):
+                service = Service(CHROMEDRIVER_PATH)
+                driver = webdriver.Chrome(service=service, options=chrome_options)
+            else:
+                driver = webdriver.Chrome(options=chrome_options)
         except Exception as e:
-            logger.warning(f"Could not set permissions on chromedriver: {str(e)}")
+            logger.warning(f"Primary driver setup failed: {str(e)}, trying fallback")
+            driver = webdriver.Chrome(options=chrome_options)
 
-        service = Service(driver_path)
-        driver = webdriver.Chrome(service=service, options=chrome_options)
-        driver.set_page_load_timeout(SCRAPE_TIMEOUT)
+        driver.execute_cdp_cmd('Network.setUserAgentOverride', {"userAgent": 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'})
+        driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
         return driver
 
     def generate_external_id(self, job_id, company):
@@ -73,24 +65,69 @@ class SwiggyScraper:
             logger.info(f"Starting {self.company_name} scraping from {self.url}")
 
             driver.get(self.url)
-            wait = WebDriverWait(driver, SCRAPE_TIMEOUT)
-            time.sleep(5)
+            # Wait for the main page to load
+            time.sleep(15)
 
+            # CRITICAL: Switch to the iframe containing the actual job listings
+            # The jobs are inside an iframe from mynexthire.com
+            iframe_switched = False
+            try:
+                # Try to find and switch to iframe
+                iframes = driver.find_elements(By.TAG_NAME, 'iframe')
+                logger.info(f"Found {len(iframes)} iframes on page")
+
+                for i, iframe in enumerate(iframes):
+                    src = iframe.get_attribute('src') or ''
+                    logger.info(f"Iframe {i}: src={src[:100]}")
+                    if 'mynexthire' in src or 'careers' in src or 'jobs' in src:
+                        driver.switch_to.frame(iframe)
+                        iframe_switched = True
+                        logger.info(f"Switched to iframe {i} with src: {src[:100]}")
+                        break
+
+                # If no matching src found, try switching to the first iframe
+                if not iframe_switched and iframes:
+                    driver.switch_to.frame(iframes[0])
+                    iframe_switched = True
+                    logger.info("Switched to first iframe (no matching src found)")
+
+            except Exception as e:
+                logger.warning(f"Error switching to iframe: {str(e)}")
+
+            # Wait for iframe content to load
+            if iframe_switched:
+                time.sleep(8)
+                logger.info("Waiting for iframe content to render...")
+
+            wait = WebDriverWait(driver, 10)
+
+            # Try to wait for job-related elements inside the iframe
             try:
                 wait.until(EC.presence_of_element_located((
-                    By.CSS_SELECTOR, "[class*='job'], [class*='career'], [class*='opening'], a[href*='careers']"
+                    By.CSS_SELECTOR, "div.search-banner, div.card, a[href*='job'], div[class*='job'], table tr, li[class*='job']"
                 )))
-                logger.info("Job listings loaded")
-            except Exception as e:
-                logger.warning(f"Timeout waiting for job listings: {str(e)}")
+                logger.info("Job elements detected inside iframe")
+            except:
+                logger.warning("Timeout waiting for job elements in iframe context")
 
-            # Scroll to load all content
+            # Scroll inside iframe context to trigger lazy loading
             for _ in range(3):
                 driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
                 time.sleep(2)
+            driver.execute_script("window.scrollTo(0, 0);")
+            time.sleep(2)
 
+            # Scrape jobs from within the iframe context
             jobs = self._scrape_page(driver, wait)
             all_jobs.extend(jobs)
+
+            # If no jobs found in iframe, switch back and try main page
+            if not all_jobs and iframe_switched:
+                logger.info("No jobs in iframe, switching back to main page")
+                driver.switch_to.default_content()
+                time.sleep(2)
+                jobs = self._scrape_page(driver, wait)
+                all_jobs.extend(jobs)
 
             logger.info(f"Total jobs scraped: {len(all_jobs)}")
             return all_jobs
@@ -100,6 +137,10 @@ class SwiggyScraper:
             return all_jobs
         finally:
             if driver:
+                try:
+                    driver.switch_to.default_content()
+                except:
+                    pass
                 driver.quit()
                 logger.info("Browser closed")
 
@@ -108,18 +149,94 @@ class SwiggyScraper:
         scraped_ids = set()
 
         try:
+            # PRIMARY: JavaScript-based table extraction for mynexthire iframe
+            # The iframe contains a table with columns: [Job ID, Job Title, Location, Unit/Department]
+            # First row is header (empty + "" + "Location" + "Unit"), skip it
+            logger.info("Trying JS table extraction from mynexthire iframe")
+            js_table_jobs = driver.execute_script("""
+                var results = [];
+                var tables = document.querySelectorAll('table.table');
+                for (var t = 0; t < tables.length; t++) {
+                    var rows = tables[t].querySelectorAll('tr');
+                    for (var r = 0; r < rows.length; r++) {
+                        var cells = rows[r].querySelectorAll('td');
+                        if (cells.length >= 2) {
+                            var jobId = (cells[0].innerText || '').trim();
+                            var title = (cells[1].innerText || '').trim();
+                            var location = cells.length >= 3 ? (cells[2].innerText || '').trim() : '';
+                            var department = cells.length >= 4 ? (cells[3].innerText || '').trim() : '';
+                            // Skip header row (where title is empty or is "Location"/"Unit")
+                            if (title && title.length > 2 && title !== 'Location' && title !== 'Unit' &&
+                                jobId !== '' && /^\\d+$/.test(jobId)) {
+                                results.push({
+                                    jobId: jobId,
+                                    title: title,
+                                    location: location,
+                                    department: department
+                                });
+                            }
+                        }
+                    }
+                }
+                return results;
+            """)
+
+            if js_table_jobs and len(js_table_jobs) > 0:
+                logger.info(f"JS table extraction found {len(js_table_jobs)} jobs")
+                for idx, jdata in enumerate(js_table_jobs, 1):
+                    title = jdata.get('title', '').strip()
+                    job_id_str = jdata.get('jobId', '').strip()
+                    location = jdata.get('location', '').strip()
+                    department = jdata.get('department', '').strip()
+
+                    if not title or title in scraped_ids:
+                        continue
+                    scraped_ids.add(title)
+
+                    job_id = f"swiggy_{job_id_str}" if job_id_str else f"swiggy_{idx}_{hashlib.md5(title.encode()).hexdigest()[:8]}"
+
+                    job_data = {
+                        'external_id': self.generate_external_id(job_id, self.company_name),
+                        'company_name': self.company_name,
+                        'title': title,
+                        'description': '',
+                        'location': location,
+                        'city': '',
+                        'state': '',
+                        'country': 'India',
+                        'employment_type': '',
+                        'department': department,
+                        'apply_url': self.url,
+                        'posted_date': '',
+                        'job_function': '',
+                        'experience_level': '',
+                        'salary_range': '',
+                        'remote_type': 'Remote' if 'Remote' in location else '',
+                        'status': 'active'
+                    }
+                    location_parts = self.parse_location(location)
+                    job_data.update(location_parts)
+                    jobs.append(job_data)
+                    logger.info(f"Extracted job {len(jobs)}: {title} | {location} | {department}")
+
+                if jobs:
+                    return jobs
+
+            # SECONDARY: Selenium-based element extraction
             job_elements = []
-            selectors = [
+            iframe_selectors = [
+                "div[class*='job-card']",
+                "div[class*='career'] a[href*='job']",
+                "li[class*='job']",
+                "div[class*='position']",
+                "a[href*='job_application']",
+                "a[href*='/job/']",
+                "a[href*='/jobs/']",
                 "[class*='job-card']",
-                "[class*='jobCard']",
-                "[class*='opening']",
-                "[class*='career-card']",
-                "[class*='position']",
-                "a[href*='/careers/']",
                 ".card",
             ]
 
-            for selector in selectors:
+            for selector in iframe_selectors:
                 try:
                     elements = driver.find_elements(By.CSS_SELECTOR, selector)
                     if elements:
@@ -129,21 +246,12 @@ class SwiggyScraper:
                 except:
                     continue
 
-            # Fallback: find all links that look like job postings
-            if not job_elements:
-                all_links = driver.find_elements(By.TAG_NAME, 'a')
-                job_links = []
-                for link in all_links:
-                    href = link.get_attribute('href') or ''
-                    text = link.text.strip()
-                    if text and len(text) > 5 and ('/careers/' in href or '/jobs/' in href or '/apply' in href):
-                        job_links.append(link)
-                if job_links:
-                    job_elements = job_links
-                    logger.info(f"Fallback found {len(job_links)} job links")
-
-            if not job_elements:
-                logger.warning("Could not find job listings")
+            if not job_elements and not jobs:
+                try:
+                    body_text = driver.execute_script("return document.body ? document.body.innerText.substring(0, 500) : 'no body'")
+                    logger.warning(f"No job listings found. Body preview: {body_text[:200]}")
+                except:
+                    logger.warning("Could not find job listings in any context")
                 return jobs
 
             for idx, job_elem in enumerate(job_elements, 1):
@@ -171,12 +279,24 @@ class SwiggyScraper:
             if tag_name == 'a':
                 title = job_elem.text.strip().split('\n')[0]
                 job_url = job_elem.get_attribute('href')
+            elif tag_name == 'tr':
+                # Table row - look for first cell or link
+                try:
+                    link = job_elem.find_element(By.CSS_SELECTOR, 'a[href]')
+                    title = link.text.strip().split('\n')[0]
+                    job_url = link.get_attribute('href')
+                except:
+                    cells = job_elem.find_elements(By.TAG_NAME, 'td')
+                    if cells:
+                        title = cells[0].text.strip().split('\n')[0]
             else:
                 title_selectors = [
                     "h3 a", "h2 a", "h4 a",
                     "[class*='title'] a", "[class*='title']",
                     "a[href*='/careers/']",
                     "a[href*='/jobs/']",
+                    "a[href*='job_application']",
+                    "a[href*='/job/']",
                     "a"
                 ]
                 for selector in title_selectors:
@@ -200,7 +320,11 @@ class SwiggyScraper:
                 job_url = self.url
 
             job_id = f"swiggy_{idx}_{hashlib.md5(title.encode()).hexdigest()[:8]}"
-            if '/careers/' in job_url:
+            if 'job_application' in job_url:
+                job_id = job_url.split('job_application/')[-1].split('/')[0].split('?')[0] or job_id
+            elif '/detail/' in job_url:
+                job_id = job_url.split('/detail/')[-1].split('/')[0].split('?')[0] or job_id
+            elif '/careers/' in job_url:
                 job_id = job_url.split('/careers/')[-1].split('/')[0].split('?')[0] or job_id
 
             # Extract fields from text
@@ -210,7 +334,7 @@ class SwiggyScraper:
             lines = all_text.split('\n')
             for line in lines[1:]:
                 line_s = line.strip()
-                if any(city in line_s for city in ['Bangalore', 'Bengaluru', 'Mumbai', 'Delhi', 'Hyderabad', 'India', 'Remote']):
+                if any(city in line_s for city in ['Bangalore', 'Bengaluru', 'Mumbai', 'Delhi', 'Hyderabad', 'India', 'Remote', 'Gurugram', 'Gurgaon']):
                     location = line_s
                 elif line_s and not department and len(line_s) < 60:
                     department = line_s

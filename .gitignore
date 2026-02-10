@@ -47,3 +47,17 @@ chromedriver.exe
 .env
 
 company-list.xlsx
+
+# Runtime/generated files
+scraper_progress_log.json
+SCRAPING_ANALYTICS_*.md
+DIAGNOSTIC_REPORT.json
+*.bak
+*_fixed.py
+*_new.py
+_fix_*.py
+
+# Test/diagnostic scripts
+test_*.py
+diagnose_*.py
+mass_update_*.py

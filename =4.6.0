@@ -1,8 +1,0 @@
-Collecting pymongo
-  Using cached pymongo-4.16.0-cp39-cp39-macosx_11_0_arm64.whl (753 kB)
-Collecting dnspython<3.0.0,>=2.6.1
-  Using cached dnspython-2.7.0-py3-none-any.whl (313 kB)
-Installing collected packages: dnspython, pymongo
-Successfully installed dnspython-2.7.0 pymongo-4.16.0
-WARNING: You are using pip version 21.2.4; however, version 26.0 is available.
-You should consider upgrading via the '/Users/ivishalchaubey/Documents/coding/divyank/scrapping/backend/venv/bin/python3 -m pip install --upgrade pip' command.

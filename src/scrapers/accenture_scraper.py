@@ -4,7 +4,6 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
 import hashlib
 import time
 from datetime import datetime
@@ -16,6 +15,8 @@ from src.utils.logger import setup_logger
 from src.config import SCRAPE_TIMEOUT, HEADLESS_MODE, MAX_PAGES_TO_SCRAPE, FETCH_FULL_JOB_DETAILS
 
 logger = setup_logger('accenture_scraper')
+
+CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0.7559.133_fresh/chromedriver-mac-arm64/chromedriver'
 
 class AccentureScraper:
     def __init__(self):
@@ -37,7 +38,7 @@ class AccentureScraper:
         
         try:
             # Install and get the correct chromedriver path
-            driver_path = ChromeDriverManager().install()
+            driver_path = CHROMEDRIVER_PATH
             logger.info(f"ChromeDriver installed at: {driver_path}")
             
             # Fix for macOS ARM - ensure we use the actual chromedriver binary
