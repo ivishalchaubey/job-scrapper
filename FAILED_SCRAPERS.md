@@ -63,3 +63,39 @@ Scrapers listed below are currently non-functional due to issues that cannot be 
 - **File:** `src/scrapers/tcs_scraper.py`
 - **Current URL:** `https://ibegin.tcs.com/iBegin/jobs/search`
 - **Issue:** DNS intermittently down. The scraper already has a fallback URL (`https://ibegin.tcsapps.com/candidate/`). Works when the domain is accessible.
+
+---
+
+## Genuinely Zero Open Positions
+
+These scrapers are fully functional but return 0 jobs because the company has no open positions listed on their career portal at the time of testing (Feb 2026). They will automatically pick up jobs when the company posts new openings.
+
+### Tata Play
+- **File:** `src/scrapers/tataplay_scraper.py`
+- **Platform:** Oracle HCM (REST API)
+- **URL:** `https://hcoe.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/jobs`
+- **Issue:** API responds successfully with `TotalJobsCount: 0`. No open requisitions posted.
+
+### Go Digit Insurance
+- **File:** `src/scrapers/godigit_scraper.py`
+- **Platform:** DarwinBox v2
+- **URL:** `https://godigit.darwinbox.in/ms/candidatev2/main/careers/allJobs`
+- **Issue:** Page loads correctly and shows "0 Open jobs available". No positions listed.
+
+### TVS Motor Company
+- **File:** `src/scrapers/tvsmotor_scraper.py`
+- **Platform:** DarwinBox v2
+- **URL:** `https://tvsmsampark.darwinbox.in/ms/candidatev2/main/careers/allJobs`
+- **Issue:** Page loads correctly and shows "0 Open jobs available". No positions listed.
+
+### GMMCO
+- **File:** `src/scrapers/gmmco_scraper.py`
+- **Platform:** DarwinBox v1
+- **URL:** `https://gmmco.darwinbox.in/ms/candidate/careers`
+- **Issue:** Page loads correctly and shows "No jobs found". No positions listed.
+
+### Star Health Insurance
+- **File:** `src/scrapers/starhealth_scraper.py`
+- **Platform:** PeopleStrong
+- **URL:** `https://starhealthcareers.peoplestrong.com/job/joblist`
+- **Issue:** Page loads correctly and shows "No Jobs Available". No positions listed.
