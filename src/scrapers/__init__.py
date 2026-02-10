@@ -51,6 +51,33 @@ from .continental_scraper import ContinentalScraper
 from .dbsbank_scraper import DBSBankScraper
 from .novartis_scraper import NovartisScraper
 
+# Batch 4 - New scrapers (25 more)
+from .adanienergy_scraper import AdaniEnergyScraper
+from .adaniports_scraper import AdaniPortsScraper
+from .americantower_scraper import AmericanTowerScraper
+from .anz_scraper import ANZScraper
+from .axa_scraper import AXAScraper
+from .basf_scraper import BASFScraper
+from .bayer_scraper import BayerScraper
+from .disney_scraper import DisneyScraper
+from .emiratesgroup_scraper import EmiratesGroupScraper
+from .gsk_scraper import GSKScraper
+from .hyundai_scraper import HyundaiScraper
+from .ihg_scraper import IHGScraper
+from .intuit_scraper import IntuitScraper
+from .lenovo_scraper import LenovoScraper
+from .lgelectronics_scraper import LGElectronicsScraper
+from .mercedesbenz_scraper import MercedesBenzScraper
+from .munichre_scraper import MunichReScraper
+from .panasonic_scraper import PanasonicScraper
+from .prestigegroup_scraper import PrestigeGroupScraper
+from .riotinto_scraper import RioTintoScraper
+from .spglobal_scraper import SPGlobalScraper
+from .unitedhealthgroup_scraper import UnitedHealthGroupScraper
+from .verizon_scraper import VerizonScraper
+from .vodafoneidea_scraper import VodafoneIdeaScraper
+from .whirlpool_scraper import WhirlpoolScraper
+
 __all__ = [
     'AmazonScraper', 'AWSScraper', 'AccentureScraper', 'JLLScraper',
     'BainScraper', 'BCGScraper', 'InfosysScraper', 'LorealScraper',
@@ -67,5 +94,14 @@ __all__ = [
     'BirlasoftScraper', 'CoforgeScraper', 'DHLScraper',
     'EricssonScraper', 'VOISScraper', 'SchneiderElectricScraper',
     'SiemensScraper', 'DeutscheBankScraper', 'BNPParibasScraper',
-    'BPScraper', 'ContinentalScraper', 'DBSBankScraper', 'NovartisScraper'
+    'BPScraper', 'ContinentalScraper', 'DBSBankScraper', 'NovartisScraper',
+    # Batch 4
+    'AdaniEnergyScraper', 'AdaniPortsScraper', 'AmericanTowerScraper',
+    'ANZScraper', 'AXAScraper', 'BASFScraper', 'BayerScraper',
+    'DisneyScraper', 'EmiratesGroupScraper', 'GSKScraper',
+    'HyundaiScraper', 'IHGScraper', 'IntuitScraper', 'LenovoScraper',
+    'LGElectronicsScraper', 'MercedesBenzScraper', 'MunichReScraper',
+    'PanasonicScraper', 'PrestigeGroupScraper', 'RioTintoScraper',
+    'SPGlobalScraper', 'UnitedHealthGroupScraper', 'VerizonScraper',
+    'VodafoneIdeaScraper', 'WhirlpoolScraper'
 ]

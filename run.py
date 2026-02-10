@@ -178,6 +178,33 @@ from src.scrapers.continental_scraper import ContinentalScraper
 from src.scrapers.dbsbank_scraper import DBSBankScraper
 from src.scrapers.novartis_scraper import NovartisScraper
 
+# Batch 4 - New scrapers (25 more)
+from src.scrapers.adanienergy_scraper import AdaniEnergyScraper
+from src.scrapers.adaniports_scraper import AdaniPortsScraper
+from src.scrapers.americantower_scraper import AmericanTowerScraper
+from src.scrapers.anz_scraper import ANZScraper
+from src.scrapers.axa_scraper import AXAScraper
+from src.scrapers.basf_scraper import BASFScraper
+from src.scrapers.bayer_scraper import BayerScraper
+from src.scrapers.disney_scraper import DisneyScraper
+from src.scrapers.emiratesgroup_scraper import EmiratesGroupScraper
+from src.scrapers.gsk_scraper import GSKScraper
+from src.scrapers.hyundai_scraper import HyundaiScraper
+from src.scrapers.ihg_scraper import IHGScraper
+from src.scrapers.intuit_scraper import IntuitScraper
+from src.scrapers.lenovo_scraper import LenovoScraper
+from src.scrapers.lgelectronics_scraper import LGElectronicsScraper
+from src.scrapers.mercedesbenz_scraper import MercedesBenzScraper
+from src.scrapers.munichre_scraper import MunichReScraper
+from src.scrapers.panasonic_scraper import PanasonicScraper
+from src.scrapers.prestigegroup_scraper import PrestigeGroupScraper
+from src.scrapers.riotinto_scraper import RioTintoScraper
+from src.scrapers.spglobal_scraper import SPGlobalScraper
+from src.scrapers.unitedhealthgroup_scraper import UnitedHealthGroupScraper
+from src.scrapers.verizon_scraper import VerizonScraper
+from src.scrapers.vodafoneidea_scraper import VodafoneIdeaScraper
+from src.scrapers.whirlpool_scraper import WhirlpoolScraper
+
 from src.utils.xml_generator import XMLGenerator
 from src.utils.logger import setup_logger
 from src.config import LOGS_DIR
@@ -366,6 +393,42 @@ SCRAPER_MAP = {
     'dbs bank': DBSBankScraper,
     'dbs': DBSBankScraper,
     'novartis': NovartisScraper,
+    # Batch 4 - New scrapers (25 more)
+    'adani energy solutions': AdaniEnergyScraper,
+    'adani energy': AdaniEnergyScraper,
+    'adani ports': AdaniPortsScraper,
+    'adani ports & sez': AdaniPortsScraper,
+    'american tower': AmericanTowerScraper,
+    'anz': ANZScraper,
+    'axa': AXAScraper,
+    'basf': BASFScraper,
+    'bayer': BayerScraper,
+    'disney': DisneyScraper,
+    'walt disney': DisneyScraper,
+    'emirates group': EmiratesGroupScraper,
+    'emirates': EmiratesGroupScraper,
+    'gsk': GSKScraper,
+    'hyundai': HyundaiScraper,
+    'hyundai motor': HyundaiScraper,
+    'ihg': IHGScraper,
+    'intuit': IntuitScraper,
+    'lenovo': LenovoScraper,
+    'lg electronics': LGElectronicsScraper,
+    'lg': LGElectronicsScraper,
+    'mercedes-benz': MercedesBenzScraper,
+    'mercedes benz': MercedesBenzScraper,
+    'munich re': MunichReScraper,
+    'panasonic': PanasonicScraper,
+    'prestige group': PrestigeGroupScraper,
+    'rio tinto': RioTintoScraper,
+    's&p global': SPGlobalScraper,
+    'sp global': SPGlobalScraper,
+    'unitedhealth group': UnitedHealthGroupScraper,
+    'unitedhealth': UnitedHealthGroupScraper,
+    'verizon': VerizonScraper,
+    'vodafone idea': VodafoneIdeaScraper,
+    'vi': VodafoneIdeaScraper,
+    'whirlpool': WhirlpoolScraper,
 }
 
 ALL_COMPANY_CHOICES = [
@@ -405,7 +468,13 @@ ALL_COMPANY_CHOICES = [
     'Bajaj Electricals', 'Olam', 'United Breweries', 'Tata Power',
     'NatWest Group', 'Hitachi', 'McKesson', 'Birlasoft', 'Coforge', 'DHL',
     'Ericsson', 'VOIS', 'Schneider Electric', 'Siemens', 'Deutsche Bank',
-    'BNP Paribas', 'BP', 'Continental', 'DBS Bank', 'Novartis'
+    'BNP Paribas', 'BP', 'Continental', 'DBS Bank', 'Novartis',
+    # Batch 4 - New scrapers (25 more)
+    'Adani Energy Solutions', 'Adani Ports', 'American Tower', 'ANZ', 'AXA',
+    'BASF', 'Bayer', 'Disney', 'Emirates Group', 'GSK',
+    'Hyundai', 'IHG', 'Intuit', 'Lenovo', 'LG Electronics',
+    'Mercedes-Benz', 'Munich Re', 'Panasonic', 'Prestige Group', 'Rio Tinto',
+    'S&P Global', 'UnitedHealth Group', 'Verizon', 'Vodafone Idea', 'Whirlpool'
 ]
 
 def scrape_company(company_name):

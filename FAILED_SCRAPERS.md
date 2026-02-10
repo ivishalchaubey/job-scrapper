@@ -111,3 +111,9 @@ These scrapers are fully functional but return 0 jobs because the company has no
 - **Platform:** Custom DBS careers portal with category-based navigation
 - **URL:** `https://www.dbs.com/careers/jobs.page?market=India`
 - **Issue:** Intermittent - the scraper navigates category pages (`job-listing.page?category=...&market=India`) and clicks "Load More" buttons to extract jobs from `div.job` cards. Returns 228 jobs when the site loads fully, but sometimes returns 0 when category links fail to render or the page loads slowly. Likely a timing/network sensitivity issue on DBS's end.
+
+### Emirates Group
+- **File:** `src/scrapers/emiratesgroup_scraper.py`
+- **Platform:** Custom Emirates Group careers portal
+- **URL:** `https://www.emiratesgroupcareers.com/search-and-apply/`
+- **Issue:** Page loads (40.1s) but returns 0 jobs. The Emirates careers portal likely uses a JavaScript-heavy SPA or API-based job loading that the generic multi-strategy selectors cannot extract from. May require investigation of their specific API endpoints or dynamic content loading mechanism.

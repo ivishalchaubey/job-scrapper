@@ -446,6 +446,107 @@ COMPANIES = {
     'Novartis': {
         'url': 'https://www.novartis.com/in-en/careers/career-search?country%5B0%5D=LOC_IN&field_alternative_country%5B0%5D=LOC_IN',
         'scraper': 'novartis'
+    },
+    # Batch 4 - New scrapers (25 more)
+    'Adani Energy Solutions': {
+        'url': 'https://www.adani.com/opportunity/#en/sites/CX_2027/jobs',
+        'scraper': 'adanienergy'
+    },
+    'Adani Ports': {
+        'url': 'https://www.adani.com/opportunity/#en/sites/CX_2021/jobs',
+        'scraper': 'adaniports'
+    },
+    'American Tower': {
+        'url': 'https://careers.americantower.com/#en/sites/CX_1/jobs',
+        'scraper': 'americantower'
+    },
+    'ANZ': {
+        'url': 'https://careers.anz.com/search/?createNewAlert=false&q=&locationsearch=India',
+        'scraper': 'anz'
+    },
+    'AXA': {
+        'url': 'https://careers.axa.com/careers-home/jobs?country=India&page=1',
+        'scraper': 'axa'
+    },
+    'BASF': {
+        'url': 'https://basf.jobs/?currentPage=1&pageSize=10&addresses%2Fcountry=India',
+        'scraper': 'basf'
+    },
+    'Bayer': {
+        'url': 'https://talent.bayer.com/careers?location=any&pid=562949975473181',
+        'scraper': 'bayer'
+    },
+    'Disney': {
+        'url': 'https://www.disneycareers.com/en/location/india-jobs/391/1269750/2',
+        'scraper': 'disney'
+    },
+    'Emirates Group': {
+        'url': 'https://www.emiratesgroupcareers.com/search-and-apply/',
+        'scraper': 'emiratesgroup'
+    },
+    'GSK': {
+        'url': 'https://jobs.gsk.com/india-pharma/jobs',
+        'scraper': 'gsk'
+    },
+    'Hyundai': {
+        'url': 'https://careers.hyundai.co.in/search/',
+        'scraper': 'hyundai'
+    },
+    'IHG': {
+        'url': 'https://careers.ihg.com/en/search-and-apply/',
+        'scraper': 'ihg'
+    },
+    'Intuit': {
+        'url': 'https://jobs.intuit.com/location/india-jobs/27595/1269750/2',
+        'scraper': 'intuit'
+    },
+    'Lenovo': {
+        'url': 'https://jobs.lenovo.com/en_US/careers/SearchJobs/',
+        'scraper': 'lenovo'
+    },
+    'LG Electronics': {
+        'url': 'https://lgcns.eightfold.ai/careers',
+        'scraper': 'lgelectronics'
+    },
+    'Mercedes-Benz': {
+        'url': 'https://jobs.mercedes-benz.com/en',
+        'scraper': 'mercedesbenz'
+    },
+    'Munich Re': {
+        'url': 'https://careers.munichre.com/en/search-jobs',
+        'scraper': 'munichre'
+    },
+    'Panasonic': {
+        'url': 'https://careers.na.panasonic.com/jobs',
+        'scraper': 'panasonic'
+    },
+    'Prestige Group': {
+        'url': 'https://jobs.prestigeconstructions.com/go/View-All-Jobs/9217401/',
+        'scraper': 'prestigegroup'
+    },
+    'Rio Tinto': {
+        'url': 'https://jobs.riotinto.com/',
+        'scraper': 'riotinto'
+    },
+    'S&P Global': {
+        'url': 'https://careers.spglobal.com/jobs',
+        'scraper': 'spglobal'
+    },
+    'UnitedHealth Group': {
+        'url': 'https://careers.unitedhealthgroup.com/job-search-results/',
+        'scraper': 'unitedhealthgroup'
+    },
+    'Verizon': {
+        'url': 'https://mycareer.verizon.com/jobs/',
+        'scraper': 'verizon'
+    },
+    'Vodafone Idea': {
+        'url': 'https://careers.vodafoneidea.com/go/All-Current-Job-Opportunities/4268701/',
+        'scraper': 'vodafoneidea'
+    },
+    'Whirlpool': {
+        'url': 'https://jobs.whirlpool.com/careers',
+        'scraper': 'whirlpool'
     }
 }
 
