@@ -6,6 +6,11 @@ Scrapers listed below are currently non-functional due to issues that cannot be 
 
 ## URL Issues (Need URL Updates)
 
+### Britannia Industries
+- **File:** `src/scrapers/britannia_scraper.py`
+- **Current URL:** `https://britannia.turbohire.co/`
+- **Issue:** The `/jobs` path returns "Page Not Found - Sorry we can't seem to find the page you are looking for". The TurboHire portal exists but the jobs listing page is broken or has been restructured. No "View All Jobs" button found on the main page either.
+
 ### Starbucks
 - **File:** `src/scrapers/starbucks_scraper.py`
 - **Current URL:** `https://www.starbucks.in/careers`
@@ -39,6 +44,12 @@ Scrapers listed below are currently non-functional due to issues that cannot be 
 - **Current URL:** `https://www.tesla.com/careers/search/?country=IN`
 - **Issue:** Akamai Bot Manager blocks all headless Chrome access. The scraper already has the most sophisticated anti-detection in the project (stealth JS injection, 7 API patterns, full CDP hooks) but Akamai still detects and blocks it.
 - **Resolution:** Requires residential proxy service or non-headless browser automation (Playwright with real browser profile).
+
+### Saint-Gobain
+- **File:** `src/scrapers/saintgobain_scraper.py`
+- **Current URL:** `https://joinus.saint-gobain.com/en/search-offers?query=&country=ind`
+- **Issue:** Cloudflare challenge blocks all access. Scraper attempts 3 retries (with both search URL and main URL fallback) but the Cloudflare challenge never resolves even after waiting 50s per attempt. Total runtime ~326s with 0 jobs.
+- **Resolution:** Requires Cloudflare bypass (e.g., undetected-chromedriver with matching Chrome version, or residential proxy).
 
 ---
 
@@ -111,6 +122,12 @@ These scrapers are fully functional but return 0 jobs because the company has no
 - **Platform:** Custom DBS careers portal with category-based navigation
 - **URL:** `https://www.dbs.com/careers/jobs.page?market=India`
 - **Issue:** Intermittent - the scraper navigates category pages (`job-listing.page?category=...&market=India`) and clicks "Load More" buttons to extract jobs from `div.job` cards. Returns 228 jobs when the site loads fully, but sometimes returns 0 when category links fail to render or the page loads slowly. Likely a timing/network sensitivity issue on DBS's end.
+
+### HDFC Life
+- **File:** `src/scrapers/hdfclife_scraper.py`
+- **Platform:** Custom careers portal with filter-based job search
+- **URL:** `https://www.hdfclife.com/hdfc-careers/find-your-fit.html`
+- **Issue:** Page loads successfully (shows career sections: Sales, Support, Operations, Technology, Graduate Programs) and the "Find your fit" filter form renders, but job cards never load. After 6 retry attempts waiting for job cards, no listings appear. The portal likely requires selecting specific Function/Location filters before jobs are displayed, or uses a dynamic API that the scraper doesn't trigger.
 
 ### Emirates Group
 - **File:** `src/scrapers/emiratesgroup_scraper.py`

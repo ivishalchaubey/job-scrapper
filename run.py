@@ -205,6 +205,33 @@ from src.scrapers.verizon_scraper import VerizonScraper
 from src.scrapers.vodafoneidea_scraper import VodafoneIdeaScraper
 from src.scrapers.whirlpool_scraper import WhirlpoolScraper
 
+# Batch 5 - New scrapers (25 more)
+from src.scrapers.britannia_scraper import BritanniaScraper
+from src.scrapers.bmwgroup_scraper import BMWGroupScraper
+from src.scrapers.crompton_scraper import CromptonScraper
+from src.scrapers.diageo_scraper import DiageoScraper
+from src.scrapers.dlf_scraper import DLFScraper
+from src.scrapers.havells_scraper import HavellsScraper
+from src.scrapers.hdfclife_scraper import HDFCLifeScraper
+from src.scrapers.hal_scraper import HALScraper
+from src.scrapers.honda_scraper import HondaScraper
+from src.scrapers.icicilombard_scraper import ICICILombardScraper
+from src.scrapers.indusindbank_scraper import IndusIndBankScraper
+from src.scrapers.iocl_scraper import IOCLScraper
+from src.scrapers.kajaria_scraper import KajariaScraper
+from src.scrapers.kiaindia_scraper import KiaIndiaScraper
+from src.scrapers.mankindpharma_scraper import MankindPharmaScraper
+from src.scrapers.maxhealthcare_scraper import MaxHealthcareScraper
+from src.scrapers.ntpc_scraper import NTPCScraper
+from src.scrapers.nissan_scraper import NissanScraper
+from src.scrapers.oyo_scraper import OyoScraper
+from src.scrapers.pidilite_scraper import PidiliteScraper
+from src.scrapers.saintgobain_scraper import SaintGobainScraper
+from src.scrapers.siemensenergy_scraper import SiemensEnergyScraper
+from src.scrapers.tatacommunications_scraper import TataCommunicationsScraper
+from src.scrapers.toyotakirloskar_scraper import ToyotaKirloskarScraper
+from src.scrapers.yesbank_scraper import YesBankScraper
+
 from src.utils.xml_generator import XMLGenerator
 from src.utils.logger import setup_logger
 from src.config import LOGS_DIR
@@ -429,6 +456,45 @@ SCRAPER_MAP = {
     'vodafone idea': VodafoneIdeaScraper,
     'vi': VodafoneIdeaScraper,
     'whirlpool': WhirlpoolScraper,
+    # Batch 5 - New scrapers (25 more)
+    'britannia': BritanniaScraper,
+    'britannia industries': BritanniaScraper,
+    'bmw group': BMWGroupScraper,
+    'bmw': BMWGroupScraper,
+    'crompton': CromptonScraper,
+    'crompton greaves': CromptonScraper,
+    'diageo': DiageoScraper,
+    'dlf': DLFScraper,
+    'havells': HavellsScraper,
+    'hdfc life': HDFCLifeScraper,
+    'hal': HALScraper,
+    'hindustan aeronautics': HALScraper,
+    'honda': HondaScraper,
+    'honda cars india': HondaScraper,
+    'icici lombard': ICICILombardScraper,
+    'indusind bank': IndusIndBankScraper,
+    'iocl': IOCLScraper,
+    'indian oil': IOCLScraper,
+    'indian oil corporation': IOCLScraper,
+    'kajaria': KajariaScraper,
+    'kajaria ceramics': KajariaScraper,
+    'kia india': KiaIndiaScraper,
+    'kia': KiaIndiaScraper,
+    'mankind pharma': MankindPharmaScraper,
+    'max healthcare': MaxHealthcareScraper,
+    'ntpc': NTPCScraper,
+    'nissan': NissanScraper,
+    'nissan motor': NissanScraper,
+    'oyo': OyoScraper,
+    'pidilite': PidiliteScraper,
+    'pidilite industries': PidiliteScraper,
+    'saint-gobain': SaintGobainScraper,
+    'saint gobain': SaintGobainScraper,
+    'siemens energy': SiemensEnergyScraper,
+    'tata communications': TataCommunicationsScraper,
+    'toyota kirloskar': ToyotaKirloskarScraper,
+    'toyota': ToyotaKirloskarScraper,
+    'yes bank': YesBankScraper,
 }
 
 ALL_COMPANY_CHOICES = [
@@ -474,7 +540,13 @@ ALL_COMPANY_CHOICES = [
     'BASF', 'Bayer', 'Disney', 'Emirates Group', 'GSK',
     'Hyundai', 'IHG', 'Intuit', 'Lenovo', 'LG Electronics',
     'Mercedes-Benz', 'Munich Re', 'Panasonic', 'Prestige Group', 'Rio Tinto',
-    'S&P Global', 'UnitedHealth Group', 'Verizon', 'Vodafone Idea', 'Whirlpool'
+    'S&P Global', 'UnitedHealth Group', 'Verizon', 'Vodafone Idea', 'Whirlpool',
+    # Batch 5 - New scrapers (25 more)
+    'Britannia', 'BMW Group', 'Crompton', 'Diageo', 'DLF',
+    'Havells', 'HDFC Life', 'HAL', 'Honda', 'ICICI Lombard',
+    'IndusInd Bank', 'IOCL', 'Kajaria', 'Kia India', 'Mankind Pharma',
+    'Max Healthcare', 'NTPC', 'Nissan', 'OYO', 'Pidilite',
+    'Saint-Gobain', 'Siemens Energy', 'Tata Communications', 'Toyota Kirloskar', 'Yes Bank'
 ]
 
 def scrape_company(company_name):

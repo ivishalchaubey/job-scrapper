@@ -78,6 +78,33 @@ from .verizon_scraper import VerizonScraper
 from .vodafoneidea_scraper import VodafoneIdeaScraper
 from .whirlpool_scraper import WhirlpoolScraper
 
+# Batch 5 - New scrapers (25 more)
+from .britannia_scraper import BritanniaScraper
+from .bmwgroup_scraper import BMWGroupScraper
+from .crompton_scraper import CromptonScraper
+from .diageo_scraper import DiageoScraper
+from .dlf_scraper import DLFScraper
+from .havells_scraper import HavellsScraper
+from .hdfclife_scraper import HDFCLifeScraper
+from .hal_scraper import HALScraper
+from .honda_scraper import HondaScraper
+from .icicilombard_scraper import ICICILombardScraper
+from .indusindbank_scraper import IndusIndBankScraper
+from .iocl_scraper import IOCLScraper
+from .kajaria_scraper import KajariaScraper
+from .kiaindia_scraper import KiaIndiaScraper
+from .mankindpharma_scraper import MankindPharmaScraper
+from .maxhealthcare_scraper import MaxHealthcareScraper
+from .ntpc_scraper import NTPCScraper
+from .nissan_scraper import NissanScraper
+from .oyo_scraper import OyoScraper
+from .pidilite_scraper import PidiliteScraper
+from .saintgobain_scraper import SaintGobainScraper
+from .siemensenergy_scraper import SiemensEnergyScraper
+from .tatacommunications_scraper import TataCommunicationsScraper
+from .toyotakirloskar_scraper import ToyotaKirloskarScraper
+from .yesbank_scraper import YesBankScraper
+
 __all__ = [
     'AmazonScraper', 'AWSScraper', 'AccentureScraper', 'JLLScraper',
     'BainScraper', 'BCGScraper', 'InfosysScraper', 'LorealScraper',
@@ -103,5 +130,13 @@ __all__ = [
     'LGElectronicsScraper', 'MercedesBenzScraper', 'MunichReScraper',
     'PanasonicScraper', 'PrestigeGroupScraper', 'RioTintoScraper',
     'SPGlobalScraper', 'UnitedHealthGroupScraper', 'VerizonScraper',
-    'VodafoneIdeaScraper', 'WhirlpoolScraper'
+    'VodafoneIdeaScraper', 'WhirlpoolScraper',
+    # Batch 5
+    'BritanniaScraper', 'BMWGroupScraper', 'CromptonScraper', 'DiageoScraper',
+    'DLFScraper', 'HavellsScraper', 'HDFCLifeScraper', 'HALScraper',
+    'HondaScraper', 'ICICILombardScraper', 'IndusIndBankScraper', 'IOCLScraper',
+    'KajariaScraper', 'KiaIndiaScraper', 'MankindPharmaScraper',
+    'MaxHealthcareScraper', 'NTPCScraper', 'NissanScraper', 'OyoScraper',
+    'PidiliteScraper', 'SaintGobainScraper', 'SiemensEnergyScraper',
+    'TataCommunicationsScraper', 'ToyotaKirloskarScraper', 'YesBankScraper'
 ]

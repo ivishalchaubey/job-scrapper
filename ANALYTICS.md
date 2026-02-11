@@ -1,6 +1,6 @@
 # Scraper Analytics Report
 
-**Last Updated:** February 10, 2026
+**Last Updated:** February 11, 2026
 
 ---
 
@@ -9,9 +9,9 @@
 | Metric | Count |
 |--------|-------|
 | **Target Companies (from company-list.xlsx)** | 374 |
-| **Scrapers Built** | 225 |
-| **Scrapers Pending (not yet built)** | 149 |
-| **Coverage** | 60.2% |
+| **Scrapers Built** | 250 |
+| **Scrapers Pending (not yet built)** | 124 |
+| **Coverage** | 66.8% |
 
 ---
 
@@ -19,12 +19,12 @@
 
 | Status | Count | % of Built |
 |--------|-------|------------|
-| **Working** | 208 | 92.4% |
-| **Zero Open Positions (scraper works, no jobs listed)** | 8 | 3.6% |
-| **Network/Infrastructure Issues (intermittent)** | 4 | 1.8% |
-| **URL Issues (needs URL update)** | 4 | 1.8% |
+| **Working** | 233 | 93.2% |
+| **Zero Open Positions (scraper works, no jobs listed)** | 8 | 3.2% |
+| **Network/Infrastructure Issues (intermittent)** | 4 | 1.6% |
+| **URL Issues (needs URL update)** | 4 | 1.6% |
 | **Anti-Bot Blocked** | 1 | 0.4% |
-| **Total Built** | **225** | **100%** |
+| **Total Built** | **250** | **100%** |
 
 ---
 
@@ -55,6 +55,9 @@ Air India, Tata AIG, Tata International, Tata Projects, Trent, Bajaj Electricals
 
 ### Batch 4 - Global Enterprises (25)
 Adani Energy Solutions, Adani Ports, American Tower, ANZ, AXA, BASF, Bayer, Disney, Emirates Group, GSK, Hyundai, IHG, Intuit, Lenovo, LG Electronics, Mercedes-Benz, Munich Re, Panasonic, Prestige Group, Rio Tinto, S&P Global, UnitedHealth Group, Verizon, Vodafone Idea, Whirlpool
+
+### Batch 5 - Industry Leaders (25)
+Britannia Industries, BMW Group, Crompton Greaves, Diageo, DLF, Havells, HDFC Life, Hindustan Aeronautics (HAL), Honda, ICICI Lombard, IndusInd Bank, Indian Oil Corporation (IOCL), Kajaria Ceramics, Kia India, Mankind Pharma, Max Healthcare, NTPC, Nissan, OYO, Pidilite Industries, Saint-Gobain, Siemens Energy, Tata Communications, Toyota Kirloskar, Yes Bank
 
 ---
 
@@ -103,17 +106,17 @@ Adani Energy Solutions, Adani Ports, American Tower, ANZ, AXA, BASF, Bayer, Disn
 
 | Platform | Scraper Count |
 |----------|--------------|
-| Custom / Company-specific | 113 |
+| Custom / Company-specific | 130 |
 | Phenom / NAS / Radancy | 18 |
-| DarwinBox | 12 |
-| Oracle HCM | 10 |
-| Workday | 9 |
-| iCIMS / SuccessFactors | 20 |
-| PeopleStrong | 5 |
+| DarwinBox | 13 |
+| Oracle HCM | 11 |
+| Workday | 11 |
+| iCIMS / SuccessFactors | 21 |
+| PeopleStrong | 7 |
 | Eightfold AI | 3 |
 | Skillate | 2 |
-| Other (SmartRecruiters, Taleo, etc.) | 33 |
-| **Total** | **225** |
+| Other (SmartRecruiters, Taleo, TurboHire, etc.) | 34 |
+| **Total** | **250** |
 
 ---
 
@@ -121,10 +124,10 @@ Adani Energy Solutions, Adani Ports, American Tower, ANZ, AXA, BASF, Bayer, Disn
 
 | Location | Count | Description |
 |----------|-------|-------------|
-| `run.py` (CLI accessible) | 175 | Can run via `python run.py scrape --company <name>` |
+| `run.py` (CLI accessible) | 200 | Can run via `python run.py scrape --company <name>` |
 | `src/config.py` only | 50 | Loaded via config system (Workday, Oracle HCM, DarwinBox, etc.) |
-| `src/scrapers/__init__.py` | 50 | Batch 3 + Batch 4 scrapers (module exports) |
-| **Total unique scrapers** | **225** | All registered in at least one location |
+| `src/scrapers/__init__.py` | 75 | Batch 3 + Batch 4 + Batch 5 scrapers (module exports) |
+| **Total unique scrapers** | **250** | All registered in at least one location |
 
 ---
 
@@ -132,14 +135,14 @@ Adani Energy Solutions, Adani Ports, American Tower, ANZ, AXA, BASF, Bayer, Disn
 
 ```
 Target Companies:  374
-Built:             225  [========================================----------]  60.2%
-Pending:           149  [                                        ----------]  39.8%
+Built:             250  [============================================------]  66.8%
+Pending:           124  [                                            ------]  33.2%
 
-Of 225 Built:
-Working:           208  [========================================          ]  92.4%
-Zero Positions:      8  [=                                                 ]   3.6%
-Intermittent:        4  [                                                  ]   1.8%
-URL Issues:          4  [                                                  ]   1.8%
+Of 250 Built:
+Working:           233  [============================================      ]  93.2%
+Zero Positions:      8  [=                                                 ]   3.2%
+Intermittent:        4  [                                                  ]   1.6%
+URL Issues:          4  [                                                  ]   1.6%
 Anti-Bot:            1  [                                                  ]   0.4%
 ```
 
@@ -149,10 +152,10 @@ Anti-Bot:            1  [                                                  ]   0
 
 | File | Purpose |
 |------|---------|
-| `run.py` | Main CLI runner - imports 175 scrapers, parallel execution |
-| `src/config.py` | Configuration - 125 companies with URLs and scraper mappings |
-| `src/scrapers/__init__.py` | Module exports for Batch 3 + Batch 4 scrapers |
-| `src/scrapers/*_scraper.py` | 225 individual scraper files |
+| `run.py` | Main CLI runner - imports 200 scrapers, parallel execution |
+| `src/config.py` | Configuration - 150 companies with URLs and scraper mappings |
+| `src/scrapers/__init__.py` | Module exports for Batch 3 + Batch 4 + Batch 5 scrapers |
+| `src/scrapers/*_scraper.py` | 250 individual scraper files |
 | `FAILED_SCRAPERS.md` | Detailed documentation of 17 non-functional scrapers |
 | `ANALYTICS.md` | This report |
 
@@ -164,5 +167,5 @@ Anti-Bot:            1  [                                                  ]   0
 2. **Network Issues (4 scrapers):** Monitor Adani Group, Axis Bank, HDFC Bank, and TCS - these may self-resolve
 3. **Zero Position Scrapers (8):** No action needed - will automatically pick up jobs when companies post openings
 4. **Tesla:** Consider residential proxy service or Playwright with real browser profile
-5. **Coverage Expansion:** 149 companies from the target list still need scrapers to reach 100% coverage
+5. **Coverage Expansion:** 124 companies from the target list still need scrapers to reach 100% coverage
 6. **Config-only Scrapers:** Consider registering all 50 config-only scrapers in `run.py` for unified CLI access

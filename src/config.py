@@ -547,6 +547,107 @@ COMPANIES = {
     'Whirlpool': {
         'url': 'https://jobs.whirlpool.com/careers',
         'scraper': 'whirlpool'
+    },
+    # Batch 5 - New scrapers (25 more)
+    'Britannia Industries': {
+        'url': 'https://britannia.turbohire.co/',
+        'scraper': 'britannia'
+    },
+    'BMW Group': {
+        'url': 'https://www.bmwgroup.jobs/in/en/jobs.html',
+        'scraper': 'bmwgroup'
+    },
+    'Crompton Greaves': {
+        'url': 'https://career10.successfactors.com/portalcareer?company=cromptongr',
+        'scraper': 'crompton'
+    },
+    'Diageo': {
+        'url': 'https://diageo.wd3.myworkdayjobs.com/Diageo_Careers',
+        'scraper': 'diageo'
+    },
+    'DLF': {
+        'url': 'https://www.dlf.in/career-page',
+        'scraper': 'dlf'
+    },
+    'Havells': {
+        'url': 'https://iabgcp.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1',
+        'scraper': 'havells'
+    },
+    'HDFC Life': {
+        'url': 'https://www.hdfclife.com/hdfc-careers/',
+        'scraper': 'hdfclife'
+    },
+    'Hindustan Aeronautics': {
+        'url': 'https://hal-india.co.in/career',
+        'scraper': 'hal'
+    },
+    'Honda': {
+        'url': 'https://www.hondacarindia.com/careers',
+        'scraper': 'honda'
+    },
+    'ICICI Lombard': {
+        'url': 'https://www.icicilombard.com/careers/areas-of-opportunity',
+        'scraper': 'icicilombard'
+    },
+    'IndusInd Bank': {
+        'url': 'https://www.indusind.com/in/en/personal/career.html',
+        'scraper': 'indusindbank'
+    },
+    'Indian Oil Corporation': {
+        'url': 'https://iocl.com/latest-job-opening',
+        'scraper': 'iocl'
+    },
+    'Kajaria Ceramics': {
+        'url': 'https://www.kajariaceramics.com/career',
+        'scraper': 'kajaria'
+    },
+    'Kia India': {
+        'url': 'https://career.kiaindia.net/kiaindia/',
+        'scraper': 'kiaindia'
+    },
+    'Mankind Pharma': {
+        'url': 'https://careers.mankindpharma.com/',
+        'scraper': 'mankindpharma'
+    },
+    'Max Healthcare': {
+        'url': 'https://maxhealthcarecareers.peoplestrong.com/',
+        'scraper': 'maxhealthcare'
+    },
+    'NTPC': {
+        'url': 'https://careers.ntpc.co.in/',
+        'scraper': 'ntpc'
+    },
+    'Nissan': {
+        'url': 'https://alliance.wd3.myworkdayjobs.com/nissanjobs',
+        'scraper': 'nissan'
+    },
+    'OYO': {
+        'url': 'https://careers.smartrecruiters.com/OYO',
+        'scraper': 'oyo'
+    },
+    'Pidilite Industries': {
+        'url': 'https://pidilitecareers.peoplestrong.com/home',
+        'scraper': 'pidilite'
+    },
+    'Saint-Gobain': {
+        'url': 'https://joinus.saint-gobain.com/en',
+        'scraper': 'saintgobain'
+    },
+    'Siemens Energy': {
+        'url': 'https://jobs.siemens-energy.com/en_US/jobs/Jobs',
+        'scraper': 'siemensenergy'
+    },
+    'Tata Communications': {
+        'url': 'https://jobs.tatacommunications.com/',
+        'scraper': 'tatacommunications'
+    },
+    'Toyota Kirloskar': {
+        'url': 'https://www.toyotabharat.com/careers/',
+        'scraper': 'toyotakirloskar'
+    },
+    'Yes Bank': {
+        'url': 'https://yesforyou.darwinbox.in/ms/candidate/careers',
+        'scraper': 'yesbank'
     }
 }
 
