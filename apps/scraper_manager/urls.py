@@ -8,4 +8,5 @@ urlpatterns = [
     path('tasks/<str:task_id>/', views.task_detail_view, name='task-detail'),
     path('tasks/<str:task_id>/cancel/', views.cancel_task_view, name='cancel-task'),
     path('scrapers/', views.scraper_list_view, name='scraper-list'),
+    path('scrapers/<str:company_name>/info/', views.scraper_info_view, name='scraper-info'),
 ]

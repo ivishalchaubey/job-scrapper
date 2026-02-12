@@ -120,7 +120,11 @@ def create_scraping_run(company_name, jobs_scraped, status, error_message=None):
         'status': status,
         'error_message': error_message,
     }
-    coll.insert_one(doc)
+    coll.update_one(
+        {'company_name': company_name},
+        {'$set': doc},
+        upsert=True,
+    )
     return doc
 
 

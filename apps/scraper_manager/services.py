@@ -68,3 +68,22 @@ def list_tasks(limit=50):
         completed = t.get('completed_companies', 0)
         t['progress_percent'] = round((completed / total) * 100, 1) if total > 0 else 0
     return tasks
+
+
+def cleanup_stale_tasks(max_age_minutes=30):
+    """Mark any running/pending tasks older than max_age_minutes as failed."""
+    from datetime import timedelta
+    coll = get_collection(SCRAPE_TASKS)
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=max_age_minutes)
+    result = coll.update_many(
+        {
+            'status': {'$in': ['running', 'pending']},
+            'started_at': {'$lt': cutoff},
+        },
+        {'$set': {
+            'status': 'failed',
+            'error_message': f'Timed out (stale after {max_age_minutes}m)',
+            'finished_at': datetime.now(timezone.utc),
+        }}
+    )
+    return result.modified_count

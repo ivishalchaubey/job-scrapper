@@ -20,14 +20,14 @@ def run_scrape_task(task_id, companies, max_workers=10, timeout=180):
 
     try:
         future_to_company = {
-            executor.submit(_scrape_single, company): company
+            executor.submit(_scrape_single, company, timeout): company
             for company in companies
         }
 
         for future in as_completed(future_to_company):
             company = future_to_company[future]
             try:
-                result = future.result(timeout=timeout)
+                result = future.result(timeout=timeout + 30)  # extra buffer beyond internal timeout
             except Exception as e:
                 result = {
                     'company': company,
@@ -66,7 +66,37 @@ def run_scrape_task(task_id, companies, max_workers=10, timeout=180):
         executor.shutdown(wait=False)
 
 
-def _scrape_single(company_name):
+def _scrape_with_timeout(scraper, timeout_seconds):
+    """Run scraper.scrape() with a hard timeout using a daemon thread."""
+    result_holder = [None]
+    error_holder = [None]
+
+    def target():
+        try:
+            result_holder[0] = scraper.scrape()
+        except Exception as e:
+            error_holder[0] = e
+
+    t = threading.Thread(target=target, daemon=True)
+    t.start()
+    t.join(timeout=timeout_seconds)
+
+    if t.is_alive():
+        # Try to quit the driver if possible
+        try:
+            if hasattr(scraper, 'driver') and scraper.driver:
+                scraper.driver.quit()
+        except Exception:
+            pass
+        raise TimeoutError(f'Scraper timed out after {timeout_seconds}s')
+
+    if error_holder[0]:
+        raise error_holder[0]
+
+    return result_holder[0]
+
+
+def _scrape_single(company_name, timeout=180):
     from scrapers.registry import SCRAPER_MAP
 
     start_time = time.time()
@@ -85,7 +115,7 @@ def _scrape_single(company_name):
             return result
 
         scraper = scraper_class()
-        jobs = scraper.scrape()
+        jobs = _scrape_with_timeout(scraper, timeout)
 
         if jobs:
             job_service.delete_company_jobs(company_name)
@@ -119,6 +149,14 @@ def _scrape_single(company_name):
 
         result['success'] = True
         result['jobs_count'] = len(jobs) if jobs else 0
+    except TimeoutError as e:
+        result['error'] = str(e)
+        job_service.create_scraping_run(
+            company_name=company_name,
+            jobs_scraped=0,
+            status='failed',
+            error_message=str(e),
+        )
     except Exception as e:
         result['error'] = str(e)
         job_service.create_scraping_run(

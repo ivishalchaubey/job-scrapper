@@ -25,7 +25,7 @@ class MicrosoftScraper:
     def __init__(self):
         self.company_name = 'Microsoft'
         self.url = 'https://jobs.careers.microsoft.com/global/en/search?l=en_us&pg=1&pgSz=20&o=Relevance&flt=true&ref=cms&lc=India'
-        # Microsoft careers moved to Eightfold AI PCSX platform (Nov 2025)
+        # Microsoft careers moved to Eightfold AI PCSX platform (Nov 2026)
         self.search_url = 'https://apply.careers.microsoft.com/careers?hl=en&location=India'
         self.pcsx_api_path = '/api/pcsx/search?domain=microsoft.com&query=&location=India&start={start}&hl=en'
         self.base_job_url = 'https://apply.careers.microsoft.com/careers/job'

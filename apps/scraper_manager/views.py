@@ -55,7 +55,9 @@ def start_single_scrape_view(request, company_name):
         (c for c in ALL_COMPANY_CHOICES if c.lower() == company_name.lower()),
         company_name,
     )
-    task = start_scrape(companies=[display_name], max_workers=1, timeout=180)
+    timeout = request.data.get('timeout', 180)
+    max_workers = request.data.get('max_workers', 1)
+    task = start_scrape(companies=[display_name], max_workers=max_workers, timeout=timeout)
     return Response(task, status=status.HTTP_201_CREATED)
 
 
@@ -65,6 +67,7 @@ def start_single_scrape_view(request, company_name):
 )
 @api_view(['GET'])
 def task_list_view(request):
+    services.cleanup_stale_tasks()
     return Response(services.list_tasks())
 
 
@@ -102,4 +105,30 @@ def scraper_list_view(request):
     return Response({
         'total': len(ALL_COMPANY_CHOICES),
         'companies': sorted(ALL_COMPANY_CHOICES),
+    })
+
+
+@extend_schema(description="Get scraper info (URL, class name) for a company")
+@api_view(['GET'])
+def scraper_info_view(request, company_name):
+    scraper_class = SCRAPER_MAP.get(company_name.lower())
+    if not scraper_class:
+        return Response({'error': 'Unknown company'}, status=status.HTTP_404_NOT_FOUND)
+
+    display_name = next(
+        (c for c in ALL_COMPANY_CHOICES if c.lower() == company_name.lower()),
+        company_name,
+    )
+
+    url = ''
+    try:
+        instance = scraper_class()
+        url = getattr(instance, 'url', '')
+    except Exception:
+        pass
+
+    return Response({
+        'company': display_name,
+        'url': url,
+        'scraper_class': scraper_class.__name__,
     })
