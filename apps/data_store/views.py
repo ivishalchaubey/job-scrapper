@@ -122,6 +122,15 @@ def delete_jobs_view(request):
     return Response({'deleted': deleted})
 
 
+@extend_schema(description="Clear all jobs and scraping runs from database")
+@api_view(['POST'])
+@authentication_classes([])
+@permission_classes([])
+def clear_all_view(request):
+    services.delete_all_jobs()
+    return Response({'status': 'ok', 'message': 'All data cleared'})
+
+
 @extend_schema(
     parameters=[
         OpenApiParameter('company_name', str, description='Filter by company name'),
