@@ -1,0 +1,786 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}Scrapers{% endblock %}
+{% block page_title %}Scraper Control Panel{% endblock %}
+
+{% block content %}
+<div x-data="scraperPanel()" x-init="init()">
+
+    <!-- Toast Notifications -->
+    <div class="fixed top-4 right-4 z-50 space-y-2">
+        <template x-for="(toast, index) in toasts" :key="toast.id">
+            <div x-show="toast.visible"
+                 x-transition:enter="transition ease-out duration-300"
+                 x-transition:enter-start="opacity-0 translate-x-8"
+                 x-transition:enter-end="opacity-100 translate-x-0"
+                 x-transition:leave="transition ease-in duration-200"
+                 x-transition:leave-start="opacity-100 translate-x-0"
+                 x-transition:leave-end="opacity-0 translate-x-8"
+                 class="flex items-center gap-3 px-4 py-3 rounded-lg shadow-lg text-white text-sm font-medium min-w-[320px]"
+                 :class="{
+                     'bg-green-600': toast.type === 'success',
+                     'bg-red-600': toast.type === 'error',
+                     'bg-blue-600': toast.type === 'info',
+                     'bg-yellow-600': toast.type === 'warning'
+                 }">
+                <template x-if="toast.type === 'success'">
+                    <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+                </template>
+                <template x-if="toast.type === 'error'">
+                    <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                </template>
+                <template x-if="toast.type === 'info'">
+                    <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M12 2a10 10 0 100 20 10 10 0 000-20z"/></svg>
+                </template>
+                <template x-if="toast.type === 'warning'">
+                    <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M10.29 3.86l-8.6 14.86A1 1 0 002.56 20h16.88a1 1 0 00.87-1.28l-8.6-14.86a1 1 0 00-1.72 0z"/></svg>
+                </template>
+                <span x-text="toast.message" class="flex-1"></span>
+                <button @click="toast.visible = false" class="ml-2 hover:opacity-75">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+            </div>
+        </template>
+    </div>
+
+    <!-- Section 1: Control Panel -->
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
+        <div class="flex items-center justify-between mb-5">
+            <div>
+                <h2 class="text-lg font-semibold text-gray-800">Control Panel</h2>
+                <p class="text-sm text-gray-500 mt-0.5">Configure and launch scraping tasks</p>
+            </div>
+            <div class="flex items-center gap-2 text-sm text-gray-500">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
+                <span x-text="companies.length + ' scrapers available'"></span>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <!-- Workers Slider -->
+            <div class="lg:col-span-3">
+                <label class="block text-sm font-medium text-gray-700 mb-2">Parallel Workers</label>
+                <div class="flex items-center gap-3">
+                    <input type="range" x-model.number="workers" min="1" max="20" step="1"
+                           class="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-indigo-600">
+                    <span class="text-sm font-semibold text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-md min-w-[40px] text-center"
+                          x-text="workers"></span>
+                </div>
+                <p class="text-xs text-gray-400 mt-1">Higher = faster but more resource intensive</p>
+            </div>
+
+            <!-- Timeout Input -->
+            <div class="lg:col-span-2">
+                <label class="block text-sm font-medium text-gray-700 mb-2">Timeout (seconds)</label>
+                <input type="number" x-model.number="timeout" min="30" max="600" step="10"
+                       class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors">
+                <p class="text-xs text-gray-400 mt-1">Per-scraper timeout</p>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="lg:col-span-7 flex items-end gap-3">
+                <button @click="startAll()"
+                        :disabled="isTaskRunning"
+                        class="inline-flex items-center gap-2 px-6 py-2.5 bg-green-600 text-white text-sm font-semibold rounded-lg shadow-sm hover:bg-green-700 focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/><path stroke-linecap="round" stroke-linejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                    Start All Scrapers
+                </button>
+
+                <button @click="startSelected()"
+                        :disabled="selectedCompanies.length === 0 || isTaskRunning"
+                        class="inline-flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white text-sm font-semibold rounded-lg shadow-sm hover:bg-indigo-700 focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>
+                    <span x-text="selectedCompanies.length > 0 ? 'Start Selected (' + selectedCompanies.length + ')' : 'Start Selected'"></span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Section 2: Active Task Panel -->
+    <template x-if="activeTask">
+        <div class="bg-blue-50 border border-blue-200 rounded-xl shadow-sm p-6 mb-6">
+            <div class="flex items-center justify-between mb-4">
+                <div class="flex items-center gap-3">
+                    <h2 class="text-lg font-semibold text-gray-800">Active Task</h2>
+                    <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold"
+                          :class="{
+                              'bg-blue-100 text-blue-700': activeTask.status === 'running' || activeTask.status === 'pending',
+                              'bg-green-100 text-green-700': activeTask.status === 'completed',
+                              'bg-red-100 text-red-700': activeTask.status === 'failed',
+                              'bg-yellow-100 text-yellow-700': activeTask.status === 'cancelled'
+                          }">
+                        <span class="w-1.5 h-1.5 rounded-full"
+                              :class="{
+                                  'bg-blue-500 animate-pulse': activeTask.status === 'running' || activeTask.status === 'pending',
+                                  'bg-green-500': activeTask.status === 'completed',
+                                  'bg-red-500': activeTask.status === 'failed',
+                                  'bg-yellow-500': activeTask.status === 'cancelled'
+                              }"></span>
+                        <span x-text="activeTask.status.charAt(0).toUpperCase() + activeTask.status.slice(1)"></span>
+                    </span>
+                    <span class="text-xs text-gray-500" x-text="'ID: ' + activeTask.task_id.substring(0, 8)"></span>
+                </div>
+                <div class="flex items-center gap-3">
+                    <span class="text-sm text-gray-600" x-text="taskDuration"></span>
+                    <button @click="cancelTask(activeTask.task_id)"
+                            x-show="activeTask.status === 'running' || activeTask.status === 'pending'"
+                            class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white text-xs font-semibold rounded-lg hover:bg-red-700 transition-colors">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                        Cancel
+                    </button>
+                    <button @click="clearActiveTask()"
+                            x-show="activeTask.status !== 'running' && activeTask.status !== 'pending'"
+                            class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-200 text-gray-700 text-xs font-semibold rounded-lg hover:bg-gray-300 transition-colors">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                        Dismiss
+                    </button>
+                </div>
+            </div>
+
+            <!-- Stats Row -->
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
+                <div class="bg-white rounded-lg px-4 py-3 border border-blue-100">
+                    <p class="text-xs text-gray-500 font-medium uppercase tracking-wide">Progress</p>
+                    <p class="text-xl font-bold text-gray-800" x-text="activeTask.progress_percent + '%'"></p>
+                </div>
+                <div class="bg-white rounded-lg px-4 py-3 border border-blue-100">
+                    <p class="text-xs text-gray-500 font-medium uppercase tracking-wide">Companies</p>
+                    <p class="text-xl font-bold text-gray-800" x-text="activeTask.completed_companies + ' / ' + activeTask.total_companies"></p>
+                </div>
+                <div class="bg-white rounded-lg px-4 py-3 border border-blue-100">
+                    <p class="text-xs text-gray-500 font-medium uppercase tracking-wide">Jobs Found</p>
+                    <p class="text-xl font-bold text-green-600" x-text="activeTask.total_jobs_found.toLocaleString()"></p>
+                </div>
+                <div class="bg-white rounded-lg px-4 py-3 border border-blue-100">
+                    <p class="text-xs text-gray-500 font-medium uppercase tracking-wide">Duration</p>
+                    <p class="text-xl font-bold text-gray-800" x-text="taskDuration"></p>
+                </div>
+            </div>
+
+            <!-- Progress Bar -->
+            <div class="mb-4">
+                <div class="w-full bg-blue-100 rounded-full h-3 overflow-hidden">
+                    <div class="h-full rounded-full transition-all duration-500 ease-out"
+                         :class="{
+                             'bg-blue-500': activeTask.status === 'running' || activeTask.status === 'pending',
+                             'bg-green-500': activeTask.status === 'completed',
+                             'bg-red-500': activeTask.status === 'failed',
+                             'bg-yellow-500': activeTask.status === 'cancelled'
+                         }"
+                         :style="'width: ' + activeTask.progress_percent + '%'">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Live Results Stream -->
+            <div class="bg-white rounded-lg border border-blue-100 overflow-hidden">
+                <div class="px-4 py-2.5 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
+                    <h3 class="text-sm font-semibold text-gray-700">Live Results</h3>
+                    <span class="text-xs text-gray-400" x-text="resultEntries.length + ' results'"></span>
+                </div>
+                <div x-ref="resultsStream" class="max-h-64 overflow-y-auto p-3 space-y-1 font-mono text-xs">
+                    <template x-if="resultEntries.length === 0">
+                        <p class="text-gray-400 text-center py-4">Waiting for results...</p>
+                    </template>
+                    <template x-for="(entry, idx) in resultEntries" :key="idx">
+                        <div class="flex items-start gap-2 py-1 px-2 rounded hover:bg-gray-50"
+                             :class="entry.success ? 'text-gray-700' : 'text-red-600'">
+                            <span x-show="entry.success" class="text-green-500 flex-shrink-0 mt-0.5">&#10003;</span>
+                            <span x-show="!entry.success" class="text-red-500 flex-shrink-0 mt-0.5">&#10007;</span>
+                            <span class="font-semibold min-w-[140px]" x-text="entry.company"></span>
+                            <span x-show="entry.success" class="text-gray-500" x-text="entry.jobs + ' jobs (' + entry.duration + 's)'"></span>
+                            <span x-show="!entry.success" class="text-red-500 truncate" x-text="entry.error"></span>
+                        </div>
+                    </template>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <!-- Section 3: Company Grid -->
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
+        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-5">
+            <div>
+                <h2 class="text-lg font-semibold text-gray-800">Companies</h2>
+                <p class="text-sm text-gray-500 mt-0.5" x-text="filteredCompanies.length + ' of ' + companies.length + ' companies'"></p>
+            </div>
+
+            <div class="flex items-center gap-3 w-full sm:w-auto">
+                <!-- Search Input -->
+                <div class="relative flex-1 sm:flex-none">
+                    <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                    <input type="text" x-model="searchQuery" placeholder="Search companies..."
+                           class="w-full sm:w-72 pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors">
+                </div>
+
+                <!-- Sort Dropdown -->
+                <div class="relative" x-data="{ sortOpen: false }">
+                    <button @click="sortOpen = !sortOpen" class="inline-flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12"/></svg>
+                        <span x-text="sortLabels[sortBy]"></span>
+                        <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+                    </button>
+                    <div x-show="sortOpen" @click.away="sortOpen = false"
+                         x-transition:enter="transition ease-out duration-100"
+                         x-transition:enter-start="opacity-0 scale-95"
+                         x-transition:enter-end="opacity-100 scale-100"
+                         x-transition:leave="transition ease-in duration-75"
+                         x-transition:leave-start="opacity-100 scale-100"
+                         x-transition:leave-end="opacity-0 scale-95"
+                         class="absolute right-0 mt-2 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-10 py-1">
+                        <button @click="sortBy = 'name'; sortOpen = false" class="w-full text-left px-4 py-2 text-sm hover:bg-gray-50" :class="sortBy === 'name' ? 'text-indigo-600 font-semibold' : 'text-gray-700'">Name (A-Z)</button>
+                        <button @click="sortBy = 'name_desc'; sortOpen = false" class="w-full text-left px-4 py-2 text-sm hover:bg-gray-50" :class="sortBy === 'name_desc' ? 'text-indigo-600 font-semibold' : 'text-gray-700'">Name (Z-A)</button>
+                        <button @click="sortBy = 'jobs'; sortOpen = false" class="w-full text-left px-4 py-2 text-sm hover:bg-gray-50" :class="sortBy === 'jobs' ? 'text-indigo-600 font-semibold' : 'text-gray-700'">Job Count (High-Low)</button>
+                        <button @click="sortBy = 'jobs_asc'; sortOpen = false" class="w-full text-left px-4 py-2 text-sm hover:bg-gray-50" :class="sortBy === 'jobs_asc' ? 'text-indigo-600 font-semibold' : 'text-gray-700'">Job Count (Low-High)</button>
+                        <button @click="sortBy = 'scraped'; sortOpen = false" class="w-full text-left px-4 py-2 text-sm hover:bg-gray-50" :class="sortBy === 'scraped' ? 'text-indigo-600 font-semibold' : 'text-gray-700'">Last Scraped (Recent)</button>
+                        <button @click="sortBy = 'scraped_old'; sortOpen = false" class="w-full text-left px-4 py-2 text-sm hover:bg-gray-50" :class="sortBy === 'scraped_old' ? 'text-indigo-600 font-semibold' : 'text-gray-700'">Last Scraped (Oldest)</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Select All / Deselect All -->
+        <div class="flex items-center gap-4 mb-4 pb-4 border-b border-gray-100">
+            <label class="inline-flex items-center gap-2 cursor-pointer text-sm text-gray-600 hover:text-gray-800">
+                <input type="checkbox" :checked="allFilteredSelected" @change="toggleSelectAll()"
+                       class="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                <span x-text="allFilteredSelected ? 'Deselect All' : 'Select All'"></span>
+            </label>
+            <span x-show="selectedCompanies.length > 0" class="text-xs text-indigo-600 font-medium bg-indigo-50 px-2 py-1 rounded-full"
+                  x-text="selectedCompanies.length + ' selected'"></span>
+            <button x-show="selectedCompanies.length > 0" @click="selectedCompanies = []"
+                    class="text-xs text-gray-500 hover:text-red-600 transition-colors">Clear selection</button>
+        </div>
+
+        <!-- Loading State -->
+        <div x-show="loading" class="flex items-center justify-center py-12">
+            <svg class="animate-spin h-8 w-8 text-indigo-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+        </div>
+
+        <!-- Company Table -->
+        <div x-show="!loading" class="overflow-x-auto">
+            <table class="w-full">
+                <thead>
+                    <tr class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                        <th class="pb-3 pr-3 w-10"></th>
+                        <th class="pb-3 pr-3">Company</th>
+                        <th class="pb-3 pr-3 text-right w-28">Jobs</th>
+                        <th class="pb-3 pr-3 text-right w-40">Last Scraped</th>
+                        <th class="pb-3 text-right w-24">Action</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-50">
+                    <template x-for="company in filteredCompanies" :key="company">
+                        <tr class="hover:bg-gray-50 transition-colors group">
+                            <td class="py-2.5 pr-3">
+                                <input type="checkbox" :value="company"
+                                       :checked="selectedCompanies.includes(company)"
+                                       @change="toggleCompany(company)"
+                                       class="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                            </td>
+                            <td class="py-2.5 pr-3">
+                                <span class="text-sm font-medium text-gray-800" x-text="company"></span>
+                            </td>
+                            <td class="py-2.5 pr-3 text-right">
+                                <span class="text-sm tabular-nums"
+                                      :class="getCompanyJobCount(company) > 0 ? 'text-green-600 font-semibold' : 'text-gray-400'"
+                                      x-text="getCompanyJobCount(company) > 0 ? getCompanyJobCount(company).toLocaleString() : '-'"></span>
+                            </td>
+                            <td class="py-2.5 pr-3 text-right">
+                                <span class="text-sm text-gray-500" x-text="getCompanyLastScraped(company)"></span>
+                            </td>
+                            <td class="py-2.5 text-right">
+                                <button @click="startSingle(company)"
+                                        :disabled="isTaskRunning"
+                                        class="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-indigo-600 bg-indigo-50 rounded-md hover:bg-indigo-100 transition-colors opacity-0 group-hover:opacity-100 disabled:opacity-50 disabled:cursor-not-allowed">
+                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/></svg>
+                                    Run
+                                </button>
+                            </td>
+                        </tr>
+                    </template>
+                </tbody>
+            </table>
+
+            <!-- Empty State -->
+            <div x-show="filteredCompanies.length === 0 && !loading" class="text-center py-12">
+                <svg class="mx-auto w-12 h-12 text-gray-300" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                <p class="mt-3 text-sm text-gray-500">No companies matching your search</p>
+                <button @click="searchQuery = ''" class="mt-2 text-sm text-indigo-600 hover:text-indigo-700 font-medium">Clear search</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Section 4: Task History -->
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <div class="flex items-center justify-between mb-5">
+            <div>
+                <h2 class="text-lg font-semibold text-gray-800">Task History</h2>
+                <p class="text-sm text-gray-500 mt-0.5">Recent scraping task runs</p>
+            </div>
+            <button @click="fetchTasks()" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                Refresh
+            </button>
+        </div>
+
+        <div class="overflow-x-auto">
+            <table class="w-full">
+                <thead>
+                    <tr class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider border-b border-gray-100">
+                        <th class="pb-3 pr-4">Task ID</th>
+                        <th class="pb-3 pr-4">Target</th>
+                        <th class="pb-3 pr-4">Status</th>
+                        <th class="pb-3 pr-4 text-right">Progress</th>
+                        <th class="pb-3 pr-4 text-right">Jobs</th>
+                        <th class="pb-3 pr-4 text-right">Duration</th>
+                        <th class="pb-3 text-right">Date</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-50">
+                    <template x-for="task in tasks" :key="task.task_id">
+                        <tr class="hover:bg-gray-50 transition-colors text-sm">
+                            <td class="py-3 pr-4">
+                                <span class="font-mono text-xs text-gray-500" x-text="task.task_id.substring(0, 8)"></span>
+                            </td>
+                            <td class="py-3 pr-4">
+                                <span class="text-gray-800 font-medium" x-text="task.company_name || ('All (' + task.total_companies + ')')"></span>
+                            </td>
+                            <td class="py-3 pr-4">
+                                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold"
+                                      :class="{
+                                          'bg-blue-100 text-blue-700': task.status === 'running' || task.status === 'pending',
+                                          'bg-green-100 text-green-700': task.status === 'completed',
+                                          'bg-red-100 text-red-700': task.status === 'failed',
+                                          'bg-yellow-100 text-yellow-700': task.status === 'cancelled'
+                                      }">
+                                    <span class="w-1.5 h-1.5 rounded-full"
+                                          :class="{
+                                              'bg-blue-500': task.status === 'running' || task.status === 'pending',
+                                              'bg-green-500': task.status === 'completed',
+                                              'bg-red-500': task.status === 'failed',
+                                              'bg-yellow-500': task.status === 'cancelled'
+                                          }"></span>
+                                    <span x-text="task.status.charAt(0).toUpperCase() + task.status.slice(1)"></span>
+                                </span>
+                            </td>
+                            <td class="py-3 pr-4 text-right">
+                                <span class="text-gray-600 tabular-nums" x-text="task.completed_companies + '/' + task.total_companies"></span>
+                            </td>
+                            <td class="py-3 pr-4 text-right">
+                                <span class="font-semibold tabular-nums" :class="task.total_jobs_found > 0 ? 'text-green-600' : 'text-gray-400'"
+                                      x-text="task.total_jobs_found.toLocaleString()"></span>
+                            </td>
+                            <td class="py-3 pr-4 text-right">
+                                <span class="text-gray-500 tabular-nums" x-text="formatTaskDuration(task)"></span>
+                            </td>
+                            <td class="py-3 text-right">
+                                <span class="text-gray-500" x-text="formatDate(task.started_at)"></span>
+                            </td>
+                        </tr>
+                    </template>
+                </tbody>
+            </table>
+
+            <!-- Empty History -->
+            <div x-show="tasks.length === 0 && !loading" class="text-center py-12">
+                <svg class="mx-auto w-12 h-12 text-gray-300" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                <p class="mt-3 text-sm text-gray-500">No tasks have been run yet</p>
+                <p class="mt-1 text-xs text-gray-400">Start a scraping task above to see history here</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function scraperPanel() {
+    return {
+        // State
+        companies: [],
+        companyStats: {},
+        activeTask: null,
+        tasks: [],
+        selectedCompanies: [],
+        searchQuery: '',
+        workers: 10,
+        timeout: 180,
+        sortBy: 'name',
+        loading: true,
+        pollInterval: null,
+        toasts: [],
+        toastCounter: 0,
+        previousResultCount: 0,
+
+        sortLabels: {
+            'name': 'Name (A-Z)',
+            'name_desc': 'Name (Z-A)',
+            'jobs': 'Jobs (High-Low)',
+            'jobs_asc': 'Jobs (Low-High)',
+            'scraped': 'Last Scraped (Recent)',
+            'scraped_old': 'Last Scraped (Oldest)'
+        },
+
+        // Computed
+        get isTaskRunning() {
+            return this.activeTask && (this.activeTask.status === 'running' || this.activeTask.status === 'pending');
+        },
+
+        get filteredCompanies() {
+            let list = [...this.companies];
+            if (this.searchQuery.trim()) {
+                const q = this.searchQuery.toLowerCase().trim();
+                list = list.filter(c => c.toLowerCase().includes(q));
+            }
+            list = this.sortCompanies(list);
+            return list;
+        },
+
+        get allFilteredSelected() {
+            if (this.filteredCompanies.length === 0) return false;
+            return this.filteredCompanies.every(c => this.selectedCompanies.includes(c));
+        },
+
+        get resultEntries() {
+            if (!this.activeTask || !this.activeTask.results) return [];
+            const results = this.activeTask.results;
+            const entries = [];
+            for (const [company, data] of Object.entries(results)) {
+                if (typeof data === 'object' && data !== null) {
+                    if (data.error) {
+                        entries.push({ company, success: false, error: data.error, jobs: 0, duration: data.duration || '?' });
+                    } else {
+                        entries.push({ company, success: true, jobs: data.jobs_found || data.jobs || 0, duration: data.duration || '?', error: '' });
+                    }
+                } else {
+                    entries.push({ company, success: true, jobs: data || 0, duration: '?', error: '' });
+                }
+            }
+            return entries;
+        },
+
+        get taskDuration() {
+            if (!this.activeTask) return '--:--';
+            return this.formatTaskDuration(this.activeTask);
+        },
+
+        // Init
+        async init() {
+            await Promise.all([
+                this.fetchScrapers(),
+                this.fetchCompanyStats(),
+                this.fetchTasks()
+            ]);
+            this.loading = false;
+
+            // Check if there's already a running task
+            const running = this.tasks.find(t => t.status === 'running' || t.status === 'pending');
+            if (running) {
+                this.activeTask = running;
+                this.startPolling();
+            }
+        },
+
+        // API Methods
+        async fetchScrapers() {
+            try {
+                const res = await fetch('/api/scraper/scrapers/');
+                const data = await res.json();
+                this.companies = data.companies || [];
+            } catch (e) {
+                this.showToast('Failed to load scrapers', 'error');
+            }
+        },
+
+        async fetchCompanyStats() {
+            try {
+                const res = await fetch('/api/companies/');
+                const data = await res.json();
+                this.companyStats = {};
+                if (Array.isArray(data)) {
+                    data.forEach(item => {
+                        this.companyStats[item.company_name] = {
+                            count: item.count,
+                            last_scraped: item.last_scraped
+                        };
+                    });
+                }
+            } catch (e) {
+                // Non-critical, silently fail
+            }
+        },
+
+        async fetchTasks() {
+            try {
+                const res = await fetch('/api/scraper/tasks/');
+                const data = await res.json();
+                this.tasks = Array.isArray(data) ? data : [];
+            } catch (e) {
+                this.showToast('Failed to load task history', 'error');
+            }
+        },
+
+        async pollActiveTask() {
+            if (!this.activeTask) return;
+            try {
+                const res = await fetch('/api/scraper/tasks/' + this.activeTask.task_id + '/');
+                const data = await res.json();
+                this.activeTask = data;
+
+                // Auto-scroll results stream
+                this.$nextTick(() => {
+                    const stream = this.$refs.resultsStream;
+                    if (stream) {
+                        stream.scrollTop = stream.scrollHeight;
+                    }
+                });
+
+                // Check if task is done
+                if (data.status !== 'running' && data.status !== 'pending') {
+                    this.stopPolling();
+                    this.fetchTasks();
+                    this.fetchCompanyStats();
+                    if (data.status === 'completed') {
+                        this.showToast('Scraping completed! Found ' + data.total_jobs_found.toLocaleString() + ' jobs.', 'success');
+                    } else if (data.status === 'failed') {
+                        this.showToast('Scraping task failed: ' + (data.error_message || 'Unknown error'), 'error');
+                    } else if (data.status === 'cancelled') {
+                        this.showToast('Task was cancelled.', 'warning');
+                    }
+                }
+            } catch (e) {
+                // Polling failure is non-critical
+            }
+        },
+
+        startPolling() {
+            this.stopPolling();
+            this.previousResultCount = 0;
+            this.pollInterval = setInterval(() => this.pollActiveTask(), 3000);
+        },
+
+        stopPolling() {
+            if (this.pollInterval) {
+                clearInterval(this.pollInterval);
+                this.pollInterval = null;
+            }
+        },
+
+        // Actions
+        async startAll() {
+            if (this.isTaskRunning) return;
+            try {
+                const res = await fetch('/api/scraper/start/', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        all: true,
+                        max_workers: this.workers,
+                        timeout: this.timeout
+                    })
+                });
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.error || 'Failed to start');
+                }
+                const data = await res.json();
+                this.activeTask = data;
+                this.startPolling();
+                this.showToast('Started scraping all ' + data.total_companies + ' companies', 'success');
+                this.fetchTasks();
+            } catch (e) {
+                this.showToast(e.message || 'Failed to start scraping', 'error');
+            }
+        },
+
+        async startSelected() {
+            if (this.selectedCompanies.length === 0 || this.isTaskRunning) return;
+            try {
+                const res = await fetch('/api/scraper/start/', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        companies: this.selectedCompanies,
+                        max_workers: this.workers,
+                        timeout: this.timeout
+                    })
+                });
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.error || 'Failed to start');
+                }
+                const data = await res.json();
+                this.activeTask = data;
+                this.startPolling();
+                this.showToast('Started scraping ' + this.selectedCompanies.length + ' companies', 'success');
+                this.fetchTasks();
+            } catch (e) {
+                this.showToast(e.message || 'Failed to start scraping', 'error');
+            }
+        },
+
+        async startSingle(company) {
+            if (this.isTaskRunning) return;
+            try {
+                const res = await fetch('/api/scraper/start/' + encodeURIComponent(company) + '/', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.error || 'Failed to start');
+                }
+                const data = await res.json();
+                this.activeTask = data;
+                this.startPolling();
+                this.showToast('Started scraping ' + company, 'info');
+                this.fetchTasks();
+            } catch (e) {
+                this.showToast(e.message || 'Failed to start scraping', 'error');
+            }
+        },
+
+        async cancelTask(taskId) {
+            try {
+                const res = await fetch('/api/scraper/tasks/' + taskId + '/cancel/', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.error || 'Failed to cancel');
+                }
+                const data = await res.json();
+                this.activeTask = data;
+                this.stopPolling();
+                this.showToast('Task cancelled', 'warning');
+                this.fetchTasks();
+            } catch (e) {
+                this.showToast(e.message || 'Failed to cancel task', 'error');
+            }
+        },
+
+        clearActiveTask() {
+            this.activeTask = null;
+            this.stopPolling();
+        },
+
+        // Company helpers
+        toggleCompany(company) {
+            const idx = this.selectedCompanies.indexOf(company);
+            if (idx > -1) {
+                this.selectedCompanies.splice(idx, 1);
+            } else {
+                this.selectedCompanies.push(company);
+            }
+        },
+
+        toggleSelectAll() {
+            if (this.allFilteredSelected) {
+                // Deselect all filtered
+                this.selectedCompanies = this.selectedCompanies.filter(c => !this.filteredCompanies.includes(c));
+            } else {
+                // Select all filtered (add those not already selected)
+                const toAdd = this.filteredCompanies.filter(c => !this.selectedCompanies.includes(c));
+                this.selectedCompanies = [...this.selectedCompanies, ...toAdd];
+            }
+        },
+
+        getCompanyJobCount(company) {
+            const stats = this.companyStats[company];
+            return stats ? stats.count : 0;
+        },
+
+        getCompanyLastScraped(company) {
+            const stats = this.companyStats[company];
+            if (!stats || !stats.last_scraped) return 'Never';
+            return this.timeAgo(stats.last_scraped);
+        },
+
+        sortCompanies(list) {
+            const stats = this.companyStats;
+            switch (this.sortBy) {
+                case 'name':
+                    return list.sort((a, b) => a.localeCompare(b));
+                case 'name_desc':
+                    return list.sort((a, b) => b.localeCompare(a));
+                case 'jobs':
+                    return list.sort((a, b) => ((stats[b]?.count || 0) - (stats[a]?.count || 0)) || a.localeCompare(b));
+                case 'jobs_asc':
+                    return list.sort((a, b) => ((stats[a]?.count || 0) - (stats[b]?.count || 0)) || a.localeCompare(b));
+                case 'scraped':
+                    return list.sort((a, b) => {
+                        const da = stats[a]?.last_scraped ? new Date(stats[a].last_scraped) : new Date(0);
+                        const db = stats[b]?.last_scraped ? new Date(stats[b].last_scraped) : new Date(0);
+                        return db - da || a.localeCompare(b);
+                    });
+                case 'scraped_old':
+                    return list.sort((a, b) => {
+                        const da = stats[a]?.last_scraped ? new Date(stats[a].last_scraped) : new Date(0);
+                        const db = stats[b]?.last_scraped ? new Date(stats[b].last_scraped) : new Date(0);
+                        return da - db || a.localeCompare(b);
+                    });
+                default:
+                    return list;
+            }
+        },
+
+        // Formatting helpers
+        timeAgo(dateString) {
+            if (!dateString) return 'Never';
+            const date = new Date(dateString);
+            const now = new Date();
+            const seconds = Math.floor((now - date) / 1000);
+
+            if (seconds < 60) return 'Just now';
+            const minutes = Math.floor(seconds / 60);
+            if (minutes < 60) return minutes + (minutes === 1 ? ' minute ago' : ' minutes ago');
+            const hours = Math.floor(minutes / 60);
+            if (hours < 24) return hours + (hours === 1 ? ' hour ago' : ' hours ago');
+            const days = Math.floor(hours / 24);
+            if (days < 30) return days + (days === 1 ? ' day ago' : ' days ago');
+            const months = Math.floor(days / 30);
+            return months + (months === 1 ? ' month ago' : ' months ago');
+        },
+
+        formatTaskDuration(task) {
+            if (!task.started_at) return '--:--';
+            const start = new Date(task.started_at);
+            const end = task.finished_at ? new Date(task.finished_at) : new Date();
+            const diff = Math.floor((end - start) / 1000);
+            if (diff < 0) return '0:00';
+            const hrs = Math.floor(diff / 3600);
+            const mins = Math.floor((diff % 3600) / 60);
+            const secs = diff % 60;
+            if (hrs > 0) {
+                return hrs + ':' + String(mins).padStart(2, '0') + ':' + String(secs).padStart(2, '0');
+            }
+            return mins + ':' + String(secs).padStart(2, '0');
+        },
+
+        formatDate(dateString) {
+            if (!dateString) return '-';
+            const d = new Date(dateString);
+            return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+        },
+
+        // Toast
+        showToast(message, type = 'info') {
+            const id = ++this.toastCounter;
+            const toast = { id, message, type, visible: true };
+            this.toasts.push(toast);
+            setTimeout(() => {
+                toast.visible = false;
+                setTimeout(() => {
+                    this.toasts = this.toasts.filter(t => t.id !== id);
+                }, 300);
+            }, 5000);
+        }
+    };
+}
+</script>
+{% endblock %}

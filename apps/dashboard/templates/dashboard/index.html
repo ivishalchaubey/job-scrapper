@@ -1,0 +1,393 @@
+{% extends "dashboard/base.html" %}
+
+{% block content %}
+<div x-data="dashboardApp()" x-init="init()">
+
+    <!-- Stats Cards Row -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+
+        <!-- Total Jobs -->
+        <div class="bg-white rounded-lg shadow p-6 flex items-center space-x-4">
+            <div class="flex-shrink-0 bg-blue-100 text-blue-600 rounded-full p-3">
+                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m8 0H8m8 0a2 2 0 012 2v6a2 2 0 01-2 2H8a2 2 0 01-2-2V8a2 2 0 012-2"/>
+                </svg>
+            </div>
+            <div>
+                <p class="text-sm font-medium text-gray-500 uppercase tracking-wide">Total Jobs</p>
+                <template x-if="loading">
+                    <div class="mt-1">
+                        <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+                    </div>
+                </template>
+                <p x-show="!loading" x-text="stats.total_jobs?.toLocaleString() ?? '0'" class="mt-1 text-3xl font-bold text-gray-900"></p>
+            </div>
+        </div>
+
+        <!-- Active Companies -->
+        <div class="bg-white rounded-lg shadow p-6 flex items-center space-x-4">
+            <div class="flex-shrink-0 bg-green-100 text-green-600 rounded-full p-3">
+                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>
+                </svg>
+            </div>
+            <div>
+                <p class="text-sm font-medium text-gray-500 uppercase tracking-wide">Active Companies</p>
+                <template x-if="loading">
+                    <div class="mt-1">
+                        <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-green-600"></div>
+                    </div>
+                </template>
+                <p x-show="!loading" x-text="stats.active_companies?.toLocaleString() ?? '0'" class="mt-1 text-3xl font-bold text-gray-900"></p>
+            </div>
+        </div>
+
+        <!-- Total Scrapers -->
+        <div class="bg-white rounded-lg shadow p-6 flex items-center space-x-4">
+            <div class="flex-shrink-0 bg-purple-100 text-purple-600 rounded-full p-3">
+                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/>
+                </svg>
+            </div>
+            <div>
+                <p class="text-sm font-medium text-gray-500 uppercase tracking-wide">Total Scrapers</p>
+                <template x-if="loading">
+                    <div class="mt-1">
+                        <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-purple-600"></div>
+                    </div>
+                </template>
+                <p x-show="!loading" x-text="stats.total_scrapers ?? 275" class="mt-1 text-3xl font-bold text-gray-900"></p>
+            </div>
+        </div>
+
+        <!-- Success Rate -->
+        <div class="bg-white rounded-lg shadow p-6 flex items-center space-x-4">
+            <div class="flex-shrink-0 bg-yellow-100 text-yellow-600 rounded-full p-3">
+                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+                </svg>
+            </div>
+            <div>
+                <p class="text-sm font-medium text-gray-500 uppercase tracking-wide">Success Rate</p>
+                <template x-if="loading">
+                    <div class="mt-1">
+                        <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-yellow-600"></div>
+                    </div>
+                </template>
+                <p x-show="!loading" x-text="stats.success_rate != null ? stats.success_rate + '%' : '0%'" class="mt-1 text-3xl font-bold text-gray-900"></p>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Last Scrape Info -->
+    <div x-show="!loading && stats.last_scrape" class="mb-8">
+        <p class="text-sm text-gray-500">
+            Last scrape run: <span x-text="stats.last_scrape ? new Date(stats.last_scrape).toLocaleString() : 'N/A'" class="font-medium text-gray-700"></span>
+        </p>
+    </div>
+
+    <!-- Charts Row -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+
+        <!-- Doughnut Chart: Top 10 Companies by Jobs -->
+        <div class="bg-white rounded-lg shadow p-6">
+            <h3 class="text-lg font-semibold text-gray-800 mb-4">Top 10 Companies by Jobs</h3>
+            <div class="relative" style="height: 320px;">
+                <template x-if="loading">
+                    <div class="absolute inset-0 flex items-center justify-center">
+                        <div class="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600"></div>
+                    </div>
+                </template>
+                <canvas id="companiesChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Bar Chart: Recent Scraping Runs -->
+        <div class="bg-white rounded-lg shadow p-6">
+            <h3 class="text-lg font-semibold text-gray-800 mb-4">Recent Scraping Runs</h3>
+            <div class="relative" style="height: 320px;">
+                <template x-if="loading">
+                    <div class="absolute inset-0 flex items-center justify-center">
+                        <div class="animate-spin rounded-full h-10 w-10 border-b-2 border-purple-600"></div>
+                    </div>
+                </template>
+                <canvas id="runsChart"></canvas>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Recent Activity Table -->
+    <div class="bg-white rounded-lg shadow overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-200">
+            <h3 class="text-lg font-semibold text-gray-800">Recent Activity</h3>
+            <p class="text-sm text-gray-500 mt-1">Last 20 scraping runs</p>
+        </div>
+
+        <!-- Loading State -->
+        <div x-show="loading" class="flex items-center justify-center py-12">
+            <div class="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600"></div>
+            <span class="ml-3 text-gray-500">Loading activity...</span>
+        </div>
+
+        <!-- Empty State -->
+        <div x-show="!loading && history.length === 0" class="text-center py-12">
+            <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+            </svg>
+            <p class="mt-2 text-sm text-gray-500">No scraping activity found.</p>
+        </div>
+
+        <!-- Table -->
+        <div x-show="!loading && history.length > 0" class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Company
+                        </th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Jobs Scraped
+                        </th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Status
+                        </th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Date
+                        </th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200">
+                    <template x-for="(run, index) in history" :key="index">
+                        <tr class="hover:bg-gray-50 transition-colors duration-150">
+                            <td class="px-6 py-4 whitespace-nowrap">
+                                <div class="flex items-center">
+                                    <div class="flex-shrink-0 h-8 w-8 bg-gray-200 rounded-full flex items-center justify-center">
+                                        <span x-text="run.company_name?.charAt(0)?.toUpperCase() ?? '?'" class="text-sm font-medium text-gray-600"></span>
+                                    </div>
+                                    <div class="ml-3">
+                                        <p x-text="run.company_name" class="text-sm font-medium text-gray-900"></p>
+                                    </div>
+                                </div>
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap">
+                                <p x-text="run.jobs_scraped?.toLocaleString() ?? '0'" class="text-sm text-gray-900 font-semibold"></p>
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap">
+                                <span
+                                    x-text="run.status"
+                                    :class="run.status === 'success'
+                                        ? 'bg-green-100 text-green-800'
+                                        : 'bg-red-100 text-red-800'"
+                                    class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize"
+                                ></span>
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                <span x-text="run.run_date ? new Date(run.run_date).toLocaleString() : 'N/A'"></span>
+                            </td>
+                        </tr>
+                    </template>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function dashboardApp() {
+    return {
+        loading: true,
+        stats: {},
+        companies: [],
+        history: [],
+        companiesChart: null,
+        runsChart: null,
+
+        async init() {
+            try {
+                const [statsRes, companiesRes, historyRes] = await Promise.all([
+                    fetch('/api/stats/'),
+                    fetch('/api/companies/'),
+                    fetch('/api/history/?limit=20')
+                ]);
+
+                if (statsRes.ok) {
+                    this.stats = await statsRes.json();
+                }
+                if (companiesRes.ok) {
+                    this.companies = await companiesRes.json();
+                }
+                if (historyRes.ok) {
+                    this.history = await historyRes.json();
+                }
+            } catch (error) {
+                console.error('Failed to fetch dashboard data:', error);
+            } finally {
+                this.loading = false;
+                this.$nextTick(() => {
+                    this.renderCompaniesChart();
+                    this.renderRunsChart();
+                });
+            }
+        },
+
+        renderCompaniesChart() {
+            const canvas = document.getElementById('companiesChart');
+            if (!canvas) return;
+
+            const top10 = [...this.companies]
+                .sort((a, b) => (b.count || 0) - (a.count || 0))
+                .slice(0, 10);
+
+            if (top10.length === 0) return;
+
+            const labels = top10.map(c => c.company_name);
+            const data = top10.map(c => c.count || 0);
+
+            const colors = [
+                '#3B82F6', '#10B981', '#8B5CF6', '#F59E0B', '#EF4444',
+                '#06B6D4', '#EC4899', '#14B8A6', '#F97316', '#6366F1'
+            ];
+
+            if (this.companiesChart) {
+                this.companiesChart.destroy();
+            }
+
+            this.companiesChart = new Chart(canvas, {
+                type: 'doughnut',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: data,
+                        backgroundColor: colors.slice(0, top10.length),
+                        borderColor: '#ffffff',
+                        borderWidth: 2,
+                        hoverOffset: 6
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'right',
+                            labels: {
+                                padding: 12,
+                                usePointStyle: true,
+                                pointStyle: 'circle',
+                                font: {
+                                    size: 11
+                                }
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                    const value = context.parsed;
+                                    const pct = ((value / total) * 100).toFixed(1);
+                                    return ` ${context.label}: ${value.toLocaleString()} jobs (${pct}%)`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        },
+
+        renderRunsChart() {
+            const canvas = document.getElementById('runsChart');
+            if (!canvas) return;
+
+            const recentRuns = [...this.history].reverse().slice(-15);
+
+            if (recentRuns.length === 0) return;
+
+            const labels = recentRuns.map(r => r.company_name?.length > 12
+                ? r.company_name.substring(0, 12) + '...'
+                : r.company_name || 'Unknown');
+            const data = recentRuns.map(r => r.jobs_scraped || 0);
+            const bgColors = recentRuns.map(r =>
+                r.status === 'success' ? 'rgba(16, 185, 129, 0.7)' : 'rgba(239, 68, 68, 0.7)'
+            );
+            const borderColors = recentRuns.map(r =>
+                r.status === 'success' ? 'rgb(16, 185, 129)' : 'rgb(239, 68, 68)'
+            );
+
+            if (this.runsChart) {
+                this.runsChart.destroy();
+            }
+
+            this.runsChart = new Chart(canvas, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Jobs Scraped',
+                        data: data,
+                        backgroundColor: bgColors,
+                        borderColor: borderColors,
+                        borderWidth: 1,
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                precision: 0,
+                                font: { size: 11 }
+                            },
+                            grid: {
+                                color: 'rgba(0, 0, 0, 0.05)'
+                            }
+                        },
+                        x: {
+                            ticks: {
+                                font: { size: 10 },
+                                maxRotation: 45,
+                                minRotation: 25
+                            },
+                            grid: {
+                                display: false
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            callbacks: {
+                                title: function(items) {
+                                    const idx = items[0].dataIndex;
+                                    return recentRuns[idx]?.company_name || 'Unknown';
+                                },
+                                label: function(context) {
+                                    const idx = context.dataIndex;
+                                    const run = recentRuns[idx];
+                                    const status = run?.status === 'success' ? 'Success' : 'Failed';
+                                    return ` ${context.parsed.y.toLocaleString()} jobs - ${status}`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+    };
+}
+</script>
+{% endblock %}

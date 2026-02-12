@@ -1,595 +1,487 @@
 # Job Scraper System
 
-Production-ready job scraping system for **125 companies** including tech giants, consulting firms, financial institutions, e-commerce, manufacturing, pharma, and more across India.
+Production-ready job scraping system for **275 companies** across India — covering tech giants, consulting firms, financial institutions, e-commerce, manufacturing, pharma, and more.
+
+Built with **Django + Django REST Framework + MongoDB + Selenium**.
 
 ---
 
-## ⚡ Quick Reference
-
-**Always use an action with run.py:**
+## Quick Start
 
 ```bash
-# ✅ BEST - Fast parallel scraping (10 workers)
-python run.py scrape --workers 10
+# 1. Clone and enter directory
+cd backend
 
-# ✅ GOOD - Default parallel scraping (5 workers)
-python run.py scrape
+# 2. Create virtual environment
+python3 -m venv venv
+source venv/bin/activate
 
-# ✅ CORRECT - Scrape single company
-python run.py scrape --company Google
+# 3. Install dependencies
+pip install -r requirements.txt
 
-# ✅ CORRECT - Start API server
-python run.py api
+# 4. Configure environment
+cp .env.example .env
+# Edit .env with your MongoDB URI if not using defaults
 
-# ✅ CORRECT - Export data
-python run.py export
+# 5. Run migrations (SQLite for Django internals)
+python manage.py migrate
 
-# ❌ WRONG - Missing action (will error)
-python run.py
+# 6. Setup MongoDB indexes
+python -c "from scripts.setup_indexes import create_indexes; create_indexes()"
+
+# 7. Start the server
+python manage.py runserver 0.0.0.0:8000
 ```
 
-**Available Actions:**
-- `scrape` - Run web scraping (all or specific company)
-  - `--workers N` - Number of parallel workers (default: 5, recommended: 10)
-- `export` - Export data to XML
-- `api` - Start API server
-- `clean` - Clean database
-
-**Speed Tips:**
-- Use `--workers 10` for fastest scraping (10-15 minutes)
-- Use `--workers 5` for balanced speed (20 minutes)
-- Use `--workers 3` for conservative/slow connections
+Open http://localhost:8000 for the dashboard, or http://localhost:8000/api/docs for Swagger UI.
 
 ---
 
-## Features
+## CLI Usage
 
-- ✅ **125 Scrapers** covering major companies in India (25 existing + 100 new)
-- ⚡ **Multithreaded Scraping** - 5-10x faster with parallel execution
-- 📊 **Auto Analytics Reports** - Detailed markdown reports after each run
-- ✅ **Swagger UI** - Interactive API documentation at `/api/docs`
-- ✅ **OpenAPI 3.0** - Complete API specification
-- ✅ Selenium with Chrome headless browser
-- ✅ MongoDB/PostgreSQL database with stable external_id tracking
-- ✅ XML export following Scoutit's opportunity schema
-- ✅ REST API with 10 endpoints
-- ✅ Scraping run history and logging
-- ✅ Zero-job detection and error handling
-- ✅ Pagination and filtering support
-- ✅ Full job details extraction
-- ✅ Health checks and system monitoring
-- ✅ Real-time progress tracking
+All operations go through `run.py`:
+
+```bash
+# Scrape all 275 companies (10 parallel workers)
+python run.py scrape --workers 10
+
+# Scrape a single company
+python run.py scrape --company Google
+python run.py scrape --company "Goldman Sachs"
+python run.py scrape --company "HDFC Bank"
+
+# Custom timeout per scraper (default: 180s)
+python run.py scrape --workers 15 --timeout 120
+
+# Start Django dev server
+python run.py server
+
+# Clean all data (jobs + scraping history)
+python run.py clean
+```
+
+### Speed Reference
+
+| Workers | Approx Time (275 companies) | Use Case               |
+|---------|----------------------------|------------------------|
+| 3       | ~45 min                    | Slow connections       |
+| 5       | ~30 min                    | Conservative           |
+| 10      | ~15 min                    | Recommended            |
+| 15      | ~10 min                    | Fast connections       |
+
+---
 
 ## Project Structure
 
 ```
-python-job-scrape/
-├── src/
-│   ├── api/
-│   │   └── app.py              # Flask REST API
-│   ├── database/
-│   │   └── db.py               # Database operations
-│   ├── scrapers/
-│   │   ├── amazon_scraper.py   # Amazon jobs scraper
-│   │   ├── accenture_scraper.py # Accenture jobs scraper
-│   │   └── jll_scraper.py      # JLL/Workday scraper
-│   ├── utils/
-│   │   ├── logger.py           # Logging utility
-│   │   └── xml_generator.py   # XML export generator
-│   └── config.py               # Configuration settings
-├── data/                       # Application data (auto-created)
-├── logs/                       # Log files (auto-created)
-├── output/                     # XML exports (auto-created)
-├── run.py                      # Main runner script
-└── requirements.txt            # Python dependencies
+backend/
+  manage.py                              # Django management (DJANGO_SETTINGS_MODULE=config.settings)
+  run.py                                 # CLI: scrape, server, clean
+  requirements.txt                       # -> requirements/base.txt
+  db.sqlite3                             # SQLite (Django auth/admin/sessions only)
+  .env.example                           # Environment variables template
 
+  config/                                # Django project configuration
+    settings/
+      __init__.py                        # Auto-selects dev/prod via DJANGO_ENV
+      base.py                            # Shared settings (DB, REST, CORS, etc.)
+      development.py                     # DEBUG=True, ALLOWED_HOSTS=['*']
+      production.py                      # Secure cookies, strict hosts
+    urls.py                              # Root URL routing
+    wsgi.py / asgi.py                    # WSGI/ASGI entry points
+    scraper.py                           # Scraper config (COMPANIES dict, timeouts)
+
+  core/                                  # Shared utilities
+    db.py                                # MongoDB connection (get_db, get_collection)
+    logging.py                           # setup_logger (console + file)
+
+  apps/                                  # Django applications
+    data_store/                          # Job data API (MongoDB-backed)
+      services.py                        # Job CRUD, stats, scraping history
+      views.py                           # REST endpoints (jobs, stats, health)
+      serializers.py                     # DRF serializers (plain, no ORM)
+      urls.py                            # /api/ routes
+    scraper_manager/                     # Scraper control API
+      services.py                        # ScrapeTask CRUD (MongoDB)
+      views.py                           # Start/cancel/status endpoints
+      serializers.py                     # Task + request serializers
+      urls.py                            # /api/scraper/ routes
+      engine.py                          # ThreadPoolExecutor scrape orchestration
+    dashboard/                           # Web UI
+      views.py                           # Template rendering
+      urls.py                            # /, /jobs/, /scrapers/
+      templates/dashboard/               # HTML templates (JS-driven)
+      templatetags/                      # Custom template tags
+
+  scrapers/                              # 275 scraper files
+    registry.py                          # SCRAPER_MAP + ALL_COMPANY_CHOICES
+    amazon_scraper.py
+    google_scraper.py
+    ... (275 scraper files)
+
+  scripts/                               # Management scripts
+    setup_indexes.py                     # MongoDB index creation
+
+  requirements/                          # Split dependencies
+    base.txt                             # Core dependencies
+    development.txt                      # Dev extras
+    production.txt                       # Production (gunicorn)
+
+  logs/                                  # Runtime logs (auto-created)
 ```
 
-## Setup
+---
 
-### 1. Install PostgreSQL
+## Architecture
 
-**macOS (Homebrew):**
+### Tech Stack
 
-```bash
-brew install postgresql@15
-brew services start postgresql@15
-```
+| Layer           | Technology                  |
+|-----------------|----------------------------|
+| Framework       | Django 4.2 + DRF            |
+| App Database    | MongoDB (pymongo)           |
+| Django Database | SQLite (auth/admin/sessions)|
+| Scraping        | Selenium + Chrome headless  |
+| API Docs        | drf-spectacular (Swagger)   |
+| Task Execution  | ThreadPoolExecutor          |
 
-**Ubuntu/Debian:**
+### Design Decisions
 
-```bash
-sudo apt-get install postgresql postgresql-contrib
-sudo systemctl start postgresql
-```
+- **pymongo** (not djongo/mongoengine) — direct MongoDB access, no ORM adapter hacks
+- **SQLite** for Django internals — auth, admin, sessions stay in SQLite
+- **MongoDB** for all app data — jobs, scraping_runs, scrape_tasks collections
+- **Service pattern** — `services.py` in each app handles all MongoDB operations
+- **Function-based views** — cleaner with MongoDB dicts (no ORM querysets)
+- **Plain Serializers** — not ModelSerializer (no Django models for app data)
+- **Split settings** — base/development/production via `DJANGO_ENV` env var
 
-**Windows:**
-Download from [postgresql.org](https://www.postgresql.org/download/)
+---
 
-### 2. Create Database
+## Environment Variables
 
-```bash
-# Create the database (use your system username)
-psql postgres -c "CREATE DATABASE jobs_db;"
-
-# Verify
-psql -l
-```
-
-### 3. Configure Environment
-
-Copy the example environment file and update with your database credentials:
-
-```bash
-cp .env.example .env
-```
-
-Edit `.env` and set your database username (typically your system username on macOS):
+Copy `.env.example` to `.env` and configure:
 
 ```env
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=jobs_db
-DB_USER=your_username  # Your system username on macOS
-DB_PASSWORD=           # Leave blank if no password set
-```
+# MongoDB
+MONGO_URI=mongodb://localhost:27017
+MONGO_DB_NAME=jobs_db
 
-### 4. Create Virtual Environment
+# Django
+DJANGO_SECRET_KEY=your-secret-key-here
+DJANGO_ENV=development          # development | production
 
-```bash
-python3 -m venv venv
-source venv/bin/activate  # On macOS/Linux
-# or
-venv\Scripts\activate  # On Windows
-```
-
-### 5. Install Dependencies
-
-```bash
-pip install -r requirements.txt
-```
-
-### 6. Test Database Connection
-
-```bash
-python test_db.py
-```
-
-You should see:
-
-```
-✓ Database connection successful!
-✓ Tables created/verified!
-```
-
-### 7. Verify Installation
-
-```bash
-python -c "from selenium import webdriver; print('Selenium installed successfully')"
-```
-
-## Usage
-
-### Important: Always Include the Action
-
-The `run.py` script requires an action. Available actions:
-- `scrape` - Run web scraping
-- `export` - Export data to XML
-- `api` - Start API server
-- `clean` - Clean database
-
----
-
-### 1. Scrape All Companies (125 Companies) - ⚡ FAST MODE
-
-```bash
-# Basic syntax (5 parallel workers - DEFAULT)
-python run.py scrape
-
-# Fast mode (10 parallel workers)
-python run.py scrape --workers 10
-
-# Conservative mode (3 workers)
-python run.py scrape --workers 3
-
-# From activated virtual environment
-source venv/bin/activate
-python run.py scrape --workers 10
-```
-
-**This will:**
-- ✅ Scrape jobs from all 125 companies **IN PARALLEL**
-- ✅ Save to database in real-time
-- ✅ Show live progress for each company
-- ✅ Generate detailed analytics report (markdown file)
-- ⚡ Time: ~10-20 minutes with 10 workers (5-6x faster!)
-- 📊 Creates `SCRAPING_ANALYTICS_YYYYMMDD_HHMMSS.md`
-
-**Speed Comparison:**
-- Old sequential: ~60 minutes
-- New parallel (5 workers): ~20 minutes
-- New parallel (10 workers): ~10-15 minutes
-
----
-
-### 2. Scrape Specific Company
-
-```bash
-# Tech Giants
-python run.py scrape --company Google
-python run.py scrape --company Amazon
-python run.py scrape --company Apple
-python run.py scrape --company Tesla
-python run.py scrape --company Netflix
-
-# Consulting & IT
-python run.py scrape --company McKinsey
-python run.py scrape --company Deloitte
-python run.py scrape --company EY
-python run.py scrape --company KPMG
-python run.py scrape --company PwC
-
-# Financial Services
-python run.py scrape --company "Goldman Sachs"
-python run.py scrape --company "JPMorgan Chase"
-python run.py scrape --company "HDFC Bank"
-python run.py scrape --company "ICICI Bank"
-
-# E-commerce & Startups
-python run.py scrape --company Flipkart
-python run.py scrape --company Myntra
-python run.py scrape --company Meesho
-python run.py scrape --company Zomato
-python run.py scrape --company Paytm
-
-# Note: Use quotes for company names with spaces
-python run.py scrape --company "Morgan Stanley"
-python run.py scrape --company "Larsen & Toubro"
-```
-
-**Tip:** See `scraper_progress_log.json` for complete list of 125 companies
-
----
-
-### 3. Export to XML
-
-```bash
-# Export all jobs
-python run.py export
-
-# Export specific company
-python run.py export --company Google
-python run.py export --company Tesla
-python run.py export --company "Goldman Sachs"
-```
-
-**Output:** XML files saved to `output/` directory
-
----
-
-### 4. Start API Server
-
-```bash
-python run.py api
-```
-
-**Access:**
-- API Root: `http://localhost:8000`
-- **Swagger UI (Interactive Docs):** `http://localhost:8000/api/docs` 🚀
-- Health Check: `http://localhost:8000/api/health`
-- Companies List: `http://localhost:8000/api/companies`
-
----
-
-### 5. Clean Database
-
-```bash
-python run.py clean
-```
-
-**Warning:** This will delete all scraped data!
-
----
-
-### Common Commands
-
-```bash
-# 1. Activate virtual environment (always do this first)
-source venv/bin/activate
-
-# 2. Run all scrapers (FAST - 10 workers)
-python run.py scrape --workers 10
-
-# 3. Check real-time progress (in terminal output)
-# You'll see: ✓ Google: 25 jobs (3.2s)
-
-# 4. View analytics report
-ls -lt SCRAPING_ANALYTICS_*.md | head -1
-cat SCRAPING_ANALYTICS_20260206_*.md
-
-# 5. Start API to view results
-python run.py api
-
-# 6. Open Swagger UI in browser
-open http://localhost:8000/api/docs
+# Production only
+ALLOWED_HOSTS=your-domain.com
 ```
 
 ---
-
-## 📊 Analytics Reports
-
-After each scrape run, an analytics report is automatically generated:
-
-**Report includes:**
-- ✅ Total companies scraped (success/failed)
-- ✅ Total jobs found
-- ✅ Top performers by job count
-- ✅ List of failed scrapes with errors
-- ✅ Performance metrics (duration, speed)
-- ✅ Jobs distribution breakdown
-- ✅ Recommendations for improvements
-
-**File format:** `SCRAPING_ANALYTICS_YYYYMMDD_HHMMSS.md`
-
-**Example:**
-```bash
-# After running scrape
-python run.py scrape --workers 10
-
-# Report is saved automatically
-# View it:
-cat SCRAPING_ANALYTICS_20260206_153045.md
-```
 
 ## API Endpoints
 
-### Interactive Testing
-Visit **`http://localhost:8000/api/docs`** for interactive Swagger UI with:
-- Try It Out functionality
-- Request/response examples
-- Schema documentation
-- All 10 endpoints
+### Dashboard (HTML)
 
-### Endpoint Summary
+| Method | URL          | Description         |
+|--------|-------------|---------------------|
+| GET    | `/`          | Dashboard home      |
+| GET    | `/jobs/`     | Jobs browser        |
+| GET    | `/scrapers/` | Scrapers overview   |
 
-#### System Endpoints
-- `GET /` - API information
-- `GET /api/health` - Health check
-- `GET /api/companies` - List all 125 companies
-- `GET /api/docs` - Swagger UI
+### Data Store API
 
-#### Job Endpoints
-- `GET /api/jobs` - Get all jobs (pagination & filters)
-- `GET /api/jobs/{company}` - Get jobs by company
+| Method | URL                    | Description                          |
+|--------|------------------------|--------------------------------------|
+| GET    | `/api/jobs/`           | List jobs (paginated, filterable)    |
+| GET    | `/api/jobs/<id>/`      | Get single job by ID                 |
+| GET    | `/api/stats/`          | Dashboard stats (totals, rates)      |
+| GET    | `/api/companies/`      | Company list with job counts         |
+| GET    | `/api/history/`        | Scraping run history                 |
+| GET    | `/api/health/`         | Health check (DB status)             |
 
-#### Statistics
-- `GET /api/stats` - Scraping statistics & history
+### Scraper Manager API
 
-#### Scraping
-- `POST /api/scrape/{company}` - Trigger scraping
+| Method | URL                                | Description                  |
+|--------|------------------------------------|------------------------------|
+| POST   | `/api/scraper/start/`              | Start scraping (all/subset)  |
+| POST   | `/api/scraper/start/<company>/`    | Scrape single company        |
+| GET    | `/api/scraper/tasks/`              | List all scrape tasks        |
+| GET    | `/api/scraper/tasks/<task_id>/`    | Get task progress            |
+| POST   | `/api/scraper/tasks/<task_id>/cancel/` | Cancel running task      |
+| GET    | `/api/scraper/scrapers/`           | List all 275 scrapers        |
 
-#### Export
-- `GET /api/export/xml` - Export all jobs as XML
-- `GET /api/export/xml/{company}` - Export company jobs as XML
+### Documentation
 
-### Quick API Examples
+| Method | URL              | Description          |
+|--------|-----------------|----------------------|
+| GET    | `/api/docs/`     | Swagger UI           |
+| GET    | `/api/schema/`   | OpenAPI 3.0 schema   |
+
+### Job List Filters
+
+```
+GET /api/jobs/?company_name=Google&city=Bangalore&page=1&page_size=20
+GET /api/jobs/?search=engineer&ordering=-updated_at
+GET /api/jobs/?employment_type=Full-time&department=Engineering
+```
+
+**Parameters:**
+- `company_name` — Filter by company (case-insensitive exact match)
+- `city` — Filter by city (regex match)
+- `country` — Filter by country
+- `employment_type` — Filter by type (Full-time, Part-time, etc.)
+- `department` — Filter by department
+- `search` — Full-text search across title, company, city, department
+- `ordering` — Sort field, prefix `-` for descending (default: `-updated_at`)
+- `page` — Page number (default: 1)
+- `page_size` — Results per page (default: 50)
+
+---
+
+## API Examples
 
 ```bash
 # Health check
-curl http://localhost:8000/api/health
+curl http://localhost:8000/api/health/
+# {"status": "healthy", "database": "connected", "scrapers": 275}
 
-# List all companies
-curl http://localhost:8000/api/companies
+# Dashboard stats
+curl http://localhost:8000/api/stats/
+# {"total_jobs": 19551, "active_companies": 254, "success_rate": 100.0, ...}
 
-# Get Google jobs
-curl http://localhost:8000/api/jobs/Google
+# List jobs with filters
+curl "http://localhost:8000/api/jobs/?company_name=Google&page_size=5"
 
-# Get jobs with filters
-curl "http://localhost:8000/api/jobs?location=Bangalore&limit=20"
+# Search jobs
+curl "http://localhost:8000/api/jobs/?search=engineer&city=Bangalore"
 
-# Get statistics
-curl http://localhost:8000/api/stats
+# Company stats
+curl http://localhost:8000/api/companies/
 
-# Export to XML
-curl http://localhost:8000/api/export/xml/Google -o google_jobs.xml
+# List all scrapers
+curl http://localhost:8000/api/scraper/scrapers/
+# {"total": 275, "companies": ["ABB", "AbbVie", "Abbott", ...]}
+
+# Start scraping via API
+curl -X POST http://localhost:8000/api/scraper/start/ \
+  -H "Content-Type: application/json" \
+  -d '{"companies": ["Google", "Amazon"], "max_workers": 5}'
+
+# Start scraping all companies
+curl -X POST http://localhost:8000/api/scraper/start/ \
+  -H "Content-Type: application/json" \
+  -d '{"all": true, "max_workers": 10}'
+
+# Check task progress
+curl http://localhost:8000/api/scraper/tasks/<task_id>/
 ```
 
-See `API_DOCUMENTATION.md` for complete API guide.
+---
 
-## Database Schema
+## MongoDB Collections
 
-### Jobs Table
+### `jobs`
 
-- `external_id` - Stable MD5 hash identifier
-- `company_name` - Company name
-- `title` - Job title
-- `description` - Job description
-- `location` - Full location string
-- `city`, `state`, `country` - Parsed location
-- `employment_type` - Full-time, Part-time, etc.
-- `department` - Department/division
-- `apply_url` - Live application URL
-- `posted_date` - Job posting date
-- `job_function` - Job category
-- `experience_level` - Entry, Mid, Senior, etc.
-- `salary_range` - Salary information
-- `remote_type` - Remote, Hybrid, On-site
-- `status` - active/inactive
-- `created_at`, `updated_at` - Timestamps
+| Field            | Type     | Description                      |
+|------------------|----------|----------------------------------|
+| `external_id`    | string   | Stable MD5 hash (company + ID)   |
+| `company_name`   | string   | Company name                     |
+| `title`          | string   | Job title                        |
+| `description`    | string   | Job description                  |
+| `location`       | string   | Full location string             |
+| `city`           | string   | City                             |
+| `state`          | string   | State/province                   |
+| `country`        | string   | Country                          |
+| `employment_type`| string   | Full-time, Part-time, etc.       |
+| `department`     | string   | Department/division              |
+| `apply_url`      | string   | Application URL                  |
+| `posted_date`    | string   | Posting date                     |
+| `job_function`   | string   | Job category                     |
+| `experience_level`| string  | Entry, Mid, Senior, etc.         |
+| `salary_range`   | string   | Salary information               |
+| `remote_type`    | string   | Remote, Hybrid, On-site          |
+| `status`         | string   | active / inactive                |
+| `created_at`     | datetime | First scraped                    |
+| `updated_at`     | datetime | Last updated                     |
 
-### Scraping Runs Table
+**Indexes:** `external_id` (unique), `company_name`, `status`, text index on `title`.
 
-- Logs each scraping run
-- Tracks success/failure
-- Records job counts
-- Stores error messages
+### `scraping_runs`
 
-## XML Output Format
+| Field          | Type     | Description            |
+|----------------|----------|------------------------|
+| `company_name` | string   | Company scraped        |
+| `run_date`     | datetime | When the run happened  |
+| `jobs_scraped`  | int     | Number of jobs found   |
+| `status`       | string   | success / failed       |
+| `error_message`| string   | Error details (if any) |
 
-Follows Scoutit's opportunity schema:
+### `scrape_tasks`
 
-```xml
-<?xml version="1.0" encoding="utf-8"?>
-<opportunities xmlns="http://www.scoutit.com/schema/opportunities">
-  <opportunity>
-    <external_id>abc123...</external_id>
-    <company>Amazon</company>
-    <title>Software Engineer</title>
-    <apply_url>https://...</apply_url>
-    <location>Bangalore, Karnataka, India</location>
-    <city>Bangalore</city>
-    <state>Karnataka</state>
-    <country>India</country>
-    <!-- Optional fields only included if data exists -->
-  </opportunity>
-</opportunities>
+| Field                | Type     | Description                    |
+|----------------------|----------|--------------------------------|
+| `task_id`            | string   | UUID task identifier           |
+| `company_name`       | string   | Target company (or empty=all)  |
+| `status`             | string   | pending/running/completed/failed/cancelled |
+| `total_companies`    | int      | Total companies to scrape      |
+| `completed_companies`| int      | Companies done so far          |
+| `total_jobs_found`   | int      | Running total of jobs           |
+| `started_at`         | datetime | Task start time                |
+| `finished_at`        | datetime | Task end time                  |
+| `results`            | dict     | Per-company results            |
+| `error_message`      | string   | Error details (if any)         |
+
+---
+
+## Scraper Configuration
+
+Edit `config/scraper.py` to customize:
+
+```python
+SCRAPE_TIMEOUT = 30           # Page load timeout (seconds)
+HEADLESS_MODE = True          # Run Chrome headless
+MAX_PAGES_TO_SCRAPE = 15      # Max pagination pages
+FETCH_FULL_JOB_DETAILS = False
 ```
 
-## Configuration
+The `COMPANIES` dict in the same file maps company names to their career page URLs and scraper identifiers. All 275 companies are configured here or define their own URLs in their scraper `__init__`.
 
-Edit `src/config.py` to customize:
+---
 
-- `HEADLESS_MODE` - Run browser in headless mode (default: True)
-- `SCRAPE_TIMEOUT` - Page load timeout in seconds
-- `API_PORT` - API server port (default: 5000)
-- `DEBUG_MODE` - Flask debug mode
+## Settings (Development vs Production)
 
-## Logs
+Settings are split across three files in `config/settings/`:
 
-Logs are saved in `logs/` directory:
+| File              | Purpose                                    |
+|-------------------|--------------------------------------------|
+| `base.py`         | Shared: installed apps, middleware, DB, etc.|
+| `development.py`  | `DEBUG=True`, `ALLOWED_HOSTS=['*']`        |
+| `production.py`   | `DEBUG=False`, secure cookies, strict hosts|
 
-- Daily log files: `scraper_YYYYMMDD.log`
-- Console output with timestamps
-- Error tracking and debugging info
+The active settings file is selected by the `DJANGO_ENV` environment variable (defaults to `development`).
 
-## Database
-
-PostgreSQL database: `jobs_db`
-
-You can view it using:
-
-- psql CLI: `psql jobs_db`
-- pgAdmin
-- Any PostgreSQL client
-- TablePlus, DBeaver, etc.
-
-## Features Implemented
-
-✅ **Two Scraping Runs**: Run `python run.py scrape` multiple times  
-✅ **XML Output**: Exports in Scoutit schema format  
-✅ **Stable external_id**: MD5 hash based on company + job ID  
-✅ **Valid apply URLs**: Direct links to job applications  
-✅ **No Fabricated Data**: Empty fields left blank  
-✅ **Zero-Job Detection**: Logs when no jobs found  
-✅ **Error Handling**: Logs failures with error messages  
-✅ **API for Validation**: View job counts and data via REST API
-
-## Testing
-
-### Automated Tests
-
-```bash
-# Test all scraper structures
-python test_all_new_scrapers.py
-python test_batch2_scrapers.py
-
-# Test scraper functionality (actual scraping)
-python test_scraper_functionality.py
-
-# End-to-end test
-python test_end_to_end.py
-```
-
-### Manual Testing
-
-#### Swagger UI (Recommended)
-1. Start API: `python run.py api`
-2. Open: `http://localhost:8000/api/docs`
-3. Use "Try it out" feature to test endpoints
-
-#### Using cURL
-```bash
-curl http://localhost:8000/api/health
-curl http://localhost:8000/api/companies
-curl http://localhost:8000/api/jobs/Google
-```
-
-#### Using Postman
-Import these endpoints:
-- `GET http://localhost:8000/api/jobs`
-- `GET http://localhost:8000/api/stats`
-- `GET http://localhost:8000/api/jobs/Google`
-- `GET http://localhost:8000/api/export/xml`
+---
 
 ## Production Deployment
 
-1. Set `HEADLESS_MODE = True` in config.py
-2. Use production WSGI server (gunicorn):
-   ```bash
-   pip install gunicorn
-   gunicorn -w 4 -b 0.0.0.0:5000 src.api.app:app
-   ```
-3. Set up cron job for scheduled scraping:
-   ```bash
-   0 2 * * * cd /path/to/project && venv/bin/python run.py scrape
-   ```
+```bash
+# Set environment
+export DJANGO_ENV=production
+export DJANGO_SECRET_KEY=your-production-secret
+export ALLOWED_HOSTS=your-domain.com
+export MONGO_URI=mongodb://your-mongo-host:27017
+export MONGO_DB_NAME=jobs_db
+
+# Install production deps
+pip install -r requirements/production.txt
+
+# Run migrations
+python manage.py migrate
+
+# Setup indexes
+python -c "from scripts.setup_indexes import create_indexes; create_indexes()"
+
+# Collect static files
+python manage.py collectstatic --noinput
+
+# Start with gunicorn
+gunicorn config.wsgi:application -w 4 -b 0.0.0.0:8000
+```
+
+### Scheduled Scraping (Cron)
+
+```bash
+# Scrape all companies daily at 2 AM
+0 2 * * * cd /path/to/backend && venv/bin/python run.py scrape --workers 10
+
+# Scrape specific company every 6 hours
+0 */6 * * * cd /path/to/backend && venv/bin/python run.py scrape --company Google
+```
+
+---
+
+## Supported Companies (275)
+
+### Tech Giants
+Amazon, AWS, Google, Apple, Microsoft, Meta, IBM, Intel, Dell, Cisco, Nvidia, Adobe, Oracle, SAP, Salesforce, Netflix, Tesla
+
+### Consulting & IT Services
+Accenture, TCS, Infosys, Wipro, HCLTech, Cognizant, Capgemini, Tech Mahindra, Deloitte, EY, KPMG, PwC, McKinsey, BCG, Bain, Birlasoft, Coforge, Persistent Systems, Cyient, KPIT Technologies, Hexaware Technologies, Zoho
+
+### Financial Services
+Goldman Sachs, JPMorgan Chase, Morgan Stanley, Citigroup, HDFC Bank, ICICI Bank, Axis Bank, Kotak Mahindra Bank, Bank of America, HSBC, Standard Chartered, State Bank of India, Deutsche Bank, BNP Paribas, DBS Bank, Wells Fargo, Barclays, American Express, Angel One, IIFL, IndusInd Bank, Yes Bank, RBL Bank, Bajaj Finserv, HDFC Ergo, Muthoot Finance, Motilal Oswal, Poonawalla Fincorp, UBS Group
+
+### E-commerce & Startups
+Flipkart, Walmart, Myntra, Meesho, Zepto, Paytm, Zomato, Swiggy, PhonePe, Ola Electric, Uber, Nykaa, BigBasket, Delhivery, BookMyShow, OYO, Jio
+
+### Manufacturing & Conglomerates
+ITC Limited, Larsen & Toubro, Reliance Industries, Adani Group, Tata Steel, Tata Motors, Hindustan Unilever, Procter & Gamble, Colgate-Palmolive, Asian Paints, Godrej Group, Bajaj Auto, Mahindra, Marico, Tata Consumer, Tata Power, Tata Communications, Tata Projects, Tata AIG, Tata AIA, and many more...
+
+### Pharma & Healthcare
+Abbott, AbbVie, Cipla, Dr Reddys, Eli Lilly, Fortis Healthcare, GSK, Johnson & Johnson, Mankind Pharma, Max Healthcare, Max Life Insurance, MetLife, Novartis, Pfizer, Piramal Group, Sun Pharma, Star Health Insurance
+
+### Auto & Industrial
+Bajaj Auto, BMW Group, Honda, Hyundai, Kia India, Maruti Suzuki, Mercedes-Benz, Nissan, Royal Enfield, Toyota Kirloskar, BYD, Volvo, Schaeffler, Continental, Bosch, Cummins, Havells, Crompton, Siemens, Siemens Energy, Schneider Electric, ABB, Honeywell
+
+### And More...
+Airlines (Air India, IndiGo, United Airlines, Emirates Group), Hospitality (Hilton, Marriott, IHG, Starbucks), Energy (BP, ExxonMobil, Shell, IOCL, NTPC, Adani Energy, JSW Energy, Suncor, Suzlon, Tata Power), Telecom (Verizon, Vodafone Idea, VOIS, Ericsson, NTT, American Tower), Real Estate (DLF, Prestige Group, Brigade Group), and more.
+
+---
 
 ## Troubleshooting
 
-### Error: "the following arguments are required: action"
-
-**Problem:** Running `python run.py` without action
-```bash
-# ❌ Wrong
-python run.py
-
-# ✅ Correct - Add action
-python run.py scrape       # To scrape
-python run.py api          # To start API
-python run.py export       # To export
-```
-
-### Chrome Driver Issues
-
-```bash
-pip install --upgrade webdriver-manager
-```
-
-### Permission Errors
-
-```bash
-chmod +x run.py
-```
-
-### Database Connection Issues
+### MongoDB Connection Issues
 
 ```bash
 # Check MongoDB is running
-brew services list | grep mongodb
+brew services list | grep mongodb       # macOS
+sudo systemctl status mongod            # Linux
 
 # Start MongoDB
-brew services start mongodb-community
+brew services start mongodb-community   # macOS
+sudo systemctl start mongod             # Linux
+
+# Test connection
+python -c "from core.db import get_db; print(get_db().name)"
 ```
 
-### Virtual Environment Not Activated
+### Chrome/Selenium Issues
+
+```bash
+# Update webdriver-manager
+pip install --upgrade webdriver-manager
+
+# Verify Selenium
+python -c "from selenium import webdriver; print('Selenium OK')"
+```
+
+### Django Check
+
+```bash
+# Verify project configuration
+python manage.py check
+
+# Run migrations
+python manage.py migrate
+```
+
+### Port Already in Use
+
+```bash
+# Kill process on port 8000
+lsof -ti:8000 | xargs kill -9
+```
+
+### Virtual Environment
 
 ```bash
 # Always activate before running
-source venv/bin/activate
+source venv/bin/activate    # macOS/Linux
+venv\Scripts\activate       # Windows
 
 # You should see (venv) in your prompt
 (venv) user@mac backend %
 ```
 
-### Port Already in Use (8000)
-
-```bash
-# Kill process on port 8000
-lsof -ti:8000 | xargs kill -9
-
-# Or change port in .env
-echo "API_PORT=8001" >> .env
-```
+---
 
 ## License
 
