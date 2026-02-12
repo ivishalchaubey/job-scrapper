@@ -134,3 +134,13 @@ These scrapers are fully functional but return 0 jobs because the company has no
 - **Platform:** Custom Emirates Group careers portal
 - **URL:** `https://www.emiratesgroupcareers.com/search-and-apply/`
 - **Issue:** Page loads (40.1s) but returns 0 jobs. The Emirates careers portal likely uses a JavaScript-heavy SPA or API-based job loading that the generic multi-strategy selectors cannot extract from. May require investigation of their specific API endpoints or dynamic content loading mechanism.
+
+---
+
+## API/Geo-blocking Issues
+
+### Tencent
+- **File:** `src/scrapers/tencent_scraper.py`
+- **Platform:** Tencent Careers custom API (`/tencentcareer/api/post/Query`)
+- **URL:** `https://careers.tencent.com/en-us/search.html?query=at_1,co_7&sc=7`
+- **Issue:** API returns 0 jobs for both India (countryId=7) and Global (empty countryId). Selenium fallback also finds 0 listings. Likely geo-restricted API access or the endpoint has changed. Tencent is a large employer so 0 global results suggests the API is blocking non-China requests.

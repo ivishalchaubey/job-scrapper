@@ -1,6 +1,6 @@
 # Scraper Analytics Report
 
-**Last Updated:** February 11, 2026
+**Last Updated:** February 12, 2026
 
 ---
 
@@ -9,9 +9,9 @@
 | Metric | Count |
 |--------|-------|
 | **Target Companies (from company-list.xlsx)** | 374 |
-| **Scrapers Built** | 250 |
-| **Scrapers Pending (not yet built)** | 124 |
-| **Coverage** | 66.8% |
+| **Scrapers Built** | 275 |
+| **Scrapers Pending (not yet built)** | 99 |
+| **Coverage** | 73.5% |
 
 ---
 
@@ -19,12 +19,13 @@
 
 | Status | Count | % of Built |
 |--------|-------|------------|
-| **Working** | 233 | 93.2% |
-| **Zero Open Positions (scraper works, no jobs listed)** | 8 | 3.2% |
-| **Network/Infrastructure Issues (intermittent)** | 4 | 1.6% |
-| **URL Issues (needs URL update)** | 4 | 1.6% |
-| **Anti-Bot Blocked** | 1 | 0.4% |
-| **Total Built** | **250** | **100%** |
+| **Working** | 257 | 93.5% |
+| **Zero Open Positions (scraper works, no jobs listed)** | 8 | 2.9% |
+| **Network/Infrastructure Issues (intermittent)** | 4 | 1.5% |
+| **URL Issues (needs URL update)** | 4 | 1.5% |
+| **API/Geo-blocking Issues** | 1 | 0.3% |
+| **Anti-Bot Blocked** | 1 | 0.3% |
+| **Total Built** | **275** | **100%** |
 
 ---
 
@@ -59,6 +60,41 @@ Adani Energy Solutions, Adani Ports, American Tower, ANZ, AXA, BASF, Bayer, Disn
 ### Batch 5 - Industry Leaders (25)
 Britannia Industries, BMW Group, Crompton Greaves, Diageo, DLF, Havells, HDFC Life, Hindustan Aeronautics (HAL), Honda, ICICI Lombard, IndusInd Bank, Indian Oil Corporation (IOCL), Kajaria Ceramics, Kia India, Mankind Pharma, Max Healthcare, NTPC, Nissan, OYO, Pidilite Industries, Saint-Gobain, Siemens Energy, Tata Communications, Toyota Kirloskar, Yes Bank
 
+### Batch 6 - New Companies (25)
+BYD, Glencore, HCC, JK Tyre, Kalyan Jewellers, Kirloskar, Mitsubishi, Motilal Oswal, Navitasys, Poonawalla Fincorp, Schaeffler, SIS, Sony, Suzlon, Swiss Re, Tata Admin, Tata AIA, Tencent, UBS Group, Uflex, Vardhman, Varroc, Visa, Voltas, Volvo
+
+**Batch 6 Test Results (Feb 12, 2026):**
+
+| Company | Jobs | Time | Status |
+|---------|------|------|--------|
+| Visa | 123 | 42.8s | PASS |
+| Kirloskar | 100 | 53.6s | PASS |
+| UBS Group | 99 | 55.4s | PASS |
+| Mitsubishi | 73 | 51.7s | PASS |
+| Swiss Re | 59 | 46.5s | PASS |
+| Kalyan Jewellers | 51 | 42.3s | PASS |
+| Tata Admin | 50 | 21.0s | PASS |
+| Sony | 40 | 3.5s | PASS |
+| Glencore | 26 | 65.2s | PASS |
+| Volvo | 24 | 57.3s | PASS |
+| Schaeffler | 19 | 53.8s | PASS |
+| Vardhman | 19 | 59.7s | PASS |
+| SIS | 16 | 37.3s | PASS |
+| JK Tyre | 10 | 39.2s | PASS |
+| Tata AIA | 6 | 45.4s | PASS |
+| HCC | 5 | 38.6s | PASS |
+| Navitasys | 4 | 42.9s | PASS |
+| Motilal Oswal | 3 | 37.3s | PASS |
+| Poonawalla Fincorp | 2 | 60.5s | PASS |
+| Suzlon | 2 | 62.3s | PASS |
+| Uflex | 2 | 72.1s | PASS |
+| BYD | 1 | 45.9s | PASS |
+| Varroc | 1 | 35.3s | PASS |
+| Voltas | 1 | 23.2s | PASS |
+| Tencent | 0 | 40.7s | FAIL |
+
+**Batch 6 Summary:** 24/25 passed, 736 total jobs scraped
+
 ---
 
 ## Failed Scrapers Detail
@@ -77,6 +113,12 @@ Britannia Industries, BMW Group, Crompton Greaves, Diageo, DLF, Havells, HDFC Li
 | Company | Issue | Resolution |
 |---------|-------|------------|
 | Tesla | Akamai Bot Manager blocks all headless Chrome | Requires residential proxy or non-headless automation |
+
+### API/Geo-blocking Issues (1)
+
+| Company | Issue | Resolution |
+|---------|-------|------------|
+| Tencent | API returns 0 for India & Global - likely geo-restricted | API blocks non-China requests; needs proxy or alternative endpoint |
 
 ### Network/Infrastructure Issues (4) - Intermittent
 
@@ -106,7 +148,7 @@ Britannia Industries, BMW Group, Crompton Greaves, Diageo, DLF, Havells, HDFC Li
 
 | Platform | Scraper Count |
 |----------|--------------|
-| Custom / Company-specific | 130 |
+| Custom / Company-specific | 155 |
 | Phenom / NAS / Radancy | 18 |
 | DarwinBox | 13 |
 | Oracle HCM | 11 |
@@ -116,7 +158,7 @@ Britannia Industries, BMW Group, Crompton Greaves, Diageo, DLF, Havells, HDFC Li
 | Eightfold AI | 3 |
 | Skillate | 2 |
 | Other (SmartRecruiters, Taleo, TurboHire, etc.) | 34 |
-| **Total** | **250** |
+| **Total** | **275** |
 
 ---
 
@@ -126,8 +168,8 @@ Britannia Industries, BMW Group, Crompton Greaves, Diageo, DLF, Havells, HDFC Li
 |----------|-------|-------------|
 | `run.py` (CLI accessible) | 200 | Can run via `python run.py scrape --company <name>` |
 | `src/config.py` only | 50 | Loaded via config system (Workday, Oracle HCM, DarwinBox, etc.) |
-| `src/scrapers/__init__.py` | 75 | Batch 3 + Batch 4 + Batch 5 scrapers (module exports) |
-| **Total unique scrapers** | **250** | All registered in at least one location |
+| `src/scrapers/__init__.py` | 100 | Batch 3-6 scrapers (module exports) |
+| **Total unique scrapers** | **275** | All registered in at least one location |
 
 ---
 
@@ -135,15 +177,16 @@ Britannia Industries, BMW Group, Crompton Greaves, Diageo, DLF, Havells, HDFC Li
 
 ```
 Target Companies:  374
-Built:             250  [============================================------]  66.8%
-Pending:           124  [                                            ------]  33.2%
+Built:             275  [================================================------]  73.5%
+Pending:            99  [                                                ------]  26.5%
 
-Of 250 Built:
-Working:           233  [============================================      ]  93.2%
-Zero Positions:      8  [=                                                 ]   3.2%
-Intermittent:        4  [                                                  ]   1.6%
-URL Issues:          4  [                                                  ]   1.6%
-Anti-Bot:            1  [                                                  ]   0.4%
+Of 275 Built:
+Working:           257  [================================================      ]  93.5%
+Zero Positions:      8  [=                                                     ]   2.9%
+Intermittent:        4  [                                                      ]   1.5%
+URL Issues:          4  [                                                      ]   1.5%
+API/Geo-blocked:     1  [                                                      ]   0.3%
+Anti-Bot:            1  [                                                      ]   0.3%
 ```
 
 ---
@@ -154,9 +197,9 @@ Anti-Bot:            1  [                                                  ]   0
 |------|---------|
 | `run.py` | Main CLI runner - imports 200 scrapers, parallel execution |
 | `src/config.py` | Configuration - 150 companies with URLs and scraper mappings |
-| `src/scrapers/__init__.py` | Module exports for Batch 3 + Batch 4 + Batch 5 scrapers |
-| `src/scrapers/*_scraper.py` | 250 individual scraper files |
-| `FAILED_SCRAPERS.md` | Detailed documentation of 17 non-functional scrapers |
+| `src/scrapers/__init__.py` | Module exports for Batch 3-6 scrapers |
+| `src/scrapers/*_scraper.py` | 275 individual scraper files |
+| `FAILED_SCRAPERS.md` | Detailed documentation of 18 non-functional scrapers |
 | `ANALYTICS.md` | This report |
 
 ---
@@ -167,5 +210,6 @@ Anti-Bot:            1  [                                                  ]   0
 2. **Network Issues (4 scrapers):** Monitor Adani Group, Axis Bank, HDFC Bank, and TCS - these may self-resolve
 3. **Zero Position Scrapers (8):** No action needed - will automatically pick up jobs when companies post openings
 4. **Tesla:** Consider residential proxy service or Playwright with real browser profile
-5. **Coverage Expansion:** 124 companies from the target list still need scrapers to reach 100% coverage
-6. **Config-only Scrapers:** Consider registering all 50 config-only scrapers in `run.py` for unified CLI access
+5. **Tencent:** API appears geo-restricted; consider using a proxy or finding an alternative endpoint
+6. **Coverage Expansion:** 99 companies from the target list still need scrapers to reach 100% coverage
+7. **Config-only Scrapers:** Consider registering all config-only scrapers in `run.py` for unified CLI access
