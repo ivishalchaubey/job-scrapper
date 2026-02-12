@@ -232,6 +232,93 @@ from src.scrapers.tatacommunications_scraper import TataCommunicationsScraper
 from src.scrapers.toyotakirloskar_scraper import ToyotaKirloskarScraper
 from src.scrapers.yesbank_scraper import YesBankScraper
 
+# Batch 6 - New scrapers (25 more)
+from src.scrapers.byd_scraper import BYDScraper
+from src.scrapers.glencore_scraper import GlencoreScraper
+from src.scrapers.hcc_scraper import HCCScraper
+from src.scrapers.jktyre_scraper import JKTyreScraper
+from src.scrapers.kalyanjewellers_scraper import KalyanJewellersScraper
+from src.scrapers.kirloskar_scraper import KirloskarScraper
+from src.scrapers.mitsubishi_scraper import MitsubishiScraper
+from src.scrapers.motilaloswal_scraper import MotilalOswalScraper
+from src.scrapers.navitasys_scraper import NavitasysScraper
+from src.scrapers.poonawallafincorp_scraper import PoonawallaFincorpScraper
+from src.scrapers.schaeffler_scraper import SchaefflerScraper
+from src.scrapers.sis_scraper import SISScraper
+from src.scrapers.sony_scraper import SonyScraper
+from src.scrapers.suzlon_scraper import SuzlonScraper
+from src.scrapers.swissre_scraper import SwissReScraper
+from src.scrapers.tataadmin_scraper import TataAdminScraper
+from src.scrapers.tataaia_scraper import TataAIAScraper
+from src.scrapers.tencent_scraper import TencentScraper
+from src.scrapers.ubsgroup_scraper import UBSGroupScraper
+from src.scrapers.uflex_scraper import UflexScraper
+from src.scrapers.vardhman_scraper import VardhmanScraper
+from src.scrapers.varroc_scraper import VarrocScraper
+from src.scrapers.visa_scraper import VisaScraper
+from src.scrapers.voltas_scraper import VoltasScraper
+from src.scrapers.volvo_scraper import VolvoScraper
+
+# Config-based scrapers (Workday platform)
+from src.scrapers.airbus_scraper import AirbusScraper
+from src.scrapers.shell_scraper import ShellScraper
+from src.scrapers.agilent_scraper import AgilentScraper
+from src.scrapers.cadence_scraper import CadenceScraper
+from src.scrapers.r1rcm_scraper import R1RcmScraper
+from src.scrapers.suncor_scraper import SuncorScraper
+
+# Config-based scrapers (Oracle HCM platform)
+from src.scrapers.zensar_scraper import ZensarTechnologiesScraper
+from src.scrapers.bergerpaints_scraper import BergerPaintsScraper
+from src.scrapers.blackbox_scraper import BlackBoxScraper
+from src.scrapers.croma_scraper import CromaScraper
+from src.scrapers.quesscorp_scraper import QuessCorpScraper
+from src.scrapers.tatacapital_scraper import TataCapitalScraper
+from src.scrapers.tatachemicals_scraper import TataChemicalsScraper
+from src.scrapers.tataplay_scraper import TataPlayScraper
+from src.scrapers.hexaware_scraper import HexawareTechnologiesScraper
+
+# Config-based scrapers (DarwinBox platform)
+from src.scrapers.vedanta_scraper import VedantaScraper
+from src.scrapers.brigadegroup_scraper import BrigadeGroupScraper
+from src.scrapers.asahiglass_scraper import AsahiGlassScraper
+from src.scrapers.nivabupa_scraper import NivaBupaScraper
+from src.scrapers.jindalsaw_scraper import JindalSawScraper
+from src.scrapers.skodavw_scraper import SkodaVWScraper
+from src.scrapers.polycab_scraper import PolycabScraper
+from src.scrapers.godigit_scraper import GoDigitScraper
+from src.scrapers.tvsmotor_scraper import TVSMotorScraper
+from src.scrapers.jswsteel_scraper import JSWSteelScraper
+from src.scrapers.gmmco_scraper import GMMCOScraper
+from src.scrapers.piramalfinance_scraper import PiramalFinanceScraper
+
+# Config-based scrapers (PeopleStrong platform)
+from src.scrapers.amararaja_scraper import AmaraRajaScraper
+from src.scrapers.bajajfinserv_scraper import BajajFinservScraper
+from src.scrapers.hdfcergo_scraper import HdfcErgoScraper
+from src.scrapers.rblbank_scraper import RblBankScraper
+from src.scrapers.starhealth_scraper import StarHealthScraper
+
+# Config-based scrapers (Phenom/NAS/Radancy/Standard platforms)
+from src.scrapers.target_scraper import TargetScraper
+from src.scrapers.titan_scraper import TitanScraper
+from src.scrapers.geaerospace_scraper import GEAerospaceScraper
+from src.scrapers.abb_scraper import ABBScraper
+from src.scrapers.allianz_scraper import AllianzScraper
+from src.scrapers.warnerbros_scraper import WarnerBrosScraper
+from src.scrapers.philips_scraper import PhilipsScraper
+from src.scrapers.ntt_scraper import NTTScraper
+from src.scrapers.tranetechnologies_scraper import TraneTechnologiesScraper
+from src.scrapers.unitedairlines_scraper import UnitedAirlinesScraper
+from src.scrapers.wellsfargo_scraper import WellsFargoScraper
+from src.scrapers.astrazeneca_scraper import AstraZenecaScraper
+from src.scrapers.sap_scraper import SapScraper
+from src.scrapers.barclays_scraper import BarclaysScraper
+from src.scrapers.hilton_scraper import HiltonScraper
+from src.scrapers.marriott_scraper import MarriottScraper
+from src.scrapers.bosch_scraper import BoschScraper
+from src.scrapers.synchrony_scraper import SynchronyScraper
+
 from src.utils.xml_generator import XMLGenerator
 from src.utils.logger import setup_logger
 from src.config import LOGS_DIR
@@ -495,6 +582,95 @@ SCRAPER_MAP = {
     'toyota kirloskar': ToyotaKirloskarScraper,
     'toyota': ToyotaKirloskarScraper,
     'yes bank': YesBankScraper,
+    # Batch 6 - New scrapers (25 more)
+    'byd': BYDScraper,
+    'glencore': GlencoreScraper,
+    'hcc': HCCScraper,
+    'jk tyre': JKTyreScraper,
+    'kalyan jewellers': KalyanJewellersScraper,
+    'kirloskar': KirloskarScraper,
+    'mitsubishi': MitsubishiScraper,
+    'motilal oswal': MotilalOswalScraper,
+    'navitasys': NavitasysScraper,
+    'poonawalla fincorp': PoonawallaFincorpScraper,
+    'schaeffler': SchaefflerScraper,
+    'sis': SISScraper,
+    'sony': SonyScraper,
+    'suzlon': SuzlonScraper,
+    'swiss re': SwissReScraper,
+    'tata admin': TataAdminScraper,
+    'tata aia': TataAIAScraper,
+    'tencent': TencentScraper,
+    'ubs group': UBSGroupScraper,
+    'ubs': UBSGroupScraper,
+    'uflex': UflexScraper,
+    'vardhman': VardhmanScraper,
+    'varroc': VarrocScraper,
+    'visa': VisaScraper,
+    'voltas': VoltasScraper,
+    'volvo': VolvoScraper,
+    # Config-based scrapers (Workday)
+    'airbus': AirbusScraper,
+    'shell': ShellScraper,
+    'agilent': AgilentScraper,
+    'agilent technologies': AgilentScraper,
+    'cadence': CadenceScraper,
+    'r1 rcm': R1RcmScraper,
+    'r1rcm': R1RcmScraper,
+    'suncor': SuncorScraper,
+    'suncor energy': SuncorScraper,
+    # Config-based scrapers (Oracle HCM)
+    'zensar': ZensarTechnologiesScraper,
+    'zensar technologies': ZensarTechnologiesScraper,
+    'berger paints': BergerPaintsScraper,
+    'black box': BlackBoxScraper,
+    'croma': CromaScraper,
+    'quess corp': QuessCorpScraper,
+    'tata capital': TataCapitalScraper,
+    'tata chemicals': TataChemicalsScraper,
+    'tata play': TataPlayScraper,
+    'hexaware': HexawareTechnologiesScraper,
+    'hexaware technologies': HexawareTechnologiesScraper,
+    # Config-based scrapers (DarwinBox)
+    'vedanta': VedantaScraper,
+    'brigade group': BrigadeGroupScraper,
+    'asahi glass': AsahiGlassScraper,
+    'niva bupa': NivaBupaScraper,
+    'jindal saw': JindalSawScraper,
+    'skoda vw': SkodaVWScraper,
+    'polycab': PolycabScraper,
+    'go digit': GoDigitScraper,
+    'tvs motor': TVSMotorScraper,
+    'jsw steel': JSWSteelScraper,
+    'gmmco': GMMCOScraper,
+    'piramal finance': PiramalFinanceScraper,
+    # Config-based scrapers (PeopleStrong)
+    'amara raja': AmaraRajaScraper,
+    'amara raja group': AmaraRajaScraper,
+    'bajaj finserv': BajajFinservScraper,
+    'hdfc ergo': HdfcErgoScraper,
+    'rbl bank': RblBankScraper,
+    'star health': StarHealthScraper,
+    'star health insurance': StarHealthScraper,
+    # Config-based scrapers (Phenom/Standard)
+    'target': TargetScraper,
+    'titan': TitanScraper,
+    'ge aerospace': GEAerospaceScraper,
+    'abb': ABBScraper,
+    'allianz': AllianzScraper,
+    'warner bros': WarnerBrosScraper,
+    'philips': PhilipsScraper,
+    'ntt': NTTScraper,
+    'trane technologies': TraneTechnologiesScraper,
+    'united airlines': UnitedAirlinesScraper,
+    'wells fargo': WellsFargoScraper,
+    'astrazeneca': AstraZenecaScraper,
+    'sap': SapScraper,
+    'barclays': BarclaysScraper,
+    'hilton': HiltonScraper,
+    'marriott': MarriottScraper,
+    'bosch': BoschScraper,
+    'synchrony': SynchronyScraper,
 }
 
 ALL_COMPANY_CHOICES = [
@@ -546,7 +722,27 @@ ALL_COMPANY_CHOICES = [
     'Havells', 'HDFC Life', 'HAL', 'Honda', 'ICICI Lombard',
     'IndusInd Bank', 'IOCL', 'Kajaria', 'Kia India', 'Mankind Pharma',
     'Max Healthcare', 'NTPC', 'Nissan', 'OYO', 'Pidilite',
-    'Saint-Gobain', 'Siemens Energy', 'Tata Communications', 'Toyota Kirloskar', 'Yes Bank'
+    'Saint-Gobain', 'Siemens Energy', 'Tata Communications', 'Toyota Kirloskar', 'Yes Bank',
+    # Batch 6 - New scrapers (25 more)
+    'BYD', 'Glencore', 'HCC', 'JK Tyre', 'Kalyan Jewellers',
+    'Kirloskar', 'Mitsubishi', 'Motilal Oswal', 'Navitasys', 'Poonawalla Fincorp',
+    'Schaeffler', 'SIS', 'Sony', 'Suzlon', 'Swiss Re',
+    'Tata Admin', 'Tata AIA', 'Tencent', 'UBS Group', 'Uflex',
+    'Vardhman', 'Varroc', 'Visa', 'Voltas', 'Volvo',
+    # Config-based scrapers (Workday)
+    'Airbus', 'Shell', 'Agilent Technologies', 'Cadence', 'R1 RCM', 'Suncor Energy',
+    # Config-based scrapers (Oracle HCM)
+    'Zensar Technologies', 'Berger Paints', 'Black Box', 'Croma',
+    'Quess Corp', 'Tata Capital', 'Tata Chemicals', 'Tata Play', 'Hexaware Technologies',
+    # Config-based scrapers (DarwinBox)
+    'Vedanta', 'Brigade Group', 'Asahi Glass', 'Niva Bupa', 'Jindal Saw',
+    'Skoda VW', 'Polycab', 'Go Digit', 'TVS Motor', 'JSW Steel', 'GMMCO', 'Piramal Finance',
+    # Config-based scrapers (PeopleStrong)
+    'Amara Raja Group', 'Bajaj Finserv', 'HDFC Ergo', 'RBL Bank', 'Star Health Insurance',
+    # Config-based scrapers (Phenom/Standard)
+    'Target', 'Titan', 'GE Aerospace', 'ABB', 'Allianz', 'Warner Bros',
+    'Philips', 'NTT', 'Trane Technologies', 'United Airlines',
+    'Wells Fargo', 'AstraZeneca', 'SAP', 'Barclays', 'Hilton', 'Marriott', 'Bosch', 'Synchrony',
 ]
 
 def scrape_company(company_name):
@@ -602,55 +798,75 @@ def scrape_company(company_name):
         result['duration'] = time.time() - start_time
         return result
 
-def scrape_all_parallel(max_workers=5):
-    """Scrape all companies using multithreading for speed"""
-    logger.info(f"Starting parallel scrape for all {len(ALL_COMPANY_CHOICES)} companies with {max_workers} workers")
-    
+def scrape_all_parallel(max_workers=10, per_scraper_timeout=180):
+    """Scrape all companies using multithreading for maximum speed.
+
+    Args:
+        max_workers: Number of concurrent Chrome instances (default 10)
+        per_scraper_timeout: Max seconds per scraper before skipping (default 180)
+    """
+    total = len(ALL_COMPANY_CHOICES)
+    logger.info(f"Starting parallel scrape for all {total} companies with {max_workers} workers (timeout={per_scraper_timeout}s)")
+
     start_time = time.time()
     results = []
     print_lock = Lock()
-    
+    completed_count = [0]  # mutable for closure
+
     def scrape_with_progress(company):
         """Scrape and print progress"""
         result = scrape_company(company)
         with print_lock:
+            completed_count[0] += 1
             status = "✓" if result['success'] else "✗"
-            print(f"{status} {result['company']}: {result['jobs_count']} jobs ({result['duration']:.1f}s)")
+            elapsed = time.time() - start_time
+            print(f"[{completed_count[0]}/{total}] {status} {result['company']}: {result['jobs_count']} jobs ({result['duration']:.1f}s) | elapsed {elapsed:.0f}s")
         return result
-    
+
     # Use ThreadPoolExecutor for parallel scraping
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_to_company = {
-            executor.submit(scrape_with_progress, company): company 
+            executor.submit(scrape_with_progress, company): company
             for company in ALL_COMPANY_CHOICES
         }
-        
+
         for future in as_completed(future_to_company):
+            company = future_to_company[future]
             try:
-                result = future.result()
+                result = future.result(timeout=per_scraper_timeout)
                 results.append(result)
             except Exception as e:
-                company = future_to_company[future]
-                logger.error(f"Exception scraping {company}: {str(e)}")
+                error_msg = f"Timeout ({per_scraper_timeout}s)" if 'TimeoutError' in type(e).__name__ else str(e)
+                logger.error(f"Exception scraping {company}: {error_msg}")
+                with print_lock:
+                    completed_count[0] += 1
+                    print(f"[{completed_count[0]}/{total}] ✗ {company}: TIMEOUT/ERROR ({error_msg[:80]})")
                 results.append({
                     'company': company,
                     'success': False,
                     'jobs_count': 0,
-                    'error': str(e),
-                    'duration': 0
+                    'error': error_msg,
+                    'duration': per_scraper_timeout
                 })
-    
+
     total_time = time.time() - start_time
+    total_jobs = sum(r['jobs_count'] for r in results)
+    passed = len([r for r in results if r['success']])
+
+    print(f"\n{'='*60}")
+    print(f"COMPLETED: {passed}/{total} companies | {total_jobs:,} total jobs | {total_time:.0f}s ({total_time/60:.1f} min)")
+    print(f"{'='*60}\n")
+
     logger.info(f"Scraping completed for all companies in {total_time:.2f} seconds")
-    
+
     # Generate analytics report
     generate_analytics_report(results, total_time)
-    
+
     return results
 
 def scrape_all():
     """Legacy single-threaded scrape - redirects to parallel version"""
-    return scrape_all_parallel(max_workers=5)
+    return scrape_all_parallel(max_workers=10)
 
 def generate_analytics_report(results, total_time):
     """Generate detailed analytics report in markdown format"""
@@ -789,9 +1005,10 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python run.py scrape                    # Scrape all companies (5 workers)
-  python run.py scrape --workers 10       # Scrape all with 10 workers (faster)
+  python run.py scrape                    # Scrape all 275 companies (10 workers, ~20 min)
+  python run.py scrape --workers 15       # Scrape all with 15 workers (~14 min)
   python run.py scrape --company Google   # Scrape single company
+  python run.py scrape --timeout 120      # Custom per-scraper timeout
   python run.py api                       # Start API server
         """
     )
@@ -799,8 +1016,10 @@ Examples:
                        help='Action to perform')
     parser.add_argument('--company', choices=ALL_COMPANY_CHOICES,
                        help='Specific company to scrape/export')
-    parser.add_argument('--workers', type=int, default=5,
-                       help='Number of parallel workers (default: 5, recommended: 5-10)')
+    parser.add_argument('--workers', type=int, default=10,
+                       help='Number of parallel workers (default: 10, max recommended: 15)')
+    parser.add_argument('--timeout', type=int, default=180,
+                       help='Per-scraper timeout in seconds (default: 180)')
 
     args = parser.parse_args()
 
@@ -820,9 +1039,9 @@ Examples:
             # Multi-company parallel scrape
             print(f"\n{'='*60}")
             print(f"PARALLEL SCRAPING - {len(ALL_COMPANY_CHOICES)} COMPANIES")
-            print(f"Workers: {args.workers}")
+            print(f"Workers: {args.workers} | Timeout: {args.timeout}s per scraper")
             print(f"{'='*60}\n")
-            scrape_all_parallel(max_workers=args.workers)
+            scrape_all_parallel(max_workers=args.workers, per_scraper_timeout=args.timeout)
 
     elif args.action == 'export':
         export_xml(args.company)
