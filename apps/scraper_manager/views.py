@@ -1,3 +1,5 @@
+import logging
+
 from rest_framework import status
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
@@ -7,6 +9,8 @@ from . import services
 from .serializers import ScrapeTaskSerializer, StartScrapeSerializer
 from .engine import start_scrape, cancel_scrape
 from scrapers.registry import ALL_COMPANY_CHOICES, SCRAPER_MAP
+
+logger = logging.getLogger(__name__)
 
 
 @extend_schema(
@@ -23,7 +27,7 @@ def start_scrape_view(request):
     companies = data.get('companies', [])
     scrape_all = data.get('all', False)
     max_workers = data.get('max_workers', 10)
-    timeout = data.get('timeout', 180)
+    max_pages = data.get('max_pages', 1)
 
     if scrape_all or not companies:
         companies = ALL_COMPANY_CHOICES
@@ -35,7 +39,7 @@ def start_scrape_view(request):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-    task = start_scrape(companies=companies, max_workers=max_workers, timeout=timeout)
+    task = start_scrape(companies=companies, max_workers=max_workers, max_pages=max_pages)
     return Response(task, status=status.HTTP_201_CREATED)
 
 
@@ -55,9 +59,10 @@ def start_single_scrape_view(request, company_name):
         (c for c in ALL_COMPANY_CHOICES if c.lower() == company_name.lower()),
         company_name,
     )
-    timeout = request.data.get('timeout', 180)
     max_workers = request.data.get('max_workers', 1)
-    task = start_scrape(companies=[display_name], max_workers=max_workers, timeout=timeout)
+    max_pages = request.data.get('max_pages', 1)
+    logger.info(f"start_single_scrape: company={company_name}, max_pages={max_pages}, request.data={request.data}")
+    task = start_scrape(companies=[display_name], max_workers=max_workers, max_pages=max_pages)
     return Response(task, status=status.HTTP_201_CREATED)
 
 

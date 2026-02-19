@@ -34,10 +34,10 @@ class StartScrapeSerializer(serializers.Serializer):
         max_value=20,
         help_text="Number of parallel workers (default: 10)"
     )
-    timeout = serializers.IntegerField(
+    max_pages = serializers.IntegerField(
         required=False,
-        default=180,
-        min_value=30,
-        max_value=600,
-        help_text="Per-scraper timeout in seconds (default: 180)"
+        default=1,
+        min_value=0,
+        max_value=100,
+        help_text="Max pages to scrape per company (0 = all pages, default: 1)"
     )

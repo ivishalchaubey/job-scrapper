@@ -1,7 +1,7 @@
 import threading
 import time
 from datetime import datetime, timezone
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from queue import Queue
 
 from apps.data_store import services as job_service
 from apps.scraper_manager import services as scraping_service
@@ -12,33 +12,52 @@ logger = setup_logger(__name__)
 _active_tasks = {}
 
 
-def run_scrape_task(task_id, companies, max_workers=10, timeout=180):
+def run_scrape_task(task_id, companies, max_workers=10, max_pages=1):
     scraping_service.update_task(task_id, status='running', total_companies=len(companies))
 
-    executor = ThreadPoolExecutor(max_workers=max_workers)
-    _active_tasks[task_id] = executor
+    cancel_event = threading.Event()
+    _active_tasks[task_id] = cancel_event
+
+    result_queue = Queue()
+    semaphore = threading.Semaphore(max_workers)
+
+    def worker(company):
+        try:
+            if cancel_event.is_set():
+                result_queue.put({
+                    'company': company, 'success': False,
+                    'jobs_count': 0, 'error': 'Cancelled', 'duration': 0,
+                })
+                return
+            result = _scrape_single(company, max_pages)
+            result_queue.put(result)
+        except Exception as e:
+            result_queue.put({
+                'company': company, 'success': False,
+                'jobs_count': 0, 'error': str(e), 'duration': 0,
+            })
+        finally:
+            semaphore.release()
 
     try:
-        future_to_company = {
-            executor.submit(_scrape_single, company, timeout): company
-            for company in companies
-        }
+        threads = []
+        for company in companies:
+            if cancel_event.is_set():
+                break
+            semaphore.acquire()
+            t = threading.Thread(target=worker, args=(company,), daemon=True)
+            t.start()
+            threads.append(t)
 
-        for future in as_completed(future_to_company):
-            company = future_to_company[future]
-            try:
-                result = future.result(timeout=timeout + 30)  # extra buffer beyond internal timeout
-            except Exception as e:
-                result = {
-                    'company': company,
-                    'success': False,
-                    'jobs_count': 0,
-                    'error': str(e),
-                }
+        completed = 0
+        total = len(threads)
+        while completed < total:
+            result = result_queue.get()
+            completed += 1
 
             task = scraping_service.get_task(task_id)
             if task and task.get('status') == 'cancelled':
-                executor.shutdown(wait=False, cancel_futures=True)
+                cancel_event.set()
                 break
 
             scraping_service.increment_task_progress(
@@ -63,47 +82,19 @@ def run_scrape_task(task_id, companies, max_workers=10, timeout=180):
         )
     finally:
         _active_tasks.pop(task_id, None)
-        executor.shutdown(wait=False)
 
 
-def _scrape_with_timeout(scraper, timeout_seconds):
-    """Run scraper.scrape() with a hard timeout using a daemon thread."""
-    result_holder = [None]
-    error_holder = [None]
-
-    def target():
-        try:
-            result_holder[0] = scraper.scrape()
-        except Exception as e:
-            error_holder[0] = e
-
-    t = threading.Thread(target=target, daemon=True)
-    t.start()
-    t.join(timeout=timeout_seconds)
-
-    if t.is_alive():
-        # Try to quit the driver if possible
-        try:
-            if hasattr(scraper, 'driver') and scraper.driver:
-                scraper.driver.quit()
-        except Exception:
-            pass
-        raise TimeoutError(f'Scraper timed out after {timeout_seconds}s')
-
-    if error_holder[0]:
-        raise error_holder[0]
-
-    return result_holder[0]
-
-
-def _scrape_single(company_name, timeout=180):
+def _scrape_single(company_name, max_pages=1):
     from scrapers.registry import SCRAPER_MAP
 
+    effective_pages = 999 if max_pages == 0 else max_pages
+    logger.info(f"_scrape_single: {company_name} max_pages={max_pages} effective={effective_pages}")
     start_time = time.time()
     result = {
         'company': company_name,
         'success': False,
         'jobs_count': 0,
+        'max_pages': effective_pages,
         'error': None,
         'duration': 0,
     }
@@ -115,7 +106,7 @@ def _scrape_single(company_name, timeout=180):
             return result
 
         scraper = scraper_class()
-        jobs = _scrape_with_timeout(scraper, timeout)
+        jobs = scraper.scrape(max_pages=effective_pages)
 
         if jobs:
             job_service.delete_company_jobs(company_name)
@@ -149,14 +140,6 @@ def _scrape_single(company_name, timeout=180):
 
         result['success'] = True
         result['jobs_count'] = len(jobs) if jobs else 0
-    except TimeoutError as e:
-        result['error'] = str(e)
-        job_service.create_scraping_run(
-            company_name=company_name,
-            jobs_scraped=0,
-            status='failed',
-            error_message=str(e),
-        )
     except Exception as e:
         result['error'] = str(e)
         job_service.create_scraping_run(
@@ -170,21 +153,24 @@ def _scrape_single(company_name, timeout=180):
     return result
 
 
-def start_scrape(companies=None, max_workers=10, timeout=180):
+def start_scrape(companies=None, max_workers=10, max_pages=1, **kwargs):
     from scrapers.registry import ALL_COMPANY_CHOICES
 
     if companies is None:
         companies = ALL_COMPANY_CHOICES
 
+    logger.info(f"start_scrape: {len(companies)} companies, max_workers={max_workers}, max_pages={max_pages}")
+
     company_name = companies[0] if len(companies) == 1 else ''
     task = scraping_service.create_task(
         company_name=company_name,
         total_companies=len(companies),
+        max_pages=max_pages,
     )
 
     thread = threading.Thread(
         target=run_scrape_task,
-        args=(task['task_id'], companies, max_workers, timeout),
+        args=(task['task_id'], companies, max_workers, max_pages),
         daemon=True,
     )
     thread.start()
@@ -199,8 +185,8 @@ def cancel_scrape(task_id):
             task_id, status='cancelled',
             finished_at=datetime.now(timezone.utc),
         )
-        executor = _active_tasks.get(task_id)
-        if executor:
-            executor.shutdown(wait=False, cancel_futures=True)
+        cancel_event = _active_tasks.get(task_id)
+        if cancel_event:
+            cancel_event.set()
         return True
     return False

@@ -5,7 +5,7 @@ from core.db import get_collection
 SCRAPE_TASKS = 'scrape_tasks'
 
 
-def create_task(company_name='', total_companies=0):
+def create_task(company_name='', total_companies=0, max_pages=1):
     coll = get_collection(SCRAPE_TASKS)
     task_id = str(uuid.uuid4())
     doc = {
@@ -15,6 +15,7 @@ def create_task(company_name='', total_companies=0):
         'total_companies': total_companies,
         'completed_companies': 0,
         'total_jobs_found': 0,
+        'max_pages': max_pages,
         'started_at': datetime.now(timezone.utc),
         'finished_at': None,
         'results': {},
