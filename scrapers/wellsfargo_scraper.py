@@ -22,6 +22,7 @@ class WellsFargoScraper:
     def __init__(self):
         self.company_name = 'Wells Fargo'
         self.url = 'https://www.wellsfargojobs.com/en/jobs/?search=&country=India&pagesize=20#results'
+        self.base_url = 'https://www.wellsfargojobs.com'
 
     def setup_driver(self):
         chrome_options = Options()
@@ -64,25 +65,31 @@ class WellsFargoScraper:
             driver = self.setup_driver()
             logger.info(f"Starting {self.company_name} scraping from {self.url}")
             driver.get(self.url)
-            time.sleep(15)
 
-            # Scroll for lazy loading
-            for _ in range(5):
-                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                time.sleep(2)
+            # Wait for job cards to appear (div.card-job)
+            try:
+                WebDriverWait(driver, 15).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, 'div.card-job'))
+                )
+            except:
+                time.sleep(5)
+
+            # Quick scroll to trigger lazy loading
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            time.sleep(1)
             driver.execute_script("window.scrollTo(0, 0);")
-            time.sleep(2)
+            time.sleep(0.5)
 
             for page in range(max_pages):
-                jobs = self._extract_jobs(driver)
-                if not jobs:
+                page_jobs = self._extract_jobs(driver)
+                if not page_jobs:
                     break
-                all_jobs.extend(jobs)
-                logger.info(f"Page {page + 1}: {len(jobs)} jobs (total: {len(all_jobs)})")
+                all_jobs.extend(page_jobs)
+                logger.info(f"Page {page + 1}: {len(page_jobs)} jobs (total: {len(all_jobs)})")
 
-                if not self._go_to_next_page(driver):
-                    break
-                time.sleep(5)
+                if page < max_pages - 1:
+                    if not self._go_to_next_page(driver):
+                        break
 
             logger.info(f"Total jobs scraped: {len(all_jobs)}")
         except Exception as e:
@@ -96,90 +103,66 @@ class WellsFargoScraper:
         jobs = []
 
         try:
-            # Scroll to load all content
+            # Scroll to load content
             driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(2)
+            time.sleep(0.5)
             driver.execute_script("window.scrollTo(0, 0);")
-            time.sleep(1)
+            time.sleep(0.3)
 
-            # JavaScript extraction with multiple fallback selectors
+            # Wells Fargo custom platform: div.card-job with a[href*="/en/jobs/"]
             js_jobs = driver.execute_script("""
                 var results = [];
                 var seen = {};
 
-                // Strategy 1: Salesforce/custom career page - job cards with links
-                var cards = document.querySelectorAll('a[href*="/en/jobs/"], a[href*="/job/"]');
-                if (!cards.length) cards = document.querySelectorAll('[class*="job-card"] a, [class*="job-listing"] a');
-                if (!cards.length) cards = document.querySelectorAll('[class*="search-result"] a[href]');
-                if (!cards.length) cards = document.querySelectorAll('li[class*="job"] a, div[class*="job"] a');
-
+                var cards = document.querySelectorAll('div.card-job, div.card.card-job');
                 for (var i = 0; i < cards.length; i++) {
-                    var el = cards[i];
-                    var title = (el.innerText || '').trim().split('\\n')[0].trim();
-                    var url = el.href || '';
-                    if (!title || title.length < 3 || title.length > 200) continue;
-                    if (!url || seen[url]) continue;
-                    // Skip nav/footer links
-                    if (url.includes('login') || url.includes('sign-in') || url.includes('#') || url.includes('javascript:')) continue;
-                    seen[url] = true;
+                    var card = cards[i];
+                    var linkEl = card.querySelector('a[href*="/en/jobs/r-"], a[href*="/en/jobs/R-"]');
+                    if (!linkEl) continue;
 
-                    // Try to get location from parent card
+                    var href = linkEl.href;
+                    if (!href || seen[href] || href.includes('saved-jobs') || href.includes('#')) continue;
+                    seen[href] = true;
+
+                    var title = linkEl.innerText.trim().split('\\n')[0].trim();
+                    if (!title || title.length < 3 || title === 'Save' || title === 'Jobs') continue;
+
+                    // Extract location from card text
                     var location = '';
-                    var parent = el.closest('[class*="job-card"], [class*="job-listing"], [class*="search-result"], li, article, tr');
-                    if (parent) {
-                        var locEl = parent.querySelector('[class*="location"], [class*="Location"], [data-field="location"]');
-                        if (locEl) location = locEl.innerText.trim();
-                        if (!location) {
-                            var lines = parent.innerText.split('\\n');
-                            for (var j = 0; j < lines.length; j++) {
-                                var line = lines[j].trim();
-                                if (line && (line.includes('India') || line.includes('Mumbai') || line.includes('Bangalore') ||
-                                    line.includes('Hyderabad') || line.includes('Chennai') || line.includes('Delhi') ||
-                                    line.includes('Pune') || line.includes('Kolkata') || line.includes('Gurgaon'))) {
-                                    location = line;
-                                    break;
-                                }
-                            }
+                    var cardText = card.innerText || '';
+                    var lines = cardText.split('\\n').map(function(l) { return l.trim(); }).filter(function(l) { return l.length > 0; });
+                    for (var j = 0; j < lines.length; j++) {
+                        var line = lines[j];
+                        if (line !== title && line !== 'Save' && line.includes(',')) {
+                            location = line;
+                            break;
                         }
                     }
-                    results.push({title: title, url: url, location: location});
-                }
 
-                // Strategy 2: Broader card-based extraction
-                if (results.length === 0) {
-                    var jobCards = document.querySelectorAll('[class*="job-card"], [class*="job-listing"], [class*="search-result"], article, [role="listitem"]');
-                    for (var i = 0; i < jobCards.length; i++) {
-                        var card = jobCards[i];
-                        var link = card.querySelector('a[href]');
-                        if (!link) continue;
-                        var title = '';
-                        var titleEl = card.querySelector('h2, h3, h4, [class*="title"], [class*="Title"]');
-                        if (titleEl) title = titleEl.innerText.trim().split('\\n')[0];
-                        if (!title) title = link.innerText.trim().split('\\n')[0];
-                        var url = link.href || '';
-                        if (!title || title.length < 3 || !url || seen[url]) continue;
-                        seen[url] = true;
-                        var location = '';
-                        var locEl = card.querySelector('[class*="location"], [class*="Location"]');
-                        if (locEl) location = locEl.innerText.trim();
-                        results.push({title: title, url: url, location: location});
+                    // Extract department
+                    var department = '';
+                    for (var j = 0; j < lines.length; j++) {
+                        var line = lines[j];
+                        if (line !== title && line !== 'Save' && line !== location && !line.includes(',') && line.length > 2) {
+                            department = line;
+                            break;
+                        }
                     }
+
+                    results.push({title: title, location: location, url: href, department: department});
                 }
 
-                // Strategy 3: Generic link extraction
+                // Fallback: direct job links if no cards
                 if (results.length === 0) {
-                    var links = document.querySelectorAll('a[href]');
+                    var links = document.querySelectorAll('a[href*="/en/jobs/r-"], a[href*="/en/jobs/R-"]');
                     for (var i = 0; i < links.length; i++) {
-                        var href = links[i].href || '';
-                        var text = (links[i].innerText || '').trim();
-                        if (text.length > 3 && text.length < 200 && href.length > 10) {
-                            if ((href.includes('/job') || href.includes('/position') || href.includes('/career') || href.includes('/opening')) && !seen[href]) {
-                                if (!href.includes('login') && !href.includes('sign-in') && !href.includes('javascript:')) {
-                                    seen[href] = true;
-                                    results.push({title: text.split('\\n')[0].trim(), url: href, location: ''});
-                                }
-                            }
-                        }
+                        var a = links[i];
+                        var href = a.href;
+                        if (seen[href]) continue;
+                        seen[href] = true;
+                        var text = (a.innerText || '').trim().split('\\n')[0].trim();
+                        if (text.length < 3 || text === 'Save') continue;
+                        results.push({title: text, location: '', url: href, department: ''});
                     }
                 }
 
@@ -193,6 +176,7 @@ class WellsFargoScraper:
                     title = jdata.get('title', '').strip()
                     url = jdata.get('url', '').strip()
                     location = jdata.get('location', '').strip()
+                    department = jdata.get('department', '').strip()
 
                     if not title or len(title) < 3:
                         continue
@@ -202,36 +186,36 @@ class WellsFargoScraper:
                         seen_urls.add(url)
 
                     if url and url.startswith('/'):
-                        url = f"https://www.wellsfargojobs.com{url}"
+                        url = f"{self.base_url}{url}"
 
                     job_id = hashlib.md5((url or title).encode()).hexdigest()[:12]
+                    # Extract ID from URL like /en/jobs/r-521628/...
+                    if '/en/jobs/' in url:
+                        parts = url.split('/en/jobs/')[-1].split('/')
+                        if parts[0]:
+                            job_id = parts[0]
 
-                    loc_data = self.parse_location(location)
-
-                    jobs.append({
+                    job_data = {
                         'external_id': self.generate_external_id(job_id, self.company_name),
                         'company_name': self.company_name,
                         'title': title,
                         'apply_url': url or self.url,
                         'location': location,
-                        'department': '',
+                        'department': department,
                         'employment_type': '',
                         'description': '',
                         'posted_date': '',
-                        'city': loc_data.get('city', ''),
-                        'state': loc_data.get('state', ''),
-                        'country': loc_data.get('country', 'India'),
-                        'job_function': '',
+                        'city': '',
+                        'state': '',
+                        'country': 'India',
+                        'job_function': department,
                         'experience_level': '',
                         'salary_range': '',
                         'remote_type': '',
                         'status': 'active'
-                    })
-
-            if jobs:
-                logger.info(f"Successfully extracted {len(jobs)} jobs")
-            else:
-                logger.warning("No jobs found on this page")
+                    }
+                    job_data.update(self.parse_location(location))
+                    jobs.append(job_data)
 
         except Exception as e:
             logger.error(f"Error extracting jobs: {str(e)}")
@@ -241,25 +225,35 @@ class WellsFargoScraper:
     def _go_to_next_page(self, driver):
         try:
             driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(2)
+            time.sleep(0.5)
 
+            # Get current first card to detect page change
+            old_first = driver.execute_script("""
+                var card = document.querySelector('div.card-job a[href*="/en/jobs/r-"]');
+                return card ? card.innerText.substring(0, 50) : '';
+            """)
+
+            # Wells Fargo pagination: a.page-link with aria-label containing "next"
             for sel_type, sel_val in [
+                (By.CSS_SELECTOR, 'a.page-link[aria-label*="next" i]'),
+                (By.CSS_SELECTOR, 'a[aria-label="Go to next page of results"]'),
                 (By.CSS_SELECTOR, 'a[aria-label="Next"]'),
-                (By.CSS_SELECTOR, 'button[aria-label="Next"]'),
-                (By.CSS_SELECTOR, '.pagination .next a'),
-                (By.CSS_SELECTOR, 'a.next-page'),
-                (By.CSS_SELECTOR, 'a[rel="next"]'),
-                (By.XPATH, '//a[contains(text(), "Next")]'),
-                (By.XPATH, '//button[contains(text(), "Next")]'),
-                (By.CSS_SELECTOR, 'a.pagination-next'),
-                (By.CSS_SELECTOR, '[class*="pagination"] a[class*="next"]'),
-                (By.CSS_SELECTOR, 'li.next a'),
+                (By.XPATH, '//a[contains(@class, "page-link") and contains(text(), "Next")]'),
             ]:
                 try:
                     btn = driver.find_element(sel_type, sel_val)
-                    if btn.is_displayed() and btn.is_enabled():
+                    if btn.is_displayed():
                         driver.execute_script("arguments[0].click();", btn)
-                        logger.info("Navigated to next page")
+                        # Poll for page change
+                        for _ in range(20):
+                            time.sleep(0.2)
+                            new_first = driver.execute_script("""
+                                var card = document.querySelector('div.card-job a[href*="/en/jobs/r-"]');
+                                return card ? card.innerText.substring(0, 50) : '';
+                            """)
+                            if new_first and new_first != old_first:
+                                break
+                        time.sleep(0.5)
                         return True
                 except:
                     continue

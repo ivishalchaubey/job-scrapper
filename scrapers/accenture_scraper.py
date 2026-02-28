@@ -32,7 +32,8 @@ class AccentureScraper:
         chrome_options.add_argument('--window-size=1920,1080')
         chrome_options.add_argument('--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36')
         chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-        chrome_options.add_experimental_option('excludeSwitches', ['enable-logging'])
+        chrome_options.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
+        chrome_options.add_experimental_option('useAutomationExtension', False)
         
         try:
             # Install and get the correct chromedriver path
@@ -50,6 +51,10 @@ class AccentureScraper:
             
             service = Service(driver_path)
             driver = webdriver.Chrome(service=service, options=chrome_options)
+            driver.execute_cdp_cmd('Network.setUserAgentOverride', {
+                "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            })
+            driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
             return driver
         except Exception as e:
             logger.error(f"ChromeDriver setup failed: {str(e)}")
@@ -73,8 +78,15 @@ class AccentureScraper:
             driver = self.setup_driver()
             driver.get(self.url)
             
-            # Wait for page to load
-            time.sleep(5)
+            # Smart wait for job cards instead of blind sleep
+            try:
+                WebDriverWait(driver, 15).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, 'div.rad-filters-vertical__job-card'))
+                )
+                logger.info("Job cards loaded")
+            except:
+                logger.warning("Timeout waiting for job cards, using fallback wait")
+                time.sleep(5)
             
             current_page = 1
             
@@ -92,7 +104,7 @@ class AccentureScraper:
                     if not self._go_to_next_page(driver, current_page):
                         logger.info("No more pages available")
                         break
-                    time.sleep(4)  # Wait for next page to load
+                    # No extra sleep — _go_to_next_page already handles waiting
                 
                 current_page += 1
             
@@ -115,8 +127,14 @@ class AccentureScraper:
             
             # Scroll to pagination area
             driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(1)
-            
+            time.sleep(0.5)
+
+            # Capture current state for change detection
+            old_first = driver.execute_script("""
+                var card = document.querySelector('div.rad-filters-vertical__job-card');
+                return card ? card.innerText.substring(0, 50) : '';
+            """)
+
             # Try to find and click next page button
             next_page_selectors = [
                 (By.XPATH, f'//button[text()="{next_page_num}"]'),
@@ -126,14 +144,25 @@ class AccentureScraper:
                 (By.XPATH, '//button[contains(@class, "next")]'),
                 (By.CSS_SELECTOR, 'button.pagination-next'),
             ]
-            
+
             for selector_type, selector_value in next_page_selectors:
                 try:
                     next_button = driver.find_element(selector_type, selector_value)
                     driver.execute_script("arguments[0].scrollIntoView();", next_button)
-                    time.sleep(0.5)
+                    time.sleep(0.3)
                     driver.execute_script("arguments[0].click();", next_button)
                     logger.info(f"Clicked next page button")
+
+                    # Poll for content change
+                    for _ in range(20):
+                        time.sleep(0.2)
+                        new_first = driver.execute_script("""
+                            var card = document.querySelector('div.rad-filters-vertical__job-card');
+                            return card ? card.innerText.substring(0, 50) : '';
+                        """)
+                        if new_first and new_first != old_first:
+                            break
+                    time.sleep(0.5)
                     return True
                 except:
                     continue
@@ -148,7 +177,11 @@ class AccentureScraper:
     def _scrape_page(self, driver):
         """Scrape jobs from current page"""
         jobs = []
-        time.sleep(3)  # Wait for page content to load
+        # Quick scroll for lazy loading
+        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+        time.sleep(0.5)
+        driver.execute_script("window.scrollTo(0, 0);")
+        time.sleep(0.3)
         
         # Look for job cards by the correct class
         job_cards = []

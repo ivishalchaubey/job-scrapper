@@ -63,8 +63,13 @@ class SwiggyScraper:
             logger.info(f"Starting {self.company_name} scraping from {self.url}")
 
             driver.get(self.url)
-            # Wait for the main page to load
-            time.sleep(15)
+            # Smart wait for the main page to load (wait for iframes or job content)
+            try:
+                WebDriverWait(driver, 15).until(
+                    EC.presence_of_element_located((By.TAG_NAME, 'iframe'))
+                )
+            except:
+                time.sleep(5)  # Fallback if no iframe detected
 
             # CRITICAL: Switch to the iframe containing the actual job listings
             # The jobs are inside an iframe from mynexthire.com
@@ -92,9 +97,8 @@ class SwiggyScraper:
             except Exception as e:
                 logger.warning(f"Error switching to iframe: {str(e)}")
 
-            # Wait for iframe content to load
+            # Wait for iframe content to load using smart wait
             if iframe_switched:
-                time.sleep(8)
                 logger.info("Waiting for iframe content to render...")
 
             wait = WebDriverWait(driver, 10)
@@ -108,12 +112,11 @@ class SwiggyScraper:
             except:
                 logger.warning("Timeout waiting for job elements in iframe context")
 
-            # Scroll inside iframe context to trigger lazy loading
-            for _ in range(3):
-                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                time.sleep(2)
+            # Quick scroll inside iframe context to trigger lazy loading
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            time.sleep(1)
             driver.execute_script("window.scrollTo(0, 0);")
-            time.sleep(2)
+            time.sleep(0.5)
 
             # Scrape jobs from within the iframe context
             jobs = self._scrape_page(driver, wait)
@@ -123,7 +126,7 @@ class SwiggyScraper:
             if not all_jobs and iframe_switched:
                 logger.info("No jobs in iframe, switching back to main page")
                 driver.switch_to.default_content()
-                time.sleep(2)
+                time.sleep(1)
                 jobs = self._scrape_page(driver, wait)
                 all_jobs.extend(jobs)
 

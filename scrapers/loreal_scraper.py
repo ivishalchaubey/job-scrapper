@@ -1,3 +1,4 @@
+# STATUS: BLOCKED - Cloudflare WAF on careers.loreal.com (needs undetected-chromedriver) (tested 2026-02-22)
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -62,25 +63,21 @@ class LorealScraper:
 
             driver.get(self.url)
 
-            # Wait 12s for custom careers site to load
-            time.sleep(12)
-
-            # Try to detect L'Oreal job listings
+            # Smart wait for job listings instead of blind sleep
             try:
-                short_wait = WebDriverWait(driver, 10)
-                short_wait.until(EC.presence_of_element_located((
+                WebDriverWait(driver, 15).until(EC.presence_of_element_located((
                     By.CSS_SELECTOR, "section.module--search-jobs, h3.article__header__text__title, div.section--search-jobs, a[href*='JobDetail']"
                 )))
                 logger.info("Job listings loaded")
             except Exception as e:
                 logger.warning(f"Timeout waiting for job listings: {str(e)}")
+                time.sleep(5)
 
-            # Scroll to trigger lazy loading
-            for _ in range(4):
-                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                time.sleep(2)
+            # Quick scroll for lazy loading
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            time.sleep(1)
             driver.execute_script("window.scrollTo(0, 0);")
-            time.sleep(2)
+            time.sleep(0.5)
 
             current_page = 1
             while current_page <= max_pages:
@@ -92,7 +89,7 @@ class LorealScraper:
                 if current_page < max_pages:
                     if not self._load_more(driver):
                         break
-                    time.sleep(3)
+                    # No extra sleep — _load_more already handles waiting
                 current_page += 1
 
             logger.info(f"Total jobs scraped: {len(all_jobs)}")
@@ -110,7 +107,10 @@ class LorealScraper:
         """Click 'View more results' button if available"""
         try:
             driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(2)
+            time.sleep(0.5)
+
+            # Capture current count for change detection
+            old_count = len(driver.find_elements(By.CSS_SELECTOR, "a[href*='JobDetail']"))
 
             load_more_selectors = [
                 (By.CSS_SELECTOR, "a[class*='viewMoreResults']"),
@@ -125,9 +125,17 @@ class LorealScraper:
                 try:
                     btn = driver.find_element(selector_type, selector_value)
                     driver.execute_script("arguments[0].scrollIntoView();", btn)
-                    time.sleep(1)
+                    time.sleep(0.3)
                     driver.execute_script("arguments[0].click();", btn)
                     logger.info("Clicked 'View more results'")
+
+                    # Poll for new content
+                    for _ in range(25):
+                        time.sleep(0.2)
+                        new_count = len(driver.find_elements(By.CSS_SELECTOR, "a[href*='JobDetail']"))
+                        if new_count > old_count:
+                            break
+                    time.sleep(0.5)
                     return True
                 except:
                     continue
@@ -144,7 +152,9 @@ class LorealScraper:
 
         try:
             driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(2)
+            time.sleep(0.5)
+            driver.execute_script("window.scrollTo(0, 0);")
+            time.sleep(0.3)
 
             # --- Strategy 1: JavaScript extraction for L'Oreal custom careers site ---
             logger.info("Trying JS-based L'Oreal extraction")

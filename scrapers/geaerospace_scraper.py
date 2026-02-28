@@ -17,6 +17,11 @@ logger = setup_logger('geaerospace_scraper')
 
 CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0.7559.133_fresh/chromedriver-mac-arm64/chromedriver'
 
+INDIA_KEYWORDS = ['india', 'mumbai', 'delhi', 'bangalore', 'bengaluru', 'hyderabad',
+                  'chennai', 'pune', 'kolkata', 'gurgaon', 'gurugram', 'noida',
+                  'ahmedabad', 'jaipur', 'lucknow', 'chandigarh', 'kochi', 'coimbatore',
+                  'thiruvananthapuram', 'indore', 'nagpur', 'vadodara', 'visakhapatnam']
+
 
 class GEAerospaceScraper:
     def __init__(self):
@@ -57,6 +62,13 @@ class GEAerospaceScraper:
         unique_string = f"{company}_{job_id}"
         return hashlib.md5(unique_string.encode()).hexdigest()
 
+    def _is_india_job(self, location):
+        """Check if a job location is in India"""
+        if not location:
+            return False
+        loc_lower = location.lower()
+        return any(kw in loc_lower for kw in INDIA_KEYWORDS)
+
     def scrape(self, max_pages=MAX_PAGES_TO_SCRAPE):
         driver = None
         all_jobs = []
@@ -65,14 +77,20 @@ class GEAerospaceScraper:
             driver = self.setup_driver()
             logger.info(f"Starting {self.company_name} scraping from {self.url}")
             driver.get(self.url)
-            time.sleep(15)
 
-            # Scroll to trigger lazy loading
-            for _ in range(5):
-                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                time.sleep(2)
+            # Wait for job listings to appear instead of blind sleep
+            try:
+                WebDriverWait(driver, 15).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, '[data-ph-at-id="jobs-list-item"]'))
+                )
+            except:
+                time.sleep(5)  # Fallback if selector not found immediately
+
+            # Quick scroll to trigger lazy loading
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            time.sleep(1)
             driver.execute_script("window.scrollTo(0, 0);")
-            time.sleep(2)
+            time.sleep(0.5)
 
             for page in range(max_pages):
                 page_jobs = self._extract_jobs(driver)
@@ -81,9 +99,9 @@ class GEAerospaceScraper:
                 all_jobs.extend(page_jobs)
                 logger.info(f"Page {page + 1}: {len(page_jobs)} jobs (total: {len(all_jobs)})")
 
-                if not self._go_to_next_page(driver):
-                    break
-                time.sleep(5)
+                if page < max_pages - 1:
+                    if not self._go_to_next_page(driver):
+                        break
 
             logger.info(f"Total jobs scraped: {len(all_jobs)}")
         except Exception as e:
@@ -97,17 +115,17 @@ class GEAerospaceScraper:
         jobs = []
 
         try:
-            for _ in range(3):
-                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                time.sleep(2)
+            # Single scroll to ensure all items are loaded
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            time.sleep(0.5)
             driver.execute_script("window.scrollTo(0, 0);")
-            time.sleep(1)
+            time.sleep(0.3)
 
             js_jobs = driver.execute_script("""
                 var results = [];
                 var seen = {};
 
-                var cards = document.querySelectorAll('li[data-ph-at-id="job-listing"], div[data-ph-at-id="job-listing"]');
+                var cards = document.querySelectorAll('[data-ph-at-id="jobs-list-item"]');
                 if (cards.length === 0) cards = document.querySelectorAll('a[data-ph-at-id="job-link"]');
                 if (cards.length === 0) cards = document.querySelectorAll('[class*="job-card"], [class*="search-result"]');
                 if (cards.length === 0) cards = document.querySelectorAll('a[href*="/job/"], a[href*="/jb/"]');
@@ -119,7 +137,7 @@ class GEAerospaceScraper:
                     var linkEl = card.tagName === 'A' ? card : card.querySelector('a[href*="/job/"], a[href*="/jb/"], a');
 
                     var title = titleEl ? titleEl.innerText.trim() : (card.innerText || '').split('\\n')[0].trim();
-                    var location = locEl ? locEl.innerText.trim() : '';
+                    var location = locEl ? locEl.innerText.trim().replace(/^Location\\s*/i, '') : '';
                     var href = linkEl ? linkEl.href : '';
 
                     if (title && title.length > 2 && href && !seen[href]) {
@@ -131,13 +149,17 @@ class GEAerospaceScraper:
             """)
 
             if js_jobs:
-                logger.info(f"JS extraction found {len(js_jobs)} jobs")
+                logger.info(f"JS extraction found {len(js_jobs)} jobs (before India filter)")
                 for jdata in js_jobs:
                     title = jdata.get('title', '').strip()
                     url = jdata.get('url', '').strip()
                     location = jdata.get('location', '').strip()
 
                     if not title or len(title) < 3:
+                        continue
+
+                    # India location filter
+                    if not self._is_india_job(location):
                         continue
 
                     if url and url.startswith('/'):
@@ -171,6 +193,8 @@ class GEAerospaceScraper:
                     job_data.update(self.parse_location(location))
                     jobs.append(job_data)
 
+                logger.info(f"After India filter: {len(jobs)} jobs")
+
         except Exception as e:
             logger.error(f"Error extracting jobs: {str(e)}")
 
@@ -179,21 +203,36 @@ class GEAerospaceScraper:
     def _go_to_next_page(self, driver):
         try:
             driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(2)
+            time.sleep(0.5)
+
+            # Get current job titles to detect page change
+            old_first = driver.execute_script("""
+                var card = document.querySelector('[data-ph-at-id="jobs-list-item"]');
+                return card ? card.innerText.substring(0, 50) : '';
+            """)
 
             for sel_type, sel_val in [
+                (By.CSS_SELECTOR, 'a[data-ph-at-id="pagination-next-link"]'),
+                (By.CSS_SELECTOR, 'a.next-btn'),
                 (By.CSS_SELECTOR, 'button[data-ph-at-id="load-more-jobs-button"]'),
-                (By.CSS_SELECTOR, 'a[data-ph-at-id="pagination-next-btn"]'),
                 (By.CSS_SELECTOR, 'a[aria-label="Next"]'),
                 (By.CSS_SELECTOR, 'button[aria-label="Next"]'),
                 (By.XPATH, '//a[contains(text(), "Next")]'),
-                (By.CSS_SELECTOR, '.pagination .next a'),
             ]:
                 try:
                     btn = driver.find_element(sel_type, sel_val)
                     if btn.is_displayed():
                         driver.execute_script("arguments[0].click();", btn)
-                        time.sleep(3)
+                        # Poll for page change instead of blind sleep
+                        for _ in range(20):  # max 4s wait
+                            time.sleep(0.2)
+                            new_first = driver.execute_script("""
+                                var card = document.querySelector('[data-ph-at-id="jobs-list-item"]');
+                                return card ? card.innerText.substring(0, 50) : '';
+                            """)
+                            if new_first and new_first != old_first:
+                                break
+                        time.sleep(0.5)  # Brief settle
                         return True
                 except:
                     continue

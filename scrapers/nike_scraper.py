@@ -68,15 +68,23 @@ class NikeScraper:
             logger.info(f"Starting scrape for {self.company_name}")
             driver = self.setup_driver()
             driver.get(self.url)
+            time.sleep(10)
 
-            # Wait for SPA rendering
-            time.sleep(15)
+            current_url = driver.current_url
+            logger.info(f"Landed on: {current_url}")
 
-            # Wait for the job listings to appear
-            wait = WebDriverWait(driver, 10)
+            # Detect redirect away from NAS
+            if 'search-jobs' not in current_url:
+                logger.info("Detected redirect away from NAS, navigating to Nike jobs search")
+                # Nike's new careers site job search with location filter
+                driver.get('https://careers.nike.com/jobs?location=India')
+                time.sleep(15)
+                logger.info(f"Redirected to: {driver.current_url}")
+
+            # Wait for job listings
             try:
-                wait.until(EC.presence_of_element_located((
-                    By.CSS_SELECTOR, "a.results-list__item-title--link, h3.results-list__item-title, ul.results-list"
+                WebDriverWait(driver, 10).until(EC.presence_of_element_located((
+                    By.CSS_SELECTOR, "#search-results-list li, a[href*='/job/'], [class*='job-card']"
                 )))
                 logger.info("Job listings loaded")
             except:
@@ -157,7 +165,7 @@ class NikeScraper:
             return False
 
     def _scrape_page(self, driver, seen_ids):
-        """Scrape jobs from current page using JavaScript for reliable extraction."""
+        """Scrape jobs - tries NAS/Radancy first, then generic job link extraction with India filter."""
         jobs = []
         time.sleep(2)
 
@@ -168,262 +176,117 @@ class NikeScraper:
             driver.execute_script("window.scrollTo(0, 0);")
             time.sleep(1)
 
-            # Primary approach: JavaScript extraction targeting Nike's actual DOM
-            # Job title links: a.results-list__item-title--link inside h3.results-list__item-title
+            # Strategy 1: NAS/Radancy JS extraction
             js_jobs = driver.execute_script("""
                 var results = [];
-
-                // Strategy 1: Nike-specific selectors
-                var titleLinks = document.querySelectorAll('a.results-list__item-title--link');
-                if (titleLinks.length > 0) {
-                    titleLinks.forEach(function(link) {
-                        var title = (link.innerText || link.textContent || '').trim();
-                        var href = link.href || link.getAttribute('href') || '';
-                        if (!title || !href) return;
-
-                        // Make absolute URL if relative
-                        if (href.startsWith('/')) {
-                            href = 'https://jobs.nike.com' + href;
-                        }
-
-                        // Find parent list item for location info
-                        var listItem = link.closest('li') || link.closest('div');
-                        var location = '';
-
-                        if (listItem) {
-                            // Look for location text in the list item
-                            var locElem = listItem.querySelector('.results-list__item-location, [class*="location"], span.job-location');
-                            if (locElem) {
-                                location = (locElem.innerText || locElem.textContent || '').trim();
-                            }
-                            // If no dedicated location element, try to find text after the title
-                            if (!location) {
-                                var allText = listItem.innerText || '';
-                                var lines = allText.split('\\n').map(function(l) { return l.trim(); }).filter(function(l) { return l.length > 0; });
-                                // Title is first line, location/other info follows
-                                for (var i = 1; i < lines.length; i++) {
-                                    if (lines[i].length > 2 && lines[i].length < 100 && lines[i] !== title) {
-                                        location = lines[i];
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-
-                        results.push({
-                            title: title,
-                            url: href,
-                            location: location
-                        });
-                    });
+                var seen = {};
+                var container = document.querySelector('#search-results-list');
+                if (container) {
+                    var items = container.querySelectorAll('li');
+                    for (var i = 0; i < items.length; i++) {
+                        var item = items[i];
+                        var link = item.querySelector('a[href]');
+                        if (!link) continue;
+                        var title = link.innerText.trim().split('\\n')[0];
+                        var url = link.href;
+                        if (!title || title.length < 3 || seen[url]) continue;
+                        seen[url] = true;
+                        var locEl = item.querySelector('.job-location, [class*="location"]');
+                        var location = locEl ? locEl.innerText.trim() : '';
+                        results.push({title: title, url: url, location: location});
+                    }
                 }
-
-                // Strategy 2: Try h3 with results-list class
-                if (results.length === 0) {
-                    var h3s = document.querySelectorAll('h3.results-list__item-title');
-                    h3s.forEach(function(h3) {
-                        var link = h3.querySelector('a');
-                        if (!link) return;
-                        var title = (link.innerText || link.textContent || '').trim();
-                        var href = link.href || link.getAttribute('href') || '';
-                        if (!title || !href) return;
-
-                        if (href.startsWith('/')) {
-                            href = 'https://jobs.nike.com' + href;
-                        }
-
-                        var listItem = h3.closest('li') || h3.closest('div');
-                        var location = '';
-                        if (listItem) {
-                            var locElem = listItem.querySelector('[class*="location"]');
-                            if (locElem) location = (locElem.innerText || locElem.textContent || '').trim();
-                        }
-
-                        results.push({
-                            title: title,
-                            url: href,
-                            location: location
-                        });
-                    });
-                }
-
-                // Strategy 3: General job link fallback
-                if (results.length === 0) {
-                    document.querySelectorAll('a[href*="/job/"], a[href*="/jobs/"]').forEach(function(link) {
-                        var title = (link.innerText || link.textContent || '').trim();
-                        var href = link.href || '';
-                        if (title && title.length > 3 && title.length < 200 && href) {
-                            if (href.startsWith('/')) {
-                                href = 'https://jobs.nike.com' + href;
-                            }
-                            results.push({
-                                title: title.split('\\n')[0].trim(),
-                                url: href,
-                                location: ''
-                            });
-                        }
-                    });
-                }
-
                 return results;
             """)
 
             if js_jobs:
-                logger.info(f"JavaScript extraction found {len(js_jobs)} jobs")
-                for jl in js_jobs:
-                    title = jl.get('title', '').strip()
-                    url = jl.get('url', '').strip()
-                    if not title or not url:
-                        continue
-
-                    job_id = self._extract_job_id(url)
-                    external_id = self.generate_external_id(job_id, self.company_name)
-
-                    if external_id in seen_ids:
-                        continue
-
-                    location = jl.get('location', '').strip()
-                    city, state, country = self.parse_location(location)
-
-                    job_data = {
-                        'external_id': external_id,
-                        'company_name': self.company_name,
-                        'title': title,
-                        'description': '',
-                        'location': location,
-                        'city': city,
-                        'state': state,
-                        'country': country if country else 'India',
-                        'employment_type': '',
-                        'department': '',
-                        'apply_url': url,
-                        'posted_date': '',
-                        'job_function': '',
-                        'experience_level': '',
-                        'salary_range': '',
-                        'remote_type': '',
-                        'status': 'active'
-                    }
-
-                    if FETCH_FULL_JOB_DETAILS and url:
-                        full_details = self._fetch_job_details(driver, url)
-                        job_data.update(full_details)
-
-                    jobs.append(job_data)
-                    seen_ids.add(external_id)
-                    logger.info(f"Extracted: {title} | {location}")
+                logger.info(f"NAS/Radancy extraction found {len(js_jobs)} jobs")
             else:
-                logger.warning("JavaScript extraction found no jobs, trying Selenium fallback")
-                jobs = self._scrape_page_selenium(driver, seen_ids)
+                # Strategy 2: Generic job link extraction (careers.nike.com)
+                logger.info("Trying generic job link extraction")
+                js_jobs = driver.execute_script("""
+                    var results = [];
+                    var seen = {};
+                    var links = document.querySelectorAll('a[href*="/job/"]');
+                    for (var i = 0; i < links.length; i++) {
+                        var a = links[i];
+                        var t = (a.innerText || '').trim().split('\\n')[0];
+                        var h = a.href;
+                        if (t.length > 3 && t.length < 200 && !seen[h]) {
+                            if (h.indexOf('login') > -1 || h.indexOf('sign-in') > -1) continue;
+                            seen[h] = true;
+                            var parent = a.closest('li, div[class*="job"], article, div[class*="card"]');
+                            var location = '';
+                            if (parent) {
+                                var locEl = parent.querySelector('[class*="location"], .job-location');
+                                if (locEl) location = locEl.innerText.trim();
+                            }
+                            results.push({title: t, url: h, location: location});
+                        }
+                    }
+                    return results;
+                """)
+                if js_jobs:
+                    logger.info(f"Generic extraction found {len(js_jobs)} jobs")
+
+            if not js_jobs:
+                logger.warning("No jobs found on page")
+                return jobs
+
+            india_keywords = ['india', 'mumbai', 'delhi', 'bangalore', 'bengaluru', 'hyderabad',
+                              'chennai', 'pune', 'kolkata', 'gurgaon', 'gurugram', 'noida']
+
+            for jl in js_jobs:
+                title = jl.get('title', '').strip()
+                url = jl.get('url', '').strip()
+                if not title or not url:
+                    continue
+
+                location = jl.get('location', '').strip()
+
+                # India post-filter: reject non-India jobs
+                loc_lower = location.lower()
+                if location and not any(kw in loc_lower for kw in india_keywords):
+                    continue
+
+                job_id = self._extract_job_id(url)
+                external_id = self.generate_external_id(job_id, self.company_name)
+
+                if external_id in seen_ids:
+                    continue
+
+                city, state, country = self.parse_location(location)
+
+                job_data = {
+                    'external_id': external_id,
+                    'company_name': self.company_name,
+                    'title': title,
+                    'description': '',
+                    'location': location,
+                    'city': city,
+                    'state': state,
+                    'country': 'India',
+                    'employment_type': '',
+                    'department': '',
+                    'apply_url': url,
+                    'posted_date': '',
+                    'job_function': '',
+                    'experience_level': '',
+                    'salary_range': '',
+                    'remote_type': '',
+                    'status': 'active'
+                }
+
+                if FETCH_FULL_JOB_DETAILS and url:
+                    full_details = self._fetch_job_details(driver, url)
+                    job_data.update(full_details)
+
+                jobs.append(job_data)
+                seen_ids.add(external_id)
+                logger.info(f"Extracted: {title} | {location}")
 
         except Exception as e:
             logger.error(f"Error scraping page: {str(e)}")
-
-        return jobs
-
-    def _scrape_page_selenium(self, driver, seen_ids):
-        """Fallback Selenium-based extraction."""
-        jobs = []
-
-        try:
-            job_elements = []
-            selectors = [
-                "a.results-list__item-title--link",
-                "h3.results-list__item-title a",
-                "ul.results-list li",
-                "a[href*='/job/']",
-            ]
-
-            for selector in selectors:
-                try:
-                    elements = driver.find_elements(By.CSS_SELECTOR, selector)
-                    if elements:
-                        job_elements = elements
-                        logger.info(f"Selenium found {len(elements)} elements using: {selector}")
-                        break
-                except:
-                    continue
-
-            if not job_elements:
-                logger.warning("Selenium fallback found no job elements")
-                return jobs
-
-            for idx, elem in enumerate(job_elements, 1):
-                try:
-                    title = ""
-                    job_url = ""
-
-                    tag_name = elem.tag_name
-                    if tag_name == 'a':
-                        title = elem.text.strip()
-                        job_url = elem.get_attribute('href')
-                    elif tag_name == 'li':
-                        try:
-                            link = elem.find_element(By.CSS_SELECTOR, "a.results-list__item-title--link, h3 a, a[href*='/job/']")
-                            title = link.text.strip()
-                            job_url = link.get_attribute('href')
-                        except:
-                            continue
-                    else:
-                        try:
-                            link = elem.find_element(By.TAG_NAME, 'a')
-                            title = link.text.strip()
-                            job_url = link.get_attribute('href')
-                        except:
-                            continue
-
-                    if not title or not job_url:
-                        continue
-
-                    if job_url.startswith('/'):
-                        job_url = 'https://jobs.nike.com' + job_url
-
-                    job_id = self._extract_job_id(job_url)
-                    external_id = self.generate_external_id(job_id, self.company_name)
-
-                    if external_id in seen_ids:
-                        continue
-
-                    location = ""
-                    try:
-                        parent = elem if tag_name == 'li' else elem.find_element(By.XPATH, './..')
-                        loc_elem = parent.find_element(By.CSS_SELECTOR, "[class*='location']")
-                        location = loc_elem.text.strip()
-                    except:
-                        pass
-
-                    city, state, country = self.parse_location(location)
-
-                    job_data = {
-                        'external_id': external_id,
-                        'company_name': self.company_name,
-                        'title': title,
-                        'description': '',
-                        'location': location,
-                        'city': city,
-                        'state': state,
-                        'country': country if country else 'India',
-                        'employment_type': '',
-                        'department': '',
-                        'apply_url': job_url,
-                        'posted_date': '',
-                        'job_function': '',
-                        'experience_level': '',
-                        'salary_range': '',
-                        'remote_type': '',
-                        'status': 'active'
-                    }
-
-                    jobs.append(job_data)
-                    seen_ids.add(external_id)
-                    logger.info(f"Selenium extracted: {title} | {location}")
-
-                except Exception as e:
-                    logger.error(f"Error extracting job {idx}: {str(e)}")
-                    continue
-
-        except Exception as e:
-            logger.error(f"Selenium fallback error: {str(e)}")
 
         return jobs
 

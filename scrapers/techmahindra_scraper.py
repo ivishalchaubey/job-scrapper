@@ -59,24 +59,21 @@ class TechMahindraScraper:
             driver.get(self.url)
             wait = WebDriverWait(driver, 10)
 
-            # Wait 15s for Drupal/AJAX rendering on ASP.NET page
-            time.sleep(15)
-
-            # Try to wait for the joblisting container
+            # Smart wait for content (NOT blind sleep)
             try:
-                wait.until(EC.presence_of_element_located((
+                WebDriverWait(driver, 15).until(EC.presence_of_element_located((
                     By.CSS_SELECTOR, "div.joblisting, div.card-annimation-bar, a[href*='Registration.aspx']"
                 )))
                 logger.info("Page elements detected")
             except:
-                logger.warning("Timeout waiting for joblisting container")
+                logger.warning("Timeout waiting for joblisting container, using fallback sleep")
+                time.sleep(5)
 
-            # Scroll to trigger any lazy loading
-            for _ in range(3):
-                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                time.sleep(2)
+            # Quick scroll to trigger lazy loading
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            time.sleep(1)
             driver.execute_script("window.scrollTo(0, 0);")
-            time.sleep(2)
+            time.sleep(0.5)
 
             current_page = 1
             while current_page <= max_pages:
@@ -87,7 +84,6 @@ class TechMahindraScraper:
                 if current_page < max_pages:
                     if not self._go_to_next_page(driver, current_page):
                         break
-                    time.sleep(3)
                 current_page += 1
 
             logger.info(f"Total jobs scraped: {len(all_jobs)}")
@@ -102,7 +98,14 @@ class TechMahindraScraper:
     def _go_to_next_page(self, driver, current_page):
         try:
             driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(2)
+            time.sleep(0.5)
+
+            # Capture current state for change detection
+            old_first = driver.execute_script("""
+                var card = document.querySelector('div.joblisting div div, div.card-annimation-bar');
+                return card ? card.innerText.substring(0, 50) : '';
+            """)
+
             for sel_type, sel_val in [
                 (By.CSS_SELECTOR, 'a.next'), (By.XPATH, '//a[contains(text(), "Next")]'),
                 (By.CSS_SELECTOR, '[class*="pagination"] a.next'),
@@ -111,6 +114,17 @@ class TechMahindraScraper:
                 try:
                     btn = driver.find_element(sel_type, sel_val)
                     driver.execute_script("arguments[0].click();", btn)
+
+                    # Poll for page change instead of blind sleep
+                    for _ in range(20):
+                        time.sleep(0.2)
+                        new_first = driver.execute_script("""
+                            var card = document.querySelector('div.joblisting div div, div.card-annimation-bar');
+                            return card ? card.innerText.substring(0, 50) : '';
+                        """)
+                        if new_first and new_first != old_first:
+                            break
+                    time.sleep(0.5)
                     return True
                 except:
                     continue
@@ -124,7 +138,9 @@ class TechMahindraScraper:
 
         try:
             driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(2)
+            time.sleep(0.5)
+            driver.execute_script("window.scrollTo(0, 0);")
+            time.sleep(0.3)
 
             # PRIMARY: Use JavaScript to extract jobs from div.joblisting container
             # The Drupal site has job titles in plain divs inside div.joblisting

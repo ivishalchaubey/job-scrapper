@@ -60,18 +60,17 @@ class SchaefflerScraper:
 
         try:
             driver = self.setup_driver()
-            short_wait = WebDriverWait(driver, 5)
             logger.info(f"Starting {self.company_name} scraping from {self.url}")
             driver.get(self.url)
-            time.sleep(15)
+            time.sleep(5)
 
-            # Accept cookies if present
+            # Accept cookies - Schaeffler has an "Accept All Cookies" button
             try:
                 driver.execute_script("""
-                    var btns = document.querySelectorAll('button, a, div[role="button"]');
+                    var btns = document.querySelectorAll('button');
                     for (var i = 0; i < btns.length; i++) {
-                        var txt = (btns[i].innerText || '').toLowerCase();
-                        if ((txt.includes('accept') || txt.includes('agree') || txt.includes('allow')) && txt.length < 40) {
+                        var txt = (btns[i].innerText || '').trim().toLowerCase();
+                        if (txt.includes('accept all')) {
                             btns[i].click();
                             break;
                         }
@@ -81,117 +80,34 @@ class SchaefflerScraper:
             except:
                 pass
 
-            # Try to filter by India/country
-            filter_applied = False
+            # Wait for web components to hydrate (schaeffler-search, schaeffler-search-list, schaeffler-job-item)
+            # These are Stencil.js web components with shadow DOM
+            logger.info("Waiting for web components to load...")
+            time.sleep(15)
 
-            # Strategy 1: Search for "India" in a search input
-            search_selectors = [
-                'input[type="search"]', 'input[type="text"]', 'input[placeholder*="search" i]',
-                'input[placeholder*="Search" i]', 'input[placeholder*="keyword" i]',
-                'input[name*="search" i]', 'input[name*="keyword" i]',
-                'input[id*="search" i]', 'input[class*="search" i]',
-                'input[aria-label*="search" i]', 'input[aria-label*="Search" i]'
-            ]
+            # Schaeffler uses deeply nested shadow DOM:
+            # document -> schaeffler-search.shadowRoot -> schaeffler-search-list.shadowRoot -> schaeffler-job-item[].shadowRoot
+            # Each page loads 30 items; pagination is via "Load more" button
 
-            for sel in search_selectors:
-                try:
-                    search_input = driver.find_element(By.CSS_SELECTOR, sel)
-                    if search_input.is_displayed():
-                        search_input.clear()
-                        search_input.send_keys('India')
-                        logger.info(f"Typed 'India' into search: {sel}")
-                        time.sleep(1)
-                        try:
-                            search_input.send_keys(u'\ue007')  # Enter
-                        except:
-                            pass
-                        # Try clicking search button
-                        try:
-                            search_btn = driver.find_element(By.CSS_SELECTOR,
-                                'button[type="submit"], button[class*="search"], button[aria-label*="search" i]')
-                            if search_btn.is_displayed():
-                                driver.execute_script("arguments[0].click();", search_btn)
-                        except:
-                            pass
-                        filter_applied = True
-                        time.sleep(8)
-                        break
-                except:
-                    continue
-
-            # Strategy 2: Try to find and use country/location filter dropdown
-            if not filter_applied:
-                try:
-                    # Try select elements
-                    driver.execute_script("""
-                        var selects = document.querySelectorAll('select');
-                        for (var i = 0; i < selects.length; i++) {
-                            var sel = selects[i];
-                            var label = (sel.getAttribute('aria-label') || sel.getAttribute('name') || '').toLowerCase();
-                            if (label.includes('country') || label.includes('location') || label.includes('region')) {
-                                var opts = sel.querySelectorAll('option');
-                                for (var j = 0; j < opts.length; j++) {
-                                    if (opts[j].text.toLowerCase().includes('india')) {
-                                        sel.value = opts[j].value;
-                                        sel.dispatchEvent(new Event('change', {bubbles: true}));
-                                        return true;
-                                    }
-                                }
-                            }
-                        }
-                        return false;
-                    """)
-                    time.sleep(5)
-                except:
-                    pass
-
-            # Strategy 3: Click on location/country filter buttons
-            if not filter_applied:
-                try:
-                    driver.execute_script("""
-                        // Look for filter/facet buttons with country/location
-                        var btns = document.querySelectorAll('button, a, div[role="button"], span[role="button"], label');
-                        for (var i = 0; i < btns.length; i++) {
-                            var txt = (btns[i].innerText || '').trim().toLowerCase();
-                            if (txt === 'india' || txt.includes('india')) {
-                                btns[i].click();
-                                return true;
-                            }
-                        }
-                        // Try checkbox/radio inputs for country filtering
-                        var inputs = document.querySelectorAll('input[type="checkbox"], input[type="radio"]');
-                        for (var i = 0; i < inputs.length; i++) {
-                            var lbl = inputs[i].closest('label');
-                            var txt = lbl ? lbl.innerText.toLowerCase() : '';
-                            var val = (inputs[i].value || '').toLowerCase();
-                            if (txt.includes('india') || val.includes('india')) {
-                                inputs[i].click();
-                                return true;
-                            }
-                        }
-                        return false;
-                    """)
-                    time.sleep(5)
-                except:
-                    pass
-
-            # Scroll to load lazy content
-            for scroll_i in range(5):
-                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                time.sleep(2)
-            driver.execute_script("window.scrollTo(0, 0);")
-            time.sleep(2)
-
+            seen_urls = set()
             for page in range(max_pages):
                 page_jobs = self._extract_jobs(driver)
-                if not page_jobs:
-                    break
-                all_jobs.extend(page_jobs)
-                logger.info(f"Page {page + 1}: {len(page_jobs)} jobs (total: {len(all_jobs)})")
+                # Deduplicate: Load More appends to DOM, so filter already-seen jobs
+                new_jobs = []
+                for job in page_jobs:
+                    url = job.get('apply_url', '')
+                    if url not in seen_urls:
+                        seen_urls.add(url)
+                        new_jobs.append(job)
 
-                if not self._go_to_next_page(driver):
+                if not new_jobs:
                     break
-                time.sleep(5)
+                all_jobs.extend(new_jobs)
+                logger.info(f"Page {page + 1}: {len(new_jobs)} new jobs (total: {len(all_jobs)})")
+
+                if page < max_pages - 1:
+                    if not self._load_more(driver):
+                        break
 
             logger.info(f"Total jobs scraped: {len(all_jobs)}")
         except Exception as e:
@@ -202,155 +118,104 @@ class SchaefflerScraper:
         return all_jobs
 
     def _extract_jobs(self, driver):
+        """Extract jobs from deeply nested shadow DOM web components."""
         jobs = []
 
         try:
-            # Scroll to ensure content is loaded
-            for _ in range(3):
-                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                time.sleep(2)
-            driver.execute_script("window.scrollTo(0, 0);")
-            time.sleep(1)
-
             js_jobs = driver.execute_script("""
                 var results = [];
                 var seen = {};
 
-                // Strategy 1: Links with /job/ or job-like patterns in href
-                var jobLinks = document.querySelectorAll('a[href*="/job/"], a[href*="/jobs/"], a[href*="jobId"], a[href*="/position/"], a[href*="/vacancy/"], a[href*="requisition"]');
-                for (var i = 0; i < jobLinks.length; i++) {
-                    var el = jobLinks[i];
-                    var href = el.href || '';
-                    if (!href || seen[href]) continue;
-                    var title = (el.innerText || el.textContent || '').trim().split('\\n')[0].trim();
-                    if (!title || title.length < 3 || title.length > 200) continue;
-                    if (title.toLowerCase() === 'jobs' || title.toLowerCase() === 'careers' ||
-                        title.toLowerCase() === 'search' || title.toLowerCase() === 'apply') continue;
+                // Navigate shadow DOM: schaeffler-search -> schaeffler-search-list -> schaeffler-job-item[]
+                var search = document.querySelector('schaeffler-search');
+                if (!search || !search.shadowRoot) return results;
 
+                var searchList = search.shadowRoot.querySelector('schaeffler-search-list');
+                if (!searchList || !searchList.shadowRoot) return results;
+
+                var jobItems = searchList.shadowRoot.querySelectorAll('schaeffler-job-item');
+
+                for (var i = 0; i < jobItems.length; i++) {
+                    var item = jobItems[i];
+                    if (!item.shadowRoot) continue;
+
+                    var sr = item.shadowRoot;
+
+                    // Each job item has an <a class="search"> link wrapping a card
+                    var link = sr.querySelector('a.search, a[href*="job-invite"], a[href*="job/"]');
+                    if (!link) continue;
+
+                    var href = link.getAttribute('href') || '';
+                    if (!href || seen[href]) continue;
                     seen[href] = true;
 
-                    var parent = el.closest('div[class*="job"], li[class*="job"], article, tr, div[class*="card"], div[class*="result"], div[class*="listing"], div[class*="item"], div[class*="row"]');
+                    // Extract title from the title element or link text
+                    var titleEl = sr.querySelector('[class*="title"], h2, h3, h4, .name');
+                    var title = titleEl ? titleEl.innerText.trim() : '';
+                    if (!title) {
+                        // Parse from link text - format: "NEW\\nTitle\\nDEPARTMENT\\n..."
+                        var linkText = link.innerText.trim();
+                        var lines = linkText.split('\\n').map(function(l) { return l.trim(); }).filter(function(l) { return l.length > 0; });
+                        // Skip "New" label if present
+                        var startIdx = 0;
+                        if (lines.length > 0 && lines[0].toLowerCase() === 'new') startIdx = 1;
+                        if (lines.length > startIdx) title = lines[startIdx];
+                    }
+
+                    if (!title || title.length < 3) continue;
+
+                    // Extract other fields from the card text
+                    var fullText = (link.innerText || '').trim();
+                    var lines = fullText.split('\\n').map(function(l) { return l.trim(); }).filter(function(l) { return l.length > 0; });
+
+                    // Typical format: [New, Title, Department, Level, Type, Location(s)]
+                    var department = '';
+                    var jobType = '';
                     var location = '';
-                    var dept = '';
-                    var date = '';
 
-                    if (parent) {
-                        var locEl = parent.querySelector('[class*="location"], [class*="Location"], [data-field*="location"]');
-                        if (locEl && locEl !== el) location = locEl.innerText.trim();
+                    // Find location - usually last non-empty lines, contains city/country names
+                    // Department usually comes right after title
+                    var startIdx = 0;
+                    if (lines.length > 0 && lines[0].toLowerCase() === 'new') startIdx = 1;
 
-                        var deptEl = parent.querySelector('[class*="department"], [class*="Department"], [class*="category"], [class*="function"]');
-                        if (deptEl && deptEl !== el) dept = deptEl.innerText.trim();
+                    if (lines.length > startIdx + 1) department = lines[startIdx + 1];
+                    // Remove "+1" or "+2" suffixes from department
+                    department = department.replace(/\\s*\\+\\d+$/, '');
 
-                        var dateEl = parent.querySelector('[class*="date"], [class*="Date"], [class*="posted"], time');
-                        if (dateEl && dateEl !== el) date = dateEl.innerText.trim();
-                    }
-
-                    results.push({title: title, url: href, location: location, date: date, department: dept});
-                }
-
-                // Strategy 2: Job card divs with links
-                if (results.length === 0) {
-                    var cards = document.querySelectorAll('div[class*="job-card"], div[class*="jobCard"], div[class*="job-listing"], div[class*="jobListing"], div[class*="job-item"], div[class*="jobItem"], article[class*="job"], li[class*="job"], div[class*="job-row"], tr[class*="job"]');
-                    for (var i = 0; i < cards.length; i++) {
-                        var card = cards[i];
-                        var linkEl = card.querySelector('a[href]');
-                        var titleEl = card.querySelector('h2, h3, h4, [class*="title"], [class*="Title"]');
-                        var title = '';
-                        var href = '';
-
-                        if (titleEl) {
-                            title = titleEl.innerText.trim().split('\\n')[0].trim();
-                            var tLink = titleEl.querySelector('a[href]') || titleEl.closest('a[href]');
-                            if (tLink) href = tLink.href;
+                    // Location is typically the last meaningful line
+                    for (var j = lines.length - 1; j >= 0; j--) {
+                        var line = lines[j];
+                        // Skip common non-location labels
+                        if (line.toLowerCase() === 'new' || line === title ||
+                            line === department || line.toLowerCase().includes('full-time') ||
+                            line.toLowerCase().includes('part-time') || line.toLowerCase().includes('professional') ||
+                            line.toLowerCase().includes('engineer') || line.toLowerCase().includes('others') ||
+                            line.toLowerCase().includes('intern') || line.toLowerCase().includes('student')) continue;
+                        // If it looks like a location (has comma or known city patterns)
+                        if (line.length > 1) {
+                            location = line;
+                            break;
                         }
-                        if (!title && linkEl) title = linkEl.innerText.trim().split('\\n')[0].trim();
-                        if (!href && linkEl) href = linkEl.href || '';
-
-                        if (!title || title.length < 3 || title.length > 200) continue;
-                        if (href && seen[href]) continue;
-                        if (href) seen[href] = true;
-
-                        var locEl = card.querySelector('[class*="location"], [class*="Location"]');
-                        var location = locEl ? locEl.innerText.trim() : '';
-                        var deptEl = card.querySelector('[class*="department"], [class*="category"]');
-                        var dept = deptEl ? deptEl.innerText.trim() : '';
-                        var dateEl = card.querySelector('[class*="date"], time');
-                        var date = dateEl ? dateEl.innerText.trim() : '';
-
-                        results.push({title: title, url: href || '', location: location, date: date, department: dept});
                     }
-                }
 
-                // Strategy 3: Table rows
-                if (results.length === 0) {
-                    var rows = document.querySelectorAll('table tbody tr, table tr');
-                    for (var i = 0; i < rows.length; i++) {
-                        var row = rows[i];
-                        if (row.querySelector('th')) continue;
-                        var link = row.querySelector('a[href]');
-                        if (!link) continue;
-                        var title = link.innerText.trim().split('\\n')[0];
-                        var href = link.href || '';
-                        if (!title || title.length < 3 || title.length > 200 || !href || seen[href]) continue;
-                        if (href.includes('javascript:') || href.includes('#') || href.includes('login')) continue;
-                        seen[href] = true;
-                        var tds = row.querySelectorAll('td');
-                        var location = tds.length >= 2 ? tds[1].innerText.trim() : '';
-                        var dept = tds.length >= 3 ? tds[2].innerText.trim() : '';
-                        results.push({title: title, url: href, location: location, date: '', department: dept});
-                    }
-                }
-
-                // Strategy 4: Generic list items with links
-                if (results.length === 0) {
-                    var items = document.querySelectorAll('ul li, ol li');
-                    for (var i = 0; i < items.length; i++) {
-                        var item = items[i];
-                        var link = item.querySelector('a[href]');
-                        if (!link) continue;
-                        var href = link.href || '';
-                        if (!href || seen[href]) continue;
-                        if (!href.includes('job') && !href.includes('position') && !href.includes('career') && !href.includes('req') && !href.includes('vacancy')) continue;
-                        var title = link.innerText.trim().split('\\n')[0].trim();
-                        if (!title || title.length < 3 || title.length > 200) continue;
-                        if (title.toLowerCase() === 'jobs' || title.toLowerCase() === 'careers') continue;
-                        seen[href] = true;
-
-                        var locEl = item.querySelector('[class*="location"]');
-                        var location = locEl ? locEl.innerText.trim() : '';
-                        results.push({title: title, url: href, location: location, date: '', department: ''});
-                    }
-                }
-
-                // Strategy 5: Any links that appear to be job postings
-                if (results.length === 0) {
-                    var allLinks = document.querySelectorAll('a[href]');
-                    for (var i = 0; i < allLinks.length; i++) {
-                        var el = allLinks[i];
-                        var href = el.href || '';
-                        if (!href || seen[href]) continue;
-                        if (!href.includes('job') && !href.includes('position') && !href.includes('req') &&
-                            !href.includes('vacancy') && !href.includes('opening')) continue;
-                        if (href.includes('javascript:') || href.includes('#') || href.includes('login') || href.includes('signup')) continue;
-                        var title = el.innerText.trim().split('\\n')[0].trim();
-                        if (!title || title.length < 3 || title.length > 200) continue;
-                        if (title.toLowerCase() === 'jobs' || title.toLowerCase() === 'careers' || title.toLowerCase() === 'search') continue;
-                        seen[href] = true;
-                        results.push({title: title, url: href, location: '', date: '', department: ''});
-                    }
+                    results.push({
+                        title: title,
+                        url: href,
+                        location: location,
+                        department: department
+                    });
                 }
 
                 return results;
             """)
 
             if js_jobs:
-                logger.info(f"JS extraction found {len(js_jobs)} jobs")
+                logger.info(f"Shadow DOM extraction found {len(js_jobs)} jobs")
                 seen_urls = set()
                 for jdata in js_jobs:
                     title = jdata.get('title', '').strip()
                     url = jdata.get('url', '').strip()
                     location = jdata.get('location', '').strip()
-                    date = jdata.get('date', '').strip()
                     department = jdata.get('department', '').strip()
 
                     if not title or len(title) < 3:
@@ -359,106 +224,101 @@ class SchaefflerScraper:
                         continue
                     if url:
                         seen_urls.add(url)
+
                     if url and url.startswith('/'):
                         url = f"{self.base_url}{url}"
 
+                    # Extract job ID from URL like /job-invite/40424/?locale=en_US
                     job_id = hashlib.md5((url or title).encode()).hexdigest()[:12]
-                    if url and '/job/' in url:
-                        parts = url.split('/job/')[-1].split('/')
+                    if 'job-invite/' in url:
+                        parts = url.split('job-invite/')[-1].split('/')
                         if parts[0]:
                             job_id = parts[0]
-                    elif url and 'jobId=' in url:
-                        import re
-                        id_match = re.search(r'jobId=(\w+)', url)
-                        if id_match:
-                            job_id = id_match.group(1)
 
                     loc_data = self.parse_location(location)
                     jobs.append({
                         'external_id': self.generate_external_id(job_id, self.company_name),
-                        'company_name': self.company_name, 'title': title,
-                        'apply_url': url or self.url, 'location': location,
-                        'department': department, 'employment_type': '', 'description': '',
-                        'posted_date': date, 'city': loc_data.get('city', ''),
+                        'company_name': self.company_name,
+                        'title': title,
+                        'apply_url': url or self.url,
+                        'location': location,
+                        'department': department,
+                        'employment_type': '',
+                        'description': '',
+                        'posted_date': '',
+                        'city': loc_data.get('city', ''),
                         'state': loc_data.get('state', ''),
                         'country': loc_data.get('country', 'India'),
-                        'job_function': '', 'experience_level': '', 'salary_range': '',
-                        'remote_type': '', 'status': 'active'
+                        'job_function': '',
+                        'experience_level': '',
+                        'salary_range': '',
+                        'remote_type': '',
+                        'status': 'active'
                     })
 
-            if jobs:
-                logger.info(f"Successfully extracted {len(jobs)} jobs")
-            else:
+            if not jobs:
                 logger.warning("No jobs found on this page")
-                try:
-                    body_text = driver.execute_script('return document.body ? document.body.innerText.substring(0, 500) : ""')
-                    logger.info(f"Page body preview: {body_text}")
-                    page_url = driver.current_url
-                    logger.info(f"Current URL: {page_url}")
-                except:
-                    pass
 
         except Exception as e:
             logger.error(f"Error extracting jobs: {str(e)}")
 
         return jobs
 
-    def _go_to_next_page(self, driver):
+    def _load_more(self, driver):
+        """Click the Load More button inside the shadow DOM to get more jobs."""
         try:
-            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(2)
+            # Get current job count before clicking
+            old_count = driver.execute_script("""
+                var search = document.querySelector('schaeffler-search');
+                if (!search || !search.shadowRoot) return 0;
+                var searchList = search.shadowRoot.querySelector('schaeffler-search-list');
+                if (!searchList || !searchList.shadowRoot) return 0;
+                return searchList.shadowRoot.querySelectorAll('schaeffler-job-item').length;
+            """)
 
-            next_selectors = [
-                (By.CSS_SELECTOR, 'a[aria-label="Next"]'),
-                (By.CSS_SELECTOR, 'button[aria-label="Next"]'),
-                (By.CSS_SELECTOR, 'a[aria-label="Next page"]'),
-                (By.CSS_SELECTOR, 'button[aria-label="Next page"]'),
-                (By.CSS_SELECTOR, 'a.next-page'),
-                (By.CSS_SELECTOR, 'a[rel="next"]'),
-                (By.CSS_SELECTOR, 'li.pagination-next a'),
-                (By.CSS_SELECTOR, '.pagination .next a'),
-                (By.CSS_SELECTOR, 'a[class*="next"]'),
-                (By.CSS_SELECTOR, 'button[class*="next"]'),
-                (By.XPATH, '//a[contains(text(), "Next")]'),
-                (By.XPATH, '//button[contains(text(), "Next")]'),
-                (By.XPATH, '//a[contains(text(), ">")]'),
-                (By.XPATH, '//a[contains(@class, "next")]'),
-                (By.XPATH, '//button[contains(@class, "next")]'),
-                (By.CSS_SELECTOR, 'a[title="Next"]'),
-                (By.CSS_SELECTOR, 'button[title="Next"]'),
-            ]
-
-            for sel_type, sel_val in next_selectors:
-                try:
-                    btn = driver.find_element(sel_type, sel_val)
-                    if btn.is_displayed() and btn.is_enabled():
-                        driver.execute_script("arguments[0].click();", btn)
-                        logger.info("Navigated to next page")
-                        return True
-                except:
-                    continue
-
-            # Try JS fallback for pagination
+            # Click the Load More button (schaeffler-button inside search-list shadow)
             clicked = driver.execute_script("""
-                var els = document.querySelectorAll('a, button');
-                for (var i = 0; i < els.length; i++) {
-                    var txt = (els[i].innerText || '').trim().toLowerCase();
-                    var label = (els[i].getAttribute('aria-label') || '').toLowerCase();
-                    if (txt === 'next' || txt === '>' || txt === '>>' || label.includes('next')) {
-                        if (els[i].offsetParent !== null) {
-                            els[i].click();
-                            return true;
-                        }
+                var search = document.querySelector('schaeffler-search');
+                if (!search || !search.shadowRoot) return false;
+                var searchList = search.shadowRoot.querySelector('schaeffler-search-list');
+                if (!searchList || !searchList.shadowRoot) return false;
+
+                // The Load More button is a schaeffler-button in the footer
+                var loadMoreBtn = searchList.shadowRoot.querySelector('schaeffler-button, button[class*="load-more"]');
+                if (loadMoreBtn) {
+                    // schaeffler-button may need to be clicked via shadow DOM
+                    if (loadMoreBtn.shadowRoot) {
+                        var btn = loadMoreBtn.shadowRoot.querySelector('button');
+                        if (btn) { btn.click(); return true; }
                     }
+                    loadMoreBtn.click();
+                    return true;
                 }
                 return false;
             """)
-            if clicked:
-                logger.info("Navigated to next page via JS fallback")
-                return True
+
+            if not clicked:
+                logger.info("No Load More button found")
+                return False
+
+            # Wait for new items to load
+            for _ in range(30):  # max 6s wait
+                time.sleep(0.2)
+                new_count = driver.execute_script("""
+                    var search = document.querySelector('schaeffler-search');
+                    if (!search || !search.shadowRoot) return 0;
+                    var searchList = search.shadowRoot.querySelector('schaeffler-search-list');
+                    if (!searchList || !searchList.shadowRoot) return 0;
+                    return searchList.shadowRoot.querySelectorAll('schaeffler-job-item').length;
+                """)
+                if new_count > old_count:
+                    logger.info(f"Load More: {old_count} -> {new_count} items")
+                    time.sleep(1)  # Brief settle
+                    return True
 
             return False
-        except:
+        except Exception as e:
+            logger.error(f"Error loading more: {str(e)}")
             return False
 
     def parse_location(self, location_str):

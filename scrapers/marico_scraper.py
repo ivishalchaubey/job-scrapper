@@ -34,6 +34,7 @@ class MaricoScraper:
         chrome_options.add_argument('--disable-blink-features=AutomationControlled')
         chrome_options.add_experimental_option('useAutomationExtension', False)
         chrome_options.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
+        chrome_options.page_load_strategy = 'eager'  # Don't wait for all resources; WebDriverWait handles content detection
 
         driver_path = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0.7559.133_fresh/chromedriver-mac-arm64/chromedriver'
 
@@ -61,15 +62,26 @@ class MaricoScraper:
 
             driver.get(self.url)
 
-            # Wait 15s for SenseHQ React platform to render
-            time.sleep(15)
+            # Smart wait for SenseHQ React platform to render (instead of blind sleep(15))
+            try:
+                WebDriverWait(driver, 15).until(
+                    lambda d: d.execute_script("""
+                        var btns = document.querySelectorAll('a, button');
+                        for (var i = 0; i < btns.length; i++) {
+                            var t = (btns[i].innerText || '').trim();
+                            if (t === 'View Job' || t === 'View job' || t === 'VIEW JOB') return true;
+                        }
+                        return false;
+                    """)
+                )
+            except:
+                time.sleep(5)  # Fallback if View Job buttons not found
 
-            # Scroll multiple times to trigger lazy loading
-            for _ in range(5):
-                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                time.sleep(2)
+            # Single quick scroll to trigger lazy loading (instead of 5 slow scrolls)
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            time.sleep(1)
             driver.execute_script("window.scrollTo(0, 0);")
-            time.sleep(2)
+            time.sleep(0.5)
 
             # SenseHQ uses React + Emotion CSS-in-JS; scrape with JS
             jobs = self._scrape_page(driver)
@@ -99,139 +111,49 @@ class MaricoScraper:
             js_jobs = driver.execute_script("""
                 var results = [];
 
-                // Strategy A: Find "View Job" buttons and extract job info from their parent containers
-                var viewJobButtons = document.querySelectorAll('a, button');
-                var jobContainers = [];
-                for (var i = 0; i < viewJobButtons.length; i++) {
-                    var btn = viewJobButtons[i];
-                    var text = (btn.innerText || '').trim();
-                    if (text === 'View Job' || text === 'View job' || text === 'VIEW JOB') {
-                        // Walk up to find the job card container
-                        var container = btn.parentElement;
-                        // Go up a few levels to get the full job card
-                        for (var j = 0; j < 5; j++) {
-                            if (container && container.parentElement) {
-                                container = container.parentElement;
-                            }
-                        }
-                        if (container) {
-                            jobContainers.push({container: container, btn: btn});
-                        }
+                // SenseHQ/Skillate: Find divs with class css-1lnmtqu (job card containers)
+                // Each contains: Title (ID) / Location / Department / View Job
+                // Use the body text to parse job blocks between "View Job" markers
+                var bodyText = document.body.innerText || '';
+                var lines = bodyText.split('\\n').map(function(l) { return l.trim(); }).filter(function(l) { return l.length > 0; });
+
+                // Find the start of actual job listings — after the header row "Role" + "Location" + "Department"
+                var startIdx = 0;
+                for (var si = 0; si < lines.length - 2; si++) {
+                    if (lines[si] === 'Role' && lines[si+1] === 'Location' && lines[si+2] === 'Department') {
+                        startIdx = si + 3;
+                        break;
                     }
                 }
 
-                if (jobContainers.length > 0) {
-                    for (var k = 0; k < jobContainers.length; k++) {
-                        var card = jobContainers[k].container;
-                        var allText = card.innerText || '';
-                        var lines = allText.split('\\n').map(function(l) { return l.trim(); }).filter(function(l) { return l.length > 0; });
+                // Parse job blocks: each job has 3 lines (Title, Location, Department) followed by "View Job"
+                var currentBlock = [];
+                for (var i = startIdx; i < lines.length; i++) {
+                    var line = lines[i];
+                    if (line === 'View Job' || line === 'View job') {
+                        // Process this block — should have exactly 3 lines
+                        if (currentBlock.length >= 1) {
+                            var title = currentBlock[0] || '';
+                            var location = currentBlock.length > 1 ? currentBlock[1] : '';
+                            var department = currentBlock.length > 2 ? currentBlock[2] : '';
 
-                        // The title is typically the first meaningful text line (not "View Job" or location/dept)
-                        var title = '';
-                        var location = '';
-                        var department = '';
+                            // Extract job ID from title like "Supply Chain Executive (18260)"
+                            var jobId = '';
+                            var idMatch = title.match(/\\(([0-9]+)\\)$/);
+                            if (idMatch) {
+                                jobId = idMatch[1];
+                                title = title.replace(/\\s*\\([0-9]+\\)$/, '').trim();
+                            }
 
-                        for (var m = 0; m < lines.length; m++) {
-                            var line = lines[m];
-                            if (line === 'View Job' || line === 'View job' || line === 'VIEW JOB') continue;
-                            if (line.length < 3) continue;
-
-                            if (!title) {
-                                // First substantial line is likely the title
-                                title = line;
-                            } else if (!location) {
-                                location = line;
-                            } else if (!department) {
-                                department = line;
+                            if (title && title.length > 2) {
+                                results.push({title: title, url: '', location: location, department: department, jobId: jobId});
                             }
                         }
-
-                        // Try to get URL from the View Job button's onclick or href
-                        var url = '';
-                        var btn = jobContainers[k].btn;
-                        url = btn.href || '';
-                        if (!url) {
-                            var onclick = btn.getAttribute('onclick') || '';
-                            var match = onclick.match(/window\\.location\\s*=\\s*['"]([^'"]+)['"]/);
-                            if (match) url = match[1];
-                        }
-                        // Also check if there's an ancestor <a> tag
-                        if (!url) {
-                            var parentA = btn.closest('a');
-                            if (parentA) url = parentA.href || '';
-                        }
-
-                        if (title && title.length > 2) {
-                            results.push({title: title, url: url, location: location, department: department});
-                        }
-                    }
-                }
-
-                // Strategy B: Find spans that look like job titles (longer text, not button text)
-                if (results.length === 0) {
-                    var allSpans = document.querySelectorAll('span');
-                    var candidateTitles = [];
-                    for (var s = 0; s < allSpans.length; s++) {
-                        var span = allSpans[s];
-                        var spanText = span.innerText.trim();
-                        // Job titles are typically 10-100 chars, contain words like Manager, Officer, Executive, Engineer, etc.
-                        if (spanText.length >= 10 && spanText.length <= 150) {
-                            // Check if it looks like a job title
-                            var hasJobWords = /manager|officer|executive|engineer|analyst|lead|head|director|specialist|coordinator|associate|senior|junior|intern|trainee|designer|developer|consultant|supervisor|assistant|professional/i.test(spanText);
-                            // Also accept titles with dash patterns common in Indian companies
-                            var hasDashPattern = /\\s-\\s/.test(spanText);
-                            if (hasJobWords || hasDashPattern) {
-                                // Check it's not a paragraph (no period, short)
-                                if (spanText.indexOf('.') === -1 || spanText.length < 80) {
-                                    candidateTitles.push({el: span, title: spanText});
-                                }
-                            }
-                        }
-                    }
-
-                    for (var t = 0; t < candidateTitles.length; t++) {
-                        var titleEl = candidateTitles[t].el;
-                        var jobTitle = candidateTitles[t].title;
-
-                        // Walk up to find container with more info
-                        var parent = titleEl.parentElement;
-                        for (var p = 0; p < 6; p++) {
-                            if (parent && parent.parentElement) parent = parent.parentElement;
-                        }
-
-                        var locText = '';
-                        var deptText = '';
-                        if (parent) {
-                            var pText = parent.innerText || '';
-                            var pLines = pText.split('\\n').map(function(l) { return l.trim(); }).filter(function(l) { return l.length > 0 && l !== jobTitle && l !== 'View Job' && l !== 'View job'; });
-                            if (pLines.length > 0) locText = pLines[0];
-                            if (pLines.length > 1) deptText = pLines[1];
-                        }
-
-                        results.push({title: jobTitle, url: '', location: locText, department: deptText});
-                    }
-                }
-
-                // Strategy C: Find all divs with data-emotion attribute (Emotion CSS-in-JS)
-                if (results.length === 0) {
-                    var emotionDivs = document.querySelectorAll('div[data-emotion]');
-                    var seen = new Set();
-                    for (var e = 0; e < emotionDivs.length; e++) {
-                        var div = emotionDivs[e];
-                        var divText = div.innerText.trim();
-                        // Look for divs that contain "View Job" text - these are job cards
-                        if (divText.indexOf('View Job') !== -1 || divText.indexOf('View job') !== -1) {
-                            var dLines = divText.split('\\n').map(function(l) { return l.trim(); }).filter(function(l) { return l.length > 3 && l !== 'View Job' && l !== 'View job'; });
-                            if (dLines.length > 0 && !seen.has(dLines[0])) {
-                                seen.add(dLines[0]);
-                                results.push({
-                                    title: dLines[0],
-                                    url: '',
-                                    location: dLines.length > 1 ? dLines[1] : '',
-                                    department: dLines.length > 2 ? dLines[2] : ''
-                                });
-                            }
-                        }
+                        currentBlock = [];
+                    } else if (line.match(/^(Join Talent|Submit Resume)/) || line.match(/^\\d+ Open Jobs?$/)) {
+                        break;  // Stop at footer content
+                    } else {
+                        currentBlock.push(line);
                     }
                 }
 

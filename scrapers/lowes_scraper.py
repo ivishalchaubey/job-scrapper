@@ -74,11 +74,21 @@ class LowesScraper:
             current_url = driver.current_url
             logger.info(f"Current URL after navigation: {current_url}")
 
-            # Wait for job listings to appear (Radancy or Phenom)
+            # Detect redirect to Phenom platform
+            is_phenom = 'talent.lowes.com' in current_url and 'search-jobs' not in current_url
+            if is_phenom:
+                logger.info("Detected Phenom platform redirect, navigating to India search")
+                # Lowes India jobs are under /in/en/ path prefix
+                phenom_search = 'https://talent.lowes.com/in/en/search-results'
+                driver.get(phenom_search)
+                time.sleep(12)
+                logger.info(f"Phenom search URL: {driver.current_url}")
+
+            # Wait for job listings to appear
             try:
                 WebDriverWait(driver, 10).until(
                     EC.presence_of_element_located((By.CSS_SELECTOR,
-                        '#search-results-list li, li.jobs-list-item, a[data-ph-at-id="job-link"]'))
+                        '#search-results-list li, li.jobs-list-item, a[data-ph-at-id="job-link"], a[href*="/job/"]'))
                 )
                 logger.info("Job listings detected on page")
             except:
@@ -97,10 +107,6 @@ class LowesScraper:
                 logger.info(f"Scraping page {current_page} of {max_pages}")
 
                 page_jobs = self._scrape_page(driver)
-                if not page_jobs and current_page == 1:
-                    logger.warning("No jobs found on first page, trying JS extraction fallback")
-                    page_jobs = self._js_extract_jobs(driver)
-
                 jobs.extend(page_jobs)
                 logger.info(f"Scraped {len(page_jobs)} jobs from page {current_page}")
 
@@ -134,13 +140,18 @@ class LowesScraper:
 
             # Radancy + Phenom pagination selectors
             next_page_selectors = [
-                (By.CSS_SELECTOR, f'a[data-ph-at-id="pagination-page-number-link"][aria-label="Page {next_page_num}"]'),
+                # NAS/Radancy
+                (By.XPATH, f'//a[text()="{next_page_num}"]'),
+                (By.CSS_SELECTOR, f'a[aria-label="Page {next_page_num}"]'),
+                (By.XPATH, '//a[@aria-label="Next page"]'),
+                (By.CSS_SELECTOR, 'a.pagination-next'),
+                # Phenom pagination (a.next-btn with aria-label="View next page")
+                (By.CSS_SELECTOR, 'a.next-btn[aria-label="View next page"]'),
+                (By.CSS_SELECTOR, 'a[aria-label="View next page"]'),
                 (By.CSS_SELECTOR, 'a[data-ph-at-id="pagination-next-link"]'),
-                (By.CSS_SELECTOR, '.pagination-paging a.next'),
-                (By.CSS_SELECTOR, f'a.pagination-page[data-page="{next_page_num}"]'),
-                (By.XPATH, f'//a[@aria-label="Page {next_page_num}"]'),
-                (By.XPATH, '//a[@aria-label="View next page"]'),
-                (By.XPATH, '//a[contains(@class, "next")]'),
+                (By.CSS_SELECTOR, f'a[data-ph-at-id="pagination-page-number-link"][aria-label="Page {next_page_num}"]'),
+                (By.XPATH, '//a[contains(text(), "Next")]'),
+                (By.XPATH, '//button[contains(text(), "Next")]'),
             ]
 
             for selector_type, selector_value in next_page_selectors:
@@ -163,228 +174,146 @@ class LowesScraper:
             return False
 
     def _scrape_page(self, driver):
-        """Scrape jobs from current page using Selenium selectors (Radancy + Phenom)"""
+        """Scrape jobs - tries NAS/Radancy first, then Phenom fallback"""
         jobs = []
         time.sleep(2)
 
-        current_url = driver.current_url
-        job_elements = []
+        # Strategy 1: NAS/Radancy JS extraction
+        js_jobs = driver.execute_script("""
+            var results = [];
+            var seen = {};
+            var container = document.querySelector('#search-results-list');
+            if (container) {
+                var items = container.querySelectorAll('li');
+                for (var i = 0; i < items.length; i++) {
+                    var item = items[i];
+                    var link = item.querySelector('a[href]');
+                    if (!link) continue;
+                    var title = link.innerText.trim().split('\\n')[0];
+                    var url = link.href;
+                    if (!title || title.length < 3 || seen[url]) continue;
+                    seen[url] = true;
+                    var locEl = item.querySelector('.job-location, [class*="location"]');
+                    var location = locEl ? locEl.innerText.trim() : '';
+                    var dateEl = item.querySelector('.job-date-posted, [class*="date"]');
+                    var date = dateEl ? dateEl.innerText.trim() : '';
+                    results.push({title: title, url: url, location: location, date: date});
+                }
+            }
+            return results;
+        """)
 
-        # Strategy 1: Radancy selectors (jobs.lowes.com)
-        radancy_selectors = [
-            '#search-results-list li',
-            '.search-results-list li',
-            'section[id*="search-results"] li',
-        ]
-
-        # Strategy 2: Phenom selectors (talent.lowes.com)
-        phenom_selectors = [
-            'li.jobs-list-item',
-            'a[data-ph-at-id="job-link"]',
-        ]
-
-        all_selectors = radancy_selectors + phenom_selectors
-        used_selector = ''
-
-        for selector in all_selectors:
-            try:
-                elements = driver.find_elements(By.CSS_SELECTOR, selector)
-                if elements:
-                    job_elements = elements
-                    used_selector = selector
-                    logger.info(f"Found {len(elements)} elements with: {selector}")
-                    break
-            except:
-                continue
-
-        if job_elements:
-            for idx, elem in enumerate(job_elements):
-                try:
-                    title = ''
-                    href = ''
-                    location = ''
-
-                    if elem.tag_name == 'a':
-                        title = elem.text.strip()
-                        href = elem.get_attribute('href') or ''
-                    else:
-                        # Find link inside the element
-                        for link_sel in ['h2 a', 'a[data-ph-at-id="job-link"]', 'a[href*="/job/"]', '.job-result-title a', 'a']:
-                            try:
-                                link = elem.find_element(By.CSS_SELECTOR, link_sel)
-                                title = link.text.strip()
-                                href = link.get_attribute('href') or ''
-                                if title:
-                                    break
-                            except:
-                                continue
-
-                        # Extract location
-                        for loc_sel in ['.job-location', '[data-ph-at-id="job-location"]', 'span[class*="location"]']:
-                            try:
-                                loc_elem = elem.find_element(By.CSS_SELECTOR, loc_sel)
-                                location = loc_elem.text.strip()
-                                if location.startswith('Location'):
-                                    location = location.replace('Location', '', 1).strip()
-                                if location:
-                                    break
-                            except:
-                                continue
-
-                    if not title or len(title) < 3:
-                        continue
-
-                    job_id = f"lowes_{idx}"
-                    if href and '/job/' in href:
-                        parts = href.split('/job/')
-                        if len(parts) > 1:
-                            job_id = parts[1].split('/')[0].split('?')[0]
-
-                    city, state, country = self.parse_location(location)
-                    job = {
-                        'external_id': self.generate_external_id(job_id, self.company_name),
-                        'company_name': self.company_name,
-                        'title': title,
-                        'description': '',
-                        'location': location,
-                        'city': city,
-                        'state': state,
-                        'country': country if country else 'USA',
-                        'employment_type': '',
-                        'department': '',
-                        'apply_url': href or self.url,
-                        'posted_date': '',
-                        'job_function': '',
-                        'experience_level': '',
-                        'salary_range': '',
-                        'remote_type': '',
-                        'status': 'active'
-                    }
-                    jobs.append(job)
-                except Exception as e:
-                    logger.error(f"Error extracting job {idx}: {str(e)}")
-                    continue
-
-            if jobs:
-                return jobs
-
-        # Strategy 3: Simple JS fallback with try-catch wrapper
-        logger.info("Selenium selectors found nothing, trying JS fallback")
-        try:
-            js_jobs = driver.execute_script(
-                "try {"
-                "  var r = [];"
-                "  var s = {};"
-                "  var links = document.querySelectorAll('a[href]');"
-                "  for (var i = 0; i < links.length; i++) {"
-                "    var a = links[i];"
-                "    var t = (a.innerText || '').trim();"
-                "    var h = a.href || '';"
-                "    var lh = h.toLowerCase();"
-                "    if (t.length > 3 && t.length < 200 && !s[h] && "
-                "        (lh.indexOf('/job/') > -1 || lh.indexOf('/job-') > -1)) {"
-                "      s[h] = true;"
-                "      r.push({title: t.split(String.fromCharCode(10))[0].trim(), href: h});"
-                "    }"
-                "  }"
-                "  return r;"
-                "} catch(e) { return []; }"
-            )
-            if js_jobs:
-                logger.info(f"JS fallback found {len(js_jobs)} links")
-                for idx, jdata in enumerate(js_jobs):
-                    title = jdata.get('title', '')
-                    href = jdata.get('href', '')
-                    if not title or len(title) < 3:
-                        continue
-                    job_id = f"lowes_js_{idx}"
-                    if href and '/job/' in href:
-                        parts = href.split('/job/')
-                        if len(parts) > 1:
-                            job_id = parts[1].split('/')[0].split('?')[0]
-                    city, state, country = self.parse_location('')
-                    job = {
-                        'external_id': self.generate_external_id(job_id, self.company_name),
-                        'company_name': self.company_name,
-                        'title': title,
-                        'description': '',
-                        'location': '',
-                        'city': city,
-                        'state': state,
-                        'country': country if country else 'USA',
-                        'employment_type': '',
-                        'department': '',
-                        'apply_url': href or self.url,
-                        'posted_date': '',
-                        'job_function': '',
-                        'experience_level': '',
-                        'salary_range': '',
-                        'remote_type': '',
-                        'status': 'active'
-                    }
-                    jobs.append(job)
-        except Exception as e:
-            logger.error(f"JS fallback failed: {str(e)}")
-
-        return jobs
-
-    def _js_extract_jobs(self, driver):
-        """Final fallback: extract all job links via JavaScript"""
-        jobs = []
-        try:
-            js_links = driver.execute_script("""
+        if js_jobs:
+            logger.info(f"NAS/Radancy extraction found {len(js_jobs)} jobs")
+        else:
+            # Strategy 2: Phenom platform extraction (talent.lowes.com)
+            # Uses li.jobs-list-item cards with a.au-target job links
+            logger.info("Trying Phenom platform extraction")
+            js_jobs = driver.execute_script("""
                 var results = [];
-                var links = document.querySelectorAll('a[href*="/job/"]');
                 var seen = {};
-                for (var i = 0; i < links.length; i++) {
-                    var href = links[i].href;
-                    var text = links[i].innerText.trim();
-                    if (text.length > 3 && text.length < 200 && !seen[href]) {
-                        seen[href] = true;
-                        results.push({title: text.split('\\n')[0].trim(), url: href});
+                // Phenom job cards
+                var cards = document.querySelectorAll('li.jobs-list-item');
+                for (var i = 0; i < cards.length; i++) {
+                    var card = cards[i];
+                    var link = card.querySelector('a.au-target[href*="/job/"], a[data-ph-at-id="job-link"], a[href*="/job/"]');
+                    if (!link) continue;
+                    var h = link.href;
+                    if (!h || seen[h] || h.indexOf('jobcart') > -1) continue;
+                    var t = link.innerText.trim().split('\\n')[0];
+                    if (t.length < 3 || t.length > 200) continue;
+                    seen[h] = true;
+                    // Location from spans containing "Location\\n..."
+                    var location = '';
+                    var spans = card.querySelectorAll('span');
+                    for (var j = 0; j < spans.length; j++) {
+                        var st = spans[j].innerText.trim();
+                        if (st.indexOf('Location') === 0 && st.indexOf('\\n') > -1) {
+                            location = st.split('\\n')[1].trim();
+                            break;
+                        }
+                    }
+                    // Department/category
+                    var dept = '';
+                    for (var j = 0; j < spans.length; j++) {
+                        var st = spans[j].innerText.trim();
+                        if (st.indexOf('Category') === 0 && st.indexOf('\\n') > -1) {
+                            dept = st.split('\\n')[1].trim();
+                            break;
+                        }
+                    }
+                    results.push({title: t, url: h, location: location, dept: dept});
+                }
+                // Fallback: direct job links
+                if (results.length === 0) {
+                    var links = document.querySelectorAll('a.au-target[href*="/job/"], a[href*="/en/job/"]');
+                    for (var i = 0; i < links.length; i++) {
+                        var a = links[i];
+                        var h = a.href;
+                        if (!h || seen[h] || h.indexOf('jobcart') > -1) continue;
+                        var t = (a.innerText || '').trim().split('\\n')[0];
+                        if (t.length > 3 && t.length < 200) {
+                            seen[h] = true;
+                            results.push({title: t, url: h, location: '', dept: ''});
+                        }
                     }
                 }
                 return results;
             """)
+            if js_jobs:
+                logger.info(f"Phenom extraction found {len(js_jobs)} jobs")
 
-            if js_links:
-                logger.info(f"JS link fallback found {len(js_links)} job links")
-                for idx, link_data in enumerate(js_links):
-                    title = link_data.get('title', '')
-                    url = link_data.get('url', '')
-                    if not title or not url or len(title) < 3:
-                        continue
+        if not js_jobs:
+            logger.warning("No jobs found on page")
+            return jobs
 
-                    job_id = f"lowes_js_{idx}"
-                    if '/job/' in url:
-                        parts = url.split('/job/')
-                        if len(parts) > 1:
-                            job_id = parts[1].split('/')[0].split('?')[0]
+        for jdata in js_jobs:
+            try:
+                title = jdata.get('title', '').strip()
+                url = jdata.get('url', '').strip()
+                location = jdata.get('location', '').strip()
 
-                    job = {
-                        'external_id': self.generate_external_id(job_id, self.company_name),
-                        'company_name': self.company_name,
-                        'title': title,
-                        'description': '',
-                        'location': '',
-                        'city': '',
-                        'state': '',
-                        'country': 'USA',
-                        'employment_type': '',
-                        'department': '',
-                        'apply_url': url,
-                        'posted_date': '',
-                        'job_function': '',
-                        'experience_level': '',
-                        'salary_range': '',
-                        'remote_type': '',
-                        'status': 'active'
-                    }
-                    jobs.append(job)
-        except Exception as e:
-            logger.error(f"JS link fallback error: {str(e)}")
+                if not title or len(title) < 3 or not url:
+                    continue
+
+                job_id = hashlib.md5(url.encode()).hexdigest()[:12]
+                if '/job/' in url:
+                    parts = url.split('/job/')
+                    if len(parts) > 1:
+                        job_id = parts[1].split('/')[0].split('?')[0] or job_id
+
+                city, state, country = self.parse_location(location)
+
+                job = {
+                    'external_id': self.generate_external_id(job_id, self.company_name),
+                    'company_name': self.company_name,
+                    'title': title,
+                    'description': '',
+                    'location': location,
+                    'city': city,
+                    'state': state,
+                    'country': country if country else 'India',
+                    'employment_type': '',
+                    'department': jdata.get('dept', ''),
+                    'apply_url': url,
+                    'posted_date': jdata.get('date', ''),
+                    'job_function': '',
+                    'experience_level': '',
+                    'salary_range': '',
+                    'remote_type': '',
+                    'status': 'active'
+                }
+                jobs.append(job)
+
+            except Exception as e:
+                logger.error(f"Error extracting job: {str(e)}")
+                continue
 
         return jobs
+
+    def _js_extract_jobs(self, driver):
+        """Fallback: same NAS/Radancy extraction (called if first page returns empty)"""
+        return self._scrape_page(driver)
 
     def _fetch_job_details(self, driver, job_url):
         """Fetch full job details by visiting the job page"""

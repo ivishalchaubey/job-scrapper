@@ -1,3 +1,4 @@
+# STATUS: PLATFORM_DOWN - Skillate platform (hdfcbank.skillate.com) timing out (tested 2026-02-22)
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait

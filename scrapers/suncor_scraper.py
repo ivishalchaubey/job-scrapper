@@ -22,6 +22,11 @@ logger = setup_logger('suncor_scraper')
 
 CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0.7559.133_fresh/chromedriver-mac-arm64/chromedriver'
 
+INDIA_CITIES = ['india', 'mumbai', 'bangalore', 'bengaluru', 'delhi', 'hyderabad', 'chennai', 'pune',
+                'kolkata', 'gurgaon', 'gurugram', 'noida', 'ahmedabad', 'jaipur', 'lucknow', 'kochi',
+                'chandigarh', 'indore', 'nagpur', 'coimbatore', 'thiruvananthapuram', 'visakhapatnam',
+                'bhubaneswar', 'mangalore', 'mysore', 'vadodara', 'surat', 'rajkot', 'goa']
+
 
 class SuncorScraper:
     def __init__(self):
@@ -77,6 +82,11 @@ class SuncorScraper:
         if 'India' in location_str or 'IND' in location_str:
             result['country'] = 'India'
         return result
+
+    def _is_india_job(self, job):
+        """Post-extraction filter to ensure job is in India."""
+        location = (job.get('location') or '').lower()
+        return any(city in location for city in INDIA_CITIES)
 
     def scrape(self, max_pages=MAX_PAGES_TO_SCRAPE):
         all_jobs = []
@@ -185,8 +195,12 @@ class SuncorScraper:
                             'status': 'active'
                         }
 
-                        all_jobs.append(job_data)
-                        logger.info(f"Added job: {title}")
+                        # Post-extraction India filter as safety net
+                        if self._is_india_job(job_data):
+                            all_jobs.append(job_data)
+                            logger.info(f"Added job: {title} | {location}")
+                        else:
+                            logger.debug(f"Filtered non-India job: {title} | {location}")
 
                     except Exception as e:
                         logger.error(f"Error processing posting: {str(e)}")
@@ -202,7 +216,7 @@ class SuncorScraper:
                 logger.error(f"API request failed at offset {offset}: {str(e)}")
                 break
 
-        logger.info(f"Total jobs from API: {len(all_jobs)}")
+        logger.info(f"Total India jobs from API: {len(all_jobs)}")
         return all_jobs
 
     def _scrape_via_selenium(self, max_pages=MAX_PAGES_TO_SCRAPE):
@@ -382,8 +396,12 @@ class SuncorScraper:
                     'status': 'active'
                 }
 
-                jobs.append(job_data)
-                logger.info(f"Successfully added job: {job_title}")
+                # Post-extraction India filter
+                if self._is_india_job(job_data):
+                    jobs.append(job_data)
+                    logger.info(f"Successfully added job: {job_title}")
+                else:
+                    logger.debug(f"Filtered non-India job: {job_title} | {location}")
 
             except Exception as e:
                 logger.error(f"Error extracting job {idx}: {str(e)}")

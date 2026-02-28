@@ -58,6 +58,26 @@ class GoDigitScraper:
         unique_string = f"{company}_{job_id}"
         return hashlib.md5(unique_string.encode()).hexdigest()
 
+    def _wait_for_angular_jobs(self, driver, timeout=30):
+        """Poll-based wait for DarwinBox v2 Angular app to render job elements"""
+        logger.info("Waiting for Angular app to render job elements...")
+        start = time.time()
+        while time.time() - start < timeout:
+            count = driver.execute_script("""
+                var links = document.querySelectorAll('a[href*="jobDetails"]');
+                if (links.length > 0) return links.length;
+                // Also check for any job-related containers
+                var tiles = document.querySelectorAll('div.job-tile, div[class*="job-card"], div[class*="job-item"], div[class*="job-listing"]');
+                if (tiles.length > 0) return tiles.length;
+                return 0;
+            """)
+            if count and count > 0:
+                logger.info(f"Found {count} job elements after {time.time() - start:.1f}s")
+                return True
+            time.sleep(2)
+        logger.warning(f"No job elements found after {timeout}s polling")
+        return False
+
     def scrape(self, max_pages=MAX_PAGES_TO_SCRAPE):
         """Scrape jobs from Go Digit Insurance DarwinBox careers page"""
         jobs = []
@@ -70,7 +90,19 @@ class GoDigitScraper:
             # Load the allJobs page directly
             logger.info(f"Navigating to: {self.url}")
             driver.get(self.url)
-            time.sleep(12)
+
+            # Wait for document.readyState to be complete
+            for _ in range(10):
+                ready = driver.execute_script("return document.readyState")
+                if ready == 'complete':
+                    break
+                time.sleep(1)
+
+            # Initial sleep for Angular bootstrap
+            time.sleep(8)
+
+            # Poll-based wait for job elements to render
+            self._wait_for_angular_jobs(driver, timeout=30)
 
             # Scroll to load all job tiles
             for i in range(5):
@@ -102,55 +134,33 @@ class GoDigitScraper:
         try:
             js_jobs = driver.execute_script("""
                 var results = [];
-                var tiles = document.querySelectorAll('div.job-tile, div.jobs-section, div[class*="job-card"], div[class*="job-item"], div[class*="job-listing"]');
-                if (tiles.length === 0) {
-                    var jobLinks = document.querySelectorAll('a[href*="jobDetails"]');
-                    for (var i = 0; i < jobLinks.length; i++) {
-                        var link = jobLinks[i];
-                        var container = link.closest('div[class]') || link.parentElement;
-                        var text = (container.innerText || '').trim();
-                        var title = text.split('\\n')[0].trim();
-                        if (title.length >= 3 && title !== 'View and Apply' && title !== 'Apply') {
-                            results.push({
-                                title: title,
-                                url: link.href,
-                                location: '',
-                                experience: '',
-                                employment_type: ''
-                            });
-                        }
-                    }
-                    return results;
-                }
+                var seen = {};
 
-                for (var i = 0; i < tiles.length; i++) {
-                    var tile = tiles[i];
-                    var text = (tile.innerText || '').trim();
-                    if (text.length < 5) continue;
+                // DarwinBox v2: find all a[href*="jobDetails"] links
+                var jobLinks = document.querySelectorAll('a[href*="jobDetails"]');
+                for (var i = 0; i < jobLinks.length; i++) {
+                    var link = jobLinks[i];
+                    var href = link.href || '';
+                    if (seen[href]) continue;
+                    seen[href] = true;
 
-                    var titleEl = tile.querySelector('span.job-title, .title-section, h3, h4, [class*="title"]');
-                    var title = titleEl ? titleEl.innerText.trim() : text.split('\\n')[0].trim();
-
-                    var linkEl = tile.querySelector('a[href*="jobDetails"]');
-                    var url = linkEl ? linkEl.href : '';
-
+                    // Get the closest container for context
+                    var container = link.closest('div[class]') || link.parentElement;
+                    var text = (container ? container.innerText : link.innerText || '').trim();
                     var lines = text.split('\\n');
+                    var title = lines[0].trim();
+
+                    if (title.length < 3 || title === 'View and Apply' || title === 'Apply') continue;
+
                     var location = '';
                     var experience = '';
                     var employment_type = '';
                     for (var j = 0; j < lines.length; j++) {
                         var line = lines[j].trim();
-                        if (line.includes('India') || line.includes('Haryana') || line.includes('Gujarat') ||
-                            line.includes('Maharashtra') || line.includes('Karnataka') || line.includes('Goa') ||
-                            line.includes('Delhi') || line.includes('Tamil Nadu') || line.includes('Rajasthan') ||
-                            line.includes('Odisha') || line.includes('Jharkhand') || line.includes('Chhattisgarh') ||
-                            line.includes('Andhra Pradesh') || line.includes('Telangana') || line.includes('Kerala') ||
-                            line.includes('Punjab') || line.includes('West Bengal') || line.includes('Uttar Pradesh') ||
-                            line.includes('Bengaluru') || line.includes('Bangalore') || line.includes('Mumbai') ||
-                            line.includes('Chennai') || line.includes('Hyderabad') || line.includes('Pune')) {
+                        if (line.match(/India|Haryana|Gujarat|Maharashtra|Karnataka|Goa|Delhi|Tamil Nadu|Rajasthan|Odisha|Jharkhand|Chhattisgarh|Andhra Pradesh|Telangana|Kerala|Punjab|West Bengal|Uttar Pradesh|Bengaluru|Bangalore|Mumbai|Chennai|Hyderabad|Pune|Gurgaon|Noida|Kolkata/i)) {
                             location = line;
                         }
-                        if (line.includes('Years') || line.includes('years')) {
+                        if (line.match(/\\d+.*[Yy]ears?/) || line.match(/[Yy]ears?.*\\d+/)) {
                             experience = line;
                         }
                         if (line === 'Permanent' || line === 'Contract' || line === 'Probation' || line === 'Intern' || line === 'Full Time' || line === 'Part Time') {
@@ -158,16 +168,50 @@ class GoDigitScraper:
                         }
                     }
 
-                    if (title.length >= 3 && title !== 'View and Apply') {
-                        results.push({
-                            title: title,
-                            url: url,
-                            location: location,
-                            experience: experience,
-                            employment_type: employment_type
-                        });
+                    results.push({
+                        title: title,
+                        url: href,
+                        location: location,
+                        experience: experience,
+                        employment_type: employment_type
+                    });
+                }
+
+                // Fallback: try tile-based selectors
+                if (results.length === 0) {
+                    var tiles = document.querySelectorAll('div.job-tile, div[class*="job-card"], div[class*="job-item"], div[class*="job-listing"]');
+                    for (var i = 0; i < tiles.length; i++) {
+                        var tile = tiles[i];
+                        var text = (tile.innerText || '').trim();
+                        if (text.length < 5) continue;
+                        var titleEl = tile.querySelector('span.job-title, .title-section, h3, h4, [class*="title"]');
+                        var title = titleEl ? titleEl.innerText.trim() : text.split('\\n')[0].trim();
+                        var linkEl = tile.querySelector('a[href*="jobDetails"]');
+                        var url = linkEl ? linkEl.href : '';
+                        if (title.length >= 3 && title !== 'View and Apply' && !seen[url || title]) {
+                            seen[url || title] = true;
+                            results.push({title: title, url: url, location: '', experience: '', employment_type: ''});
+                        }
                     }
                 }
+
+                // Fallback 2: v1 pattern - /ms/candidate/careers/{hash}
+                if (results.length === 0) {
+                    var allLinks = document.querySelectorAll('a[href]');
+                    for (var i = 0; i < allLinks.length; i++) {
+                        var link = allLinks[i];
+                        var href = link.href || '';
+                        var match = href.match(/\\/ms\\/candidate\\/careers\\/([a-f0-9]{10,})/);
+                        if (!match) continue;
+                        if (href.includes('/others')) continue;
+                        var title = (link.innerText || '').trim().split('\\n')[0].trim();
+                        if (title.length < 3 || title === 'View and Apply' || title === 'Apply') continue;
+                        if (seen[href]) continue;
+                        seen[href] = true;
+                        results.push({title: title, url: href, location: '', experience: '', employment_type: ''});
+                    }
+                }
+
                 return results;
             """)
 
@@ -217,6 +261,11 @@ class GoDigitScraper:
                     })
             else:
                 logger.warning("No job tiles found on DarwinBox page")
+                try:
+                    body_text = driver.execute_script('return document.body ? document.body.innerText.substring(0, 500) : ""')
+                    logger.info(f"Page body preview: {body_text}")
+                except:
+                    pass
 
         except Exception as e:
             logger.error(f"DarwinBox extraction error: {str(e)}")

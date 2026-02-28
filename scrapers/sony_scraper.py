@@ -22,6 +22,11 @@ logger = setup_logger('sony_scraper')
 
 CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0.7559.133_fresh/chromedriver-mac-arm64/chromedriver'
 
+INDIA_CITIES = ['india', 'mumbai', 'bangalore', 'bengaluru', 'delhi', 'hyderabad', 'chennai', 'pune',
+                'kolkata', 'gurgaon', 'gurugram', 'noida', 'ahmedabad', 'jaipur', 'lucknow', 'kochi',
+                'chandigarh', 'indore', 'nagpur', 'coimbatore', 'thiruvananthapuram', 'visakhapatnam',
+                'bhubaneswar', 'mangalore', 'mysore', 'vadodara', 'surat', 'rajkot', 'goa']
+
 
 class SonyScraper:
     def __init__(self):
@@ -94,7 +99,7 @@ class SonyScraper:
                 "appliedFacets": {},
                 "limit": limit,
                 "offset": offset,
-                "searchText": ""
+                "searchText": "India"
             }
 
             try:
@@ -137,7 +142,7 @@ class SonyScraper:
 
                         location_parts = self.parse_location(location)
 
-                        all_jobs.append({
+                        job_data = {
                             'external_id': self.generate_external_id(job_id, self.company_name),
                             'company_name': self.company_name,
                             'title': title,
@@ -155,7 +160,14 @@ class SonyScraper:
                             'salary_range': '',
                             'remote_type': '',
                             'status': 'active'
-                        })
+                        }
+
+                        # Post-extraction India filter as safety net
+                        if self._is_india_job(job_data):
+                            all_jobs.append(job_data)
+                            logger.info(f"Added job: {title} | {location}")
+                        else:
+                            logger.debug(f"Filtered non-India job: {title} | {location}")
 
                     except Exception as e:
                         logger.error(f"Error processing posting: {str(e)}")
@@ -170,7 +182,7 @@ class SonyScraper:
                 logger.error(f"API request failed at offset {offset}: {str(e)}")
                 break
 
-        logger.info(f"Total jobs from API: {len(all_jobs)}")
+        logger.info(f"Total India jobs from API: {len(all_jobs)}")
         return all_jobs
 
     def _scrape_via_selenium(self, max_pages=MAX_PAGES_TO_SCRAPE):
@@ -280,6 +292,11 @@ class SonyScraper:
         if 'India' in location_str:
             result['country'] = 'India'
         return result
+
+    def _is_india_job(self, job):
+        """Post-extraction filter to ensure job is in India."""
+        location = (job.get('location') or '').lower()
+        return any(city in location for city in INDIA_CITIES)
 
 
 if __name__ == "__main__":

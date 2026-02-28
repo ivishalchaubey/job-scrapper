@@ -22,6 +22,7 @@ class SynchronyScraper:
     def __init__(self):
         self.company_name = 'Synchrony'
         self.url = 'https://www.synchronycareers.com/job-search-results/?location=India&country=IN&radius=25'
+        self.base_url = 'https://www.synchronycareers.com'
 
     def setup_driver(self):
         chrome_options = Options()
@@ -64,25 +65,31 @@ class SynchronyScraper:
             driver = self.setup_driver()
             logger.info(f"Starting {self.company_name} scraping from {self.url}")
             driver.get(self.url)
-            time.sleep(15)
 
-            # Scroll for lazy loading
-            for _ in range(5):
-                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                time.sleep(2)
+            # Wait for Synchrony custom WordPress job table to load
+            try:
+                WebDriverWait(driver, 15).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, 'div.search-results-table, a[href*="/job-detail/"]'))
+                )
+            except:
+                time.sleep(5)
+
+            # Quick scroll to trigger lazy loading
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            time.sleep(1)
             driver.execute_script("window.scrollTo(0, 0);")
-            time.sleep(2)
+            time.sleep(0.5)
 
             for page in range(max_pages):
-                jobs = self._extract_jobs(driver)
-                if not jobs:
+                page_jobs = self._extract_jobs(driver)
+                if not page_jobs:
                     break
-                all_jobs.extend(jobs)
-                logger.info(f"Page {page + 1}: {len(jobs)} jobs (total: {len(all_jobs)})")
+                all_jobs.extend(page_jobs)
+                logger.info(f"Page {page + 1}: {len(page_jobs)} jobs (total: {len(all_jobs)})")
 
-                if not self._go_to_next_page(driver):
-                    break
-                time.sleep(5)
+                if page < max_pages - 1:
+                    if not self._go_to_next_page(driver):
+                        break
 
             logger.info(f"Total jobs scraped: {len(all_jobs)}")
         except Exception as e:
@@ -96,128 +103,73 @@ class SynchronyScraper:
         jobs = []
 
         try:
+            # Single scroll to ensure all items are loaded
             driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(2)
+            time.sleep(0.5)
             driver.execute_script("window.scrollTo(0, 0);")
-            time.sleep(1)
+            time.sleep(0.3)
 
-            # JavaScript extraction with WordPress/custom career page selectors
             js_jobs = driver.execute_script("""
                 var results = [];
                 var seen = {};
 
-                // Strategy 1: WordPress job listing patterns (Synchrony uses WordPress-based career site)
-                var jobItems = document.querySelectorAll('[class*="job-listing"], [class*="job-result"], [class*="job_listing"], article[class*="job"]');
-                for (var i = 0; i < jobItems.length; i++) {
-                    var item = jobItems[i];
-                    var titleEl = item.querySelector('a[href*="/job/"], a[href*="job-search"], h2 a, h3 a, [class*="title"] a');
-                    if (!titleEl) titleEl = item.querySelector('a[href]');
-                    if (!titleEl) continue;
-                    var title = '';
-                    var tEl = item.querySelector('h2, h3, h4, [class*="title"], [class*="Title"]');
-                    if (tEl) title = tEl.innerText.trim().split('\\n')[0];
-                    if (!title) title = titleEl.innerText.trim().split('\\n')[0];
-                    var url = titleEl.href || '';
-                    if (!title || title.length < 3 || seen[url || title]) continue;
-                    seen[url || title] = true;
+                // Synchrony uses a custom WordPress job table with div[role="table"]
+                // Each job row is a div[role="row"] containing a link to /job-detail/
+                // Strategy 1: Find job detail links directly
+                var jobLinks = document.querySelectorAll('a[href*="/job-detail/"]');
+
+                for (var i = 0; i < jobLinks.length; i++) {
+                    var link = jobLinks[i];
+                    var href = link.href || '';
+                    if (!href || seen[href]) continue;
+
+                    var title = link.innerText.trim();
+                    // Skip non-title text (headers, navigation labels)
+                    if (!title || title.length < 3 || title.length > 200) continue;
+                    if (title === 'Title' || title === 'Search Results' || title === 'Location') continue;
+
+                    seen[href] = true;
+
+                    // Try to find location from sibling/parent row structure
                     var location = '';
-                    var locEl = item.querySelector('[class*="location"], [class*="Location"]');
-                    if (locEl) location = locEl.innerText.trim();
-                    var date = '';
-                    var dateEl = item.querySelector('[class*="date"], [class*="Date"], [class*="posted"]');
-                    if (dateEl) date = dateEl.innerText.trim();
-                    results.push({title: title, url: url, location: location, date: date});
+                    var row = link.closest('div[role="row"], tr, li, [class*="row"]');
+                    if (row) {
+                        // Look for location cell - typically the second cell in the row
+                        var cells = row.querySelectorAll('div[role="cell"], td, [class*="cell"]');
+                        if (cells.length >= 2) {
+                            location = cells[1].innerText.trim();
+                        }
+                        // Fallback: look for location-specific class
+                        if (!location) {
+                            var locEl = row.querySelector('[class*="location"]');
+                            if (locEl) location = locEl.innerText.trim();
+                        }
+                    }
+
+                    results.push({title: title, url: href, location: location});
                 }
 
-                // Strategy 2: Table-based job listings
+                // Strategy 2: Fallback - look for rows in search results table
                 if (results.length === 0) {
-                    var rows = document.querySelectorAll('tr[class*="job"], tr.data-row, tbody tr');
+                    var rows = document.querySelectorAll('.search-results-table div[role="row"]');
                     for (var i = 0; i < rows.length; i++) {
                         var row = rows[i];
                         var link = row.querySelector('a[href]');
                         if (!link) continue;
-                        var title = '';
-                        var titleEl = row.querySelector('td:first-child a, [class*="title"] a, a.jobTitle-link');
-                        if (titleEl) title = titleEl.innerText.trim();
-                        if (!title) title = link.innerText.trim().split('\\n')[0];
-                        var url = link.href || '';
-                        if (!title || title.length < 3 || !url || seen[url]) continue;
-                        seen[url] = true;
-                        var location = '';
-                        var locTd = row.querySelector('[class*="location"], td:nth-child(2)');
-                        if (locTd) location = locTd.innerText.trim();
-                        results.push({title: title, url: url, location: location, date: ''});
-                    }
-                }
+                        var href = link.href || '';
+                        if (!href || seen[href]) continue;
+                        if (!href.includes('/job-detail/') && !href.includes('/job/')) continue;
 
-                // Strategy 3: Direct job links
-                if (results.length === 0) {
-                    var links = document.querySelectorAll('a[href*="/job/"], a[href*="/jobs/"], a[href*="job-search-results"]');
-                    for (var i = 0; i < links.length; i++) {
-                        var el = links[i];
-                        var title = (el.innerText || '').trim().split('\\n')[0].trim();
-                        var url = el.href || '';
-                        if (!title || title.length < 3 || title.length > 200) continue;
-                        if (url.includes('login') || url.includes('sign-in') || url.includes('javascript:')) continue;
-                        if (seen[url]) continue;
-                        seen[url] = true;
+                        var title = link.innerText.trim();
+                        if (!title || title.length < 3 || title === 'Title') continue;
+
+                        seen[href] = true;
                         var location = '';
-                        var parent = el.closest('li, div[class*="job"], article, tr, [class*="card"]');
-                        if (parent) {
-                            var locEl = parent.querySelector('[class*="location"], [class*="Location"]');
-                            if (locEl) location = locEl.innerText.trim();
-                            if (!location) {
-                                var lines = parent.innerText.split('\\n');
-                                for (var j = 0; j < lines.length; j++) {
-                                    var line = lines[j].trim();
-                                    if (line && (line.includes('India') || line.includes('Mumbai') || line.includes('Bangalore') ||
-                                        line.includes('Hyderabad') || line.includes('Chennai') || line.includes('Delhi') ||
-                                        line.includes('Pune') || line.includes('Gurgaon'))) {
-                                        location = line;
-                                        break;
-                                    }
-                                }
-                            }
+                        var cells = row.querySelectorAll('div[role="cell"], td');
+                        if (cells.length >= 2) {
+                            location = cells[1].innerText.trim();
                         }
-                        results.push({title: title, url: url, location: location, date: ''});
-                    }
-                }
-
-                // Strategy 4: Card-based extraction
-                if (results.length === 0) {
-                    var cards = document.querySelectorAll('[class*="card"], [class*="search-result"], article, [role="listitem"]');
-                    for (var i = 0; i < cards.length; i++) {
-                        var card = cards[i];
-                        var link = card.querySelector('a[href]');
-                        if (!link) continue;
-                        var title = '';
-                        var titleEl = card.querySelector('h2, h3, h4, [class*="title"], [class*="Title"]');
-                        if (titleEl) title = titleEl.innerText.trim().split('\\n')[0];
-                        if (!title) title = link.innerText.trim().split('\\n')[0];
-                        var url = link.href || '';
-                        if (!title || title.length < 3 || !url || seen[url]) continue;
-                        seen[url] = true;
-                        var location = '';
-                        var locEl = card.querySelector('[class*="location"], [class*="Location"]');
-                        if (locEl) location = locEl.innerText.trim();
-                        results.push({title: title, url: url, location: location, date: ''});
-                    }
-                }
-
-                // Strategy 5: Generic link extraction
-                if (results.length === 0) {
-                    var allLinks = document.querySelectorAll('a[href]');
-                    for (var i = 0; i < allLinks.length; i++) {
-                        var href = allLinks[i].href || '';
-                        var text = (allLinks[i].innerText || '').trim();
-                        if (text.length > 3 && text.length < 200 && href.length > 10) {
-                            if ((href.includes('/job') || href.includes('/position') || href.includes('/career') || href.includes('/opening') || href.includes('/requisition')) && !seen[href]) {
-                                if (!href.includes('login') && !href.includes('sign-in') && !href.includes('javascript:')) {
-                                    seen[href] = true;
-                                    results.push({title: text.split('\\n')[0].trim(), url: href, location: '', date: ''});
-                                }
-                            }
-                        }
+                        results.push({title: title, url: href, location: location});
                     }
                 }
 
@@ -231,7 +183,6 @@ class SynchronyScraper:
                     title = jdata.get('title', '').strip()
                     url = jdata.get('url', '').strip()
                     location = jdata.get('location', '').strip()
-                    date = jdata.get('date', '').strip()
 
                     if not title or len(title) < 3:
                         continue
@@ -241,11 +192,11 @@ class SynchronyScraper:
                         seen_urls.add(url)
 
                     if url and url.startswith('/'):
-                        url = f"https://www.synchronycareers.com{url}"
+                        url = f"{self.base_url}{url}"
 
                     job_id = hashlib.md5((url or title).encode()).hexdigest()[:12]
-                    if url and '/job/' in url:
-                        parts = url.split('/job/')[-1].split('/')
+                    if url and '/job-detail/' in url:
+                        parts = url.split('/job-detail/')[-1].split('/')
                         if parts[0]:
                             job_id = parts[0]
 
@@ -260,7 +211,7 @@ class SynchronyScraper:
                         'department': '',
                         'employment_type': '',
                         'description': '',
-                        'posted_date': date,
+                        'posted_date': '',
                         'city': loc_data.get('city', ''),
                         'state': loc_data.get('state', ''),
                         'country': loc_data.get('country', 'India'),
@@ -284,26 +235,38 @@ class SynchronyScraper:
     def _go_to_next_page(self, driver):
         try:
             driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(2)
+            time.sleep(0.5)
 
+            # Get current first job link to detect page change
+            old_first = driver.execute_script("""
+                var link = document.querySelector('a[href*="/job-detail/"]');
+                return link ? link.href : '';
+            """)
+
+            # Synchrony uses a pagination bar with page numbers and go-to-next button
             for sel_type, sel_val in [
+                (By.CSS_SELECTOR, 'a.go-to-next'),
+                (By.CSS_SELECTOR, 'button.go-to-next'),
+                (By.CSS_SELECTOR, '[class*="go-to-next"]'),
                 (By.CSS_SELECTOR, 'a[aria-label="Next"]'),
                 (By.CSS_SELECTOR, 'button[aria-label="Next"]'),
-                (By.CSS_SELECTOR, '.pagination .next a'),
-                (By.CSS_SELECTOR, 'a.next-page'),
-                (By.CSS_SELECTOR, 'a[rel="next"]'),
-                (By.CSS_SELECTOR, 'li.next a'),
-                (By.CSS_SELECTOR, '.wp-pagenavi a.nextpostslink'),
-                (By.CSS_SELECTOR, 'a.page-numbers.next'),
-                (By.XPATH, '//a[contains(text(), "Next")]'),
-                (By.XPATH, '//button[contains(text(), "Next")]'),
-                (By.CSS_SELECTOR, '[class*="pagination"] a[class*="next"]'),
+                (By.XPATH, '//a[contains(@class, "next")]'),
+                (By.XPATH, '//button[contains(@class, "next")]'),
             ]:
                 try:
                     btn = driver.find_element(sel_type, sel_val)
-                    if btn.is_displayed() and btn.is_enabled():
+                    if btn.is_displayed():
                         driver.execute_script("arguments[0].click();", btn)
-                        logger.info("Navigated to next page")
+                        # Poll for page change instead of blind sleep
+                        for _ in range(20):  # max 4s wait
+                            time.sleep(0.2)
+                            new_first = driver.execute_script("""
+                                var link = document.querySelector('a[href*="/job-detail/"]');
+                                return link ? link.href : '';
+                            """)
+                            if new_first and new_first != old_first:
+                                break
+                        time.sleep(0.5)  # Brief settle
                         return True
                 except:
                     continue

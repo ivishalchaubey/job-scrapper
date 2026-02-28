@@ -33,7 +33,8 @@ class JLLScraper:
         chrome_options.add_argument('--window-size=1920,1080')
         chrome_options.add_argument('--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36')
         chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-        chrome_options.add_experimental_option('excludeSwitches', ['enable-logging'])
+        chrome_options.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
+        chrome_options.add_experimental_option('useAutomationExtension', False)
         
         try:
             # Install and get the correct chromedriver path
@@ -51,6 +52,10 @@ class JLLScraper:
             
             service = Service(driver_path)
             driver = webdriver.Chrome(service=service, options=chrome_options)
+            driver.execute_cdp_cmd('Network.setUserAgentOverride', {
+                "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            })
+            driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
             return driver
         except Exception as e:
             logger.error(f"ChromeDriver setup failed: {str(e)}")
@@ -74,8 +79,15 @@ class JLLScraper:
             driver = self.setup_driver()
             driver.get(self.url)
             
-            # Wait for Workday job listings to load
-            time.sleep(8)  # Workday takes longer to load
+            # Smart wait for Workday job listings
+            try:
+                WebDriverWait(driver, 15).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, 'li[data-automation-id="listItem"]'))
+                )
+                logger.info("Workday job listings loaded")
+            except:
+                logger.warning("Timeout waiting for Workday listings, using fallback wait")
+                time.sleep(5)
             
             current_page = 1
             
@@ -93,7 +105,7 @@ class JLLScraper:
                     if not self._go_to_next_page(driver, current_page):
                         logger.info("No more pages available")
                         break
-                    time.sleep(5)  # Wait for Workday to load next page
+                    # No extra sleep — _go_to_next_page already handles waiting
                 
                 current_page += 1
             
@@ -116,8 +128,14 @@ class JLLScraper:
             
             # Scroll to pagination
             driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(2)
-            
+            time.sleep(0.5)
+
+            # Capture current state for change detection
+            old_first = driver.execute_script("""
+                var card = document.querySelector('li[data-automation-id="listItem"]');
+                return card ? card.innerText.substring(0, 50) : '';
+            """)
+
             # Workday pagination selectors
             next_selectors = [
                 (By.XPATH, f'//button[@aria-label="{next_page_num}"]'),
@@ -126,14 +144,25 @@ class JLLScraper:
                 (By.XPATH, '//button[@aria-label="next"]'),
                 (By.CSS_SELECTOR, 'button[aria-label="next"]'),
             ]
-            
+
             for selector_type, selector_value in next_selectors:
                 try:
                     next_button = driver.find_element(selector_type, selector_value)
                     driver.execute_script("arguments[0].scrollIntoView();", next_button)
-                    time.sleep(1)
+                    time.sleep(0.3)
                     driver.execute_script("arguments[0].click();", next_button)
                     logger.info(f"Navigated to page {next_page_num}")
+
+                    # Poll for content change
+                    for _ in range(25):
+                        time.sleep(0.2)
+                        new_first = driver.execute_script("""
+                            var card = document.querySelector('li[data-automation-id="listItem"]');
+                            return card ? card.innerText.substring(0, 50) : '';
+                        """)
+                        if new_first and new_first != old_first:
+                            break
+                    time.sleep(0.5)
                     return True
                 except:
                     continue
@@ -149,7 +178,11 @@ class JLLScraper:
         """Scrape jobs from current Workday page"""
         jobs = []
         wait = WebDriverWait(driver, SCRAPE_TIMEOUT)
-        time.sleep(3)
+        # Quick scroll for lazy loading
+        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+        time.sleep(0.5)
+        driver.execute_script("window.scrollTo(0, 0);")
+        time.sleep(0.3)
         
         # Workday job listing selectors
         workday_selectors = [

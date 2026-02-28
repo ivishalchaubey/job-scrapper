@@ -71,15 +71,19 @@ class TataConsumerScraper:
             logger.info(f"Starting {self.company_name} scraping from {self.url}")
 
             driver.get(self.url)
-            # SuccessFactors SPA needs generous initial wait
-            time.sleep(15)
+            # Smart wait for SuccessFactors content instead of blind sleep
+            try:
+                WebDriverWait(driver, 15).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, 'a.jobTitle-link, table.searchResults, tr.data-row'))
+                )
+            except:
+                time.sleep(5)  # Fallback if selectors not found
 
-            # Scroll to trigger lazy loading
-            for _ in range(3):
-                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                time.sleep(2)
+            # Quick scroll to trigger lazy loading
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            time.sleep(1)
             driver.execute_script("window.scrollTo(0, 0);")
-            time.sleep(2)
+            time.sleep(0.5)
 
             # Check for iframes - SuccessFactors sometimes renders in an iframe
             try:
@@ -125,7 +129,6 @@ class TataConsumerScraper:
                 if current_page < max_pages:
                     if not self._go_to_next_page(driver, current_page):
                         break
-                    time.sleep(5)
                 current_page += 1
 
             logger.info(f"Total jobs scraped: {len(all_jobs)}")
@@ -143,7 +146,13 @@ class TataConsumerScraper:
         """Navigate to the next page of SuccessFactors search results."""
         try:
             driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(2)
+            time.sleep(0.5)
+
+            # Capture current first job text for change detection
+            old_first = driver.execute_script("""
+                var card = document.querySelector('a.jobTitle-link');
+                return card ? card.innerText.substring(0, 50) : '';
+            """)
 
             # SuccessFactors pagination selectors
             next_selectors = [
@@ -167,8 +176,18 @@ class TataConsumerScraper:
                     if 'disabled' in btn_class:
                         continue
                     driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", next_button)
-                    time.sleep(1)
+                    time.sleep(0.3)
                     driver.execute_script("arguments[0].click();", next_button)
+                    # Poll for page change instead of blind sleep
+                    for _ in range(20):
+                        time.sleep(0.2)
+                        new_first = driver.execute_script("""
+                            var card = document.querySelector('a.jobTitle-link');
+                            return card ? card.innerText.substring(0, 50) : '';
+                        """)
+                        if new_first and new_first != old_first:
+                            break
+                    time.sleep(0.5)
                     logger.info(f"Navigated to page {current_page + 1}")
                     return True
                 except:
@@ -181,6 +200,16 @@ class TataConsumerScraper:
                     text = link.text.strip()
                     if text == str(current_page + 1):
                         driver.execute_script("arguments[0].click();", link)
+                        # Poll for page change
+                        for _ in range(20):
+                            time.sleep(0.2)
+                            new_first = driver.execute_script("""
+                                var card = document.querySelector('a.jobTitle-link');
+                                return card ? card.innerText.substring(0, 50) : '';
+                            """)
+                            if new_first and new_first != old_first:
+                                break
+                        time.sleep(0.5)
                         logger.info(f"Navigated to page {current_page + 1} via page number link")
                         return True
             except:
@@ -197,11 +226,11 @@ class TataConsumerScraper:
         jobs = []
 
         try:
-            # Scroll to load all content
+            # Quick scroll to load all content
             driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(2)
+            time.sleep(0.5)
             driver.execute_script("window.scrollTo(0, 0);")
-            time.sleep(1)
+            time.sleep(0.3)
 
             # Primary approach: Use JavaScript to extract from SuccessFactors DOM
             # The DOM has table.searchResults with rows, each containing:

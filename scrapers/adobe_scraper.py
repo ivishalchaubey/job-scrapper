@@ -6,8 +6,9 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 import hashlib
 import time
-from datetime import datetime
 from pathlib import Path
+import os
+
 
 from core.logging import setup_logger
 from config.scraper import SCRAPE_TIMEOUT, HEADLESS_MODE, FETCH_FULL_JOB_DETAILS, MAX_PAGES_TO_SCRAPE
@@ -16,13 +17,14 @@ logger = setup_logger('adobe_scraper')
 
 CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0.7559.133_fresh/chromedriver-mac-arm64/chromedriver'
 
+
 class AdobeScraper:
     def __init__(self):
         self.company_name = 'Adobe'
         self.url = 'https://careers.adobe.com/us/en/search-results?location=India'
-    
+        self.base_url = 'https://careers.adobe.com'
+
     def setup_driver(self):
-        """Set up Chrome driver with options"""
         chrome_options = Options()
         if HEADLESS_MODE:
             chrome_options.add_argument('--headless=new')
@@ -30,276 +32,259 @@ class AdobeScraper:
         chrome_options.add_argument('--disable-dev-shm-usage')
         chrome_options.add_argument('--disable-gpu')
         chrome_options.add_argument('--window-size=1920,1080')
-        chrome_options.add_argument('--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36')
+        chrome_options.add_argument('--user-agent=AppleWebKit/537.36')
         chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-        chrome_options.add_experimental_option('excludeSwitches', ['enable-logging'])
-        
+        chrome_options.add_experimental_option('useAutomationExtension', False)
+        chrome_options.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
+
         try:
-            # Install and get the correct chromedriver path
-            driver_path = CHROMEDRIVER_PATH
-            logger.info(f"ChromeDriver installed at: {driver_path}")
-            
-            # Fix for macOS ARM - ensure we use the actual chromedriver binary
-            if 'chromedriver-mac-arm64' in driver_path and not driver_path.endswith('chromedriver'):
-                import os
-                driver_dir = os.path.dirname(driver_path)
-                actual_driver = os.path.join(driver_dir, 'chromedriver')
-                if os.path.exists(actual_driver):
-                    driver_path = actual_driver
-                    logger.info(f"Using corrected path: {driver_path}")
-            
-            service = Service(driver_path)
-            driver = webdriver.Chrome(service=service, options=chrome_options)
-            return driver
+            if os.path.exists(CHROMEDRIVER_PATH):
+                service = Service(CHROMEDRIVER_PATH)
+                driver = webdriver.Chrome(service=service, options=chrome_options)
+            else:
+                driver = webdriver.Chrome(options=chrome_options)
         except Exception as e:
-            logger.error(f"ChromeDriver setup failed: {str(e)}")
-            # Fallback: try without service specification
-            logger.info("Attempting fallback driver setup...")
+            logger.warning(f"Primary driver failed: {str(e)}, trying fallback")
             driver = webdriver.Chrome(options=chrome_options)
-            return driver
-    
+
+        driver.execute_cdp_cmd('Network.setUserAgentOverride', {
+            "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+        })
+        driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+        return driver
+
     def generate_external_id(self, job_id, company):
-        """Generate stable external ID"""
         unique_string = f"{company}_{job_id}"
         return hashlib.md5(unique_string.encode()).hexdigest()
-    
+
     def scrape(self, max_pages=MAX_PAGES_TO_SCRAPE):
-        """Scrape jobs from Adobe careers page with pagination support"""
-        jobs = []
         driver = None
-        
+        all_jobs = []
+
         try:
-            logger.info(f"Starting scrape for {self.company_name}")
             driver = self.setup_driver()
+            logger.info(f"Starting {self.company_name} scraping from {self.url}")
             driver.get(self.url)
-            
-            # Wait for page to load
-            time.sleep(5)
-            
-            current_page = 1
-            
-            while current_page <= max_pages:
-                logger.info(f"Scraping page {current_page} of {max_pages}")
-                
-                # Scrape current page
-                page_jobs = self._scrape_page(driver)
-                jobs.extend(page_jobs)
-                
-                logger.info(f"Scraped {len(page_jobs)} jobs from page {current_page}")
-                
-                # Try to navigate to next page
-                if current_page < max_pages:
-                    if not self._go_to_next_page(driver, current_page):
-                        logger.info("No more pages available")
+
+            # Adobe Phenom variant: uses job-link not jobs-list-item
+            # Wait for job links or job info containers to appear
+            try:
+                WebDriverWait(driver, 15).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR,
+                        'a[data-ph-at-id="job-link"], [data-ph-at-id="jobs-list-item"], div.jw-job-info'))
+                )
+            except:
+                time.sleep(5)
+
+            # Quick scroll to trigger lazy loading
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            time.sleep(1)
+            driver.execute_script("window.scrollTo(0, 0);")
+            time.sleep(0.5)
+
+            for page in range(max_pages):
+                page_jobs = self._extract_jobs(driver)
+                if not page_jobs:
+                    break
+                all_jobs.extend(page_jobs)
+                logger.info(f"Page {page + 1}: {len(page_jobs)} jobs (total: {len(all_jobs)})")
+
+                if page < max_pages - 1:
+                    if not self._go_to_next_page(driver):
                         break
-                    time.sleep(4)  # Wait for next page to load
-                
-                current_page += 1
-            
-            logger.info(f"Successfully scraped {len(jobs)} total jobs from {self.company_name}")
-            
+
+            logger.info(f"Total jobs scraped: {len(all_jobs)}")
         except Exception as e:
-            logger.error(f"Error scraping {self.company_name}: {str(e)}")
-            raise
-        
+            logger.error(f"Error: {str(e)}")
         finally:
             if driver:
                 driver.quit()
-        
-        return jobs
-    
-    def _go_to_next_page(self, driver, current_page):
-        """Navigate to the next page"""
-        try:
-            next_page_num = current_page + 1
-            
-            # Scroll to pagination area
-            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(1)
-            
-            # Try to find and click next page button
-            next_page_selectors = [
-                (By.XPATH, f'//button[text()="{next_page_num}"]'),
-                (By.XPATH, f'//a[text()="{next_page_num}"]'),
-                (By.CSS_SELECTOR, f'button[aria-label="Go to page {next_page_num}"]'),
-                (By.XPATH, '//button[@aria-label="Go to next page"]'),
-                (By.XPATH, '//button[contains(@class, "next")]'),
-                (By.CSS_SELECTOR, 'button.pagination-next'),
-            ]
-            
-            for selector_type, selector_value in next_page_selectors:
-                try:
-                    next_button = driver.find_element(selector_type, selector_value)
-                    driver.execute_script("arguments[0].scrollIntoView();", next_button)
-                    time.sleep(0.5)
-                    driver.execute_script("arguments[0].click();", next_button)
-                    logger.info(f"Clicked next page button")
-                    return True
-                except:
-                    continue
-            
-            logger.warning("Could not find next page button")
-            return False
-                
-        except Exception as e:
-            logger.error(f"Error navigating to next page: {str(e)}")
-            return False
-    
-    def _scrape_page(self, driver):
-        """Scrape jobs from current page"""
+        return all_jobs
+
+    def _extract_jobs(self, driver):
         jobs = []
-        time.sleep(3)  # Wait for page content to load
-        
-        # Look for job cards
-        job_cards = []
-        selectors = [
-            (By.CSS_SELECTOR, 'div.job-card'),
-            (By.CSS_SELECTOR, 'div[class*="job"]'),
-            (By.CSS_SELECTOR, 'div.search-result'),
-            (By.XPATH, '//div[contains(@class, "result")]'),
-        ]
-        
-        for selector_type, selector_value in selectors:
-            try:
-                job_cards = driver.find_elements(selector_type, selector_value)
-                if job_cards and len(job_cards) > 0:
-                    logger.info(f"Found {len(job_cards)} job cards using selector: {selector_value}")
-                    break
-            except:
-                continue
-        
-        if not job_cards:
-            logger.warning("No job cards found")
-            return jobs
-        
-        # Process each job card
-        for idx, card in enumerate(job_cards):
-            try:
-                card_text = card.text
-                if not card_text or len(card_text) < 10:
-                    continue
-                
-                # Extract job title
-                job_title = ""
-                job_link = ""
-                try:
-                    title_elem = card.find_element(By.TAG_NAME, 'a')
-                    job_title = title_elem.text.strip()
-                    job_link = title_elem.get_attribute('href')
-                except:
-                    job_title = card_text.split('\n')[0].strip()
-                
-                if not job_title or len(job_title) < 3:
-                    continue
-                
-                # Generate job ID
-                job_id = f"adobe_{idx}"
-                if job_link:
-                    try:
-                        job_id = job_link.split('/')[-1].split('?')[0]
-                    except:
-                        pass
-                
-                # Extract location
-                location = ""
-                city = ""
-                state = ""
-                lines = card_text.split('\n')
-                for line in lines:
-                    if 'India' in line or any(city_name in line for city_name in ['Mumbai', 'Delhi', 'Bangalore', 'Chennai', 'Hyderabad', 'Kolkata', 'Pune', 'Gurgaon']):
-                        location = line.strip()
-                        city, state, _ = self.parse_location(location)
-                        break
-                
-                job_data = {
-                    'external_id': self.generate_external_id(job_id, self.company_name),
-                    'company_name': self.company_name,
-                    'title': job_title,
-                    'description': '',
-                    'location': location,
-                    'city': city,
-                    'state': state,
-                    'country': 'India',
-                    'employment_type': '',
-                    'department': '',
-                    'apply_url': job_link if job_link else self.url,
-                    'posted_date': '',
-                    'job_function': '',
-                    'experience_level': '',
-                    'salary_range': '',
-                    'remote_type': '',
-                    'status': 'active'
-                }
-                
-                # Fetch full details if enabled
-                if FETCH_FULL_JOB_DETAILS and job_link:
-                    full_details = self._fetch_job_details(driver, job_link)
-                    job_data.update(full_details)
-                
-                jobs.append(job_data)
-                
-            except Exception as e:
-                logger.error(f"Error extracting job {idx}: {str(e)}")
-                continue
-        
-        return jobs
-    
-    def _fetch_job_details(self, driver, job_url):
-        """Fetch full job details by visiting the job page"""
-        details = {}
-        
+
         try:
-            # Open job in new tab
-            original_window = driver.current_window_handle
-            driver.execute_script("window.open('');")
-            driver.switch_to.window(driver.window_handles[-1])
-            
-            driver.get(job_url)
-            time.sleep(4)
-            
-            # Extract description
-            try:
-                desc_selectors = [
-                    (By.CSS_SELECTOR, 'div.job-description'),
-                    (By.CSS_SELECTOR, 'div[class*="description"]'),
-                    (By.XPATH, '//div[contains(@class, "description")]'),
-                ]
-                
-                for selector_type, selector_value in desc_selectors:
-                    try:
-                        desc_elem = driver.find_element(selector_type, selector_value)
-                        if desc_elem and desc_elem.text.strip():
-                            details['description'] = desc_elem.text.strip()[:2000]
-                            break
-                    except:
+            # Scroll to load content
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            time.sleep(0.5)
+            driver.execute_script("window.scrollTo(0, 0);")
+            time.sleep(0.3)
+
+            # Adobe Phenom variant: a[data-ph-at-id="job-link"] inside div.jw-job-info
+            js_jobs = driver.execute_script("""
+                var results = [];
+                var seen = {};
+
+                // Strategy 1: Phenom jobs-list-item (standard)
+                var cards = document.querySelectorAll('[data-ph-at-id="jobs-list-item"]');
+
+                // Strategy 2: Phenom job-link variant (Adobe uses this)
+                if (cards.length === 0) {
+                    var links = document.querySelectorAll('a[data-ph-at-id="job-link"]');
+                    for (var i = 0; i < links.length; i++) {
+                        var linkEl = links[i];
+                        var href = linkEl.href;
+                        if (!href || seen[href]) continue;
+                        seen[href] = true;
+
+                        var title = linkEl.innerText.trim();
+                        if (!title || title.length < 3) continue;
+
+                        // Find parent container for location
+                        var parent = linkEl.closest('div.jw-job-info, div[class*="job"], li, article');
+                        var location = '';
+                        if (parent) {
+                            var ptext = parent.innerText || '';
+                            var lines = ptext.split('\\n').map(function(l) { return l.trim(); }).filter(function(l) { return l.length > 0; });
+                            for (var j = 0; j < lines.length; j++) {
+                                var line = lines[j];
+                                if (line.match(/^Location\\s*:?$/i)) {
+                                    // Next line is the actual location
+                                    if (j + 1 < lines.length) {
+                                        location = lines[j + 1];
+                                    }
+                                    break;
+                                }
+                                if (line !== title && (line.includes('India') || line.includes(',')) &&
+                                    !line.startsWith('Category') && !line.startsWith('Job ID') &&
+                                    !line.startsWith('Posted')) {
+                                    location = line.replace(/^Location\\s*:?\\s*/i, '');
+                                    break;
+                                }
+                            }
+                        }
+
+                        results.push({title: title, location: location, url: href});
+                    }
+                    return results;
+                }
+
+                // Standard Phenom extraction
+                for (var i = 0; i < cards.length; i++) {
+                    var card = cards[i];
+                    var titleEl = card.querySelector('.job-title, [class*="job-title"], h3, h2');
+                    var locEl = card.querySelector('.job-location, [class*="location"]');
+                    var linkEl = card.tagName === 'A' ? card : card.querySelector('a[href*="/job/"], a[href*="/jb/"], a');
+
+                    var title = titleEl ? titleEl.innerText.trim() : (card.innerText || '').split('\\n')[0].trim();
+                    var location = locEl ? locEl.innerText.trim().replace(/^Location\\s*:?\\s*/i, '') : '';
+                    var href = linkEl ? linkEl.href : '';
+
+                    if (title && title.length > 2 && href && !seen[href]) {
+                        seen[href] = true;
+                        results.push({title: title, location: location, url: href});
+                    }
+                }
+                return results;
+            """)
+
+            if js_jobs:
+                logger.info(f"JS extraction found {len(js_jobs)} jobs")
+                for jdata in js_jobs:
+                    title = jdata.get('title', '').strip()
+                    url = jdata.get('url', '').strip()
+                    location = jdata.get('location', '').strip()
+
+                    if not title or len(title) < 3:
                         continue
-            except:
-                pass
-            
-            # Close tab and return to search results
-            driver.close()
-            driver.switch_to.window(original_window)
-            time.sleep(1)
-            
+
+                    if url and url.startswith('/'):
+                        url = f"{self.base_url}{url}"
+
+                    job_id = hashlib.md5((url or title).encode()).hexdigest()[:12]
+                    if url and '/job/' in url:
+                        parts = url.split('/job/')[-1].split('/')
+                        if parts[0]:
+                            job_id = parts[0]
+
+                    job_data = {
+                        'external_id': self.generate_external_id(job_id, self.company_name),
+                        'company_name': self.company_name,
+                        'title': title,
+                        'apply_url': url or self.url,
+                        'location': location,
+                        'department': '',
+                        'employment_type': '',
+                        'description': '',
+                        'posted_date': '',
+                        'city': '',
+                        'state': '',
+                        'country': 'India',
+                        'job_function': '',
+                        'experience_level': '',
+                        'salary_range': '',
+                        'remote_type': '',
+                        'status': 'active'
+                    }
+                    job_data.update(self.parse_location(location))
+                    jobs.append(job_data)
+
         except Exception as e:
-            logger.error(f"Error fetching job details: {str(e)}")
-            # Make sure we return to original window
-            try:
-                if len(driver.window_handles) > 1:
-                    driver.close()
-                    driver.switch_to.window(driver.window_handles[0])
-            except:
-                pass
-        
-        return details
-    
+            logger.error(f"Error extracting jobs: {str(e)}")
+
+        return jobs
+
+    def _go_to_next_page(self, driver):
+        try:
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            time.sleep(0.5)
+
+            # Get current first job to detect page change
+            old_first = driver.execute_script("""
+                var el = document.querySelector('a[data-ph-at-id="job-link"], [data-ph-at-id="jobs-list-item"]');
+                return el ? el.innerText.substring(0, 50) : '';
+            """)
+
+            for sel_type, sel_val in [
+                (By.CSS_SELECTOR, 'a[data-ph-at-id="pagination-next-link"]'),
+                (By.CSS_SELECTOR, 'a.next-btn'),
+                (By.CSS_SELECTOR, 'button[data-ph-at-id="load-more-jobs-button"]'),
+                (By.CSS_SELECTOR, 'a[aria-label="Next"]'),
+                (By.CSS_SELECTOR, 'button[aria-label="Next"]'),
+                (By.XPATH, '//a[contains(text(), "Next")]'),
+            ]:
+                try:
+                    btn = driver.find_element(sel_type, sel_val)
+                    if btn.is_displayed():
+                        driver.execute_script("arguments[0].click();", btn)
+                        # Poll for page change
+                        for _ in range(20):
+                            time.sleep(0.2)
+                            new_first = driver.execute_script("""
+                                var el = document.querySelector('a[data-ph-at-id="job-link"], [data-ph-at-id="jobs-list-item"]');
+                                return el ? el.innerText.substring(0, 50) : '';
+                            """)
+                            if new_first and new_first != old_first:
+                                break
+                        time.sleep(0.5)
+                        return True
+                except:
+                    continue
+            return False
+        except:
+            return False
+
     def parse_location(self, location_str):
-        """Parse location string into city, state, country"""
+        result = {'city': '', 'state': '', 'country': 'India'}
         if not location_str:
-            return '', '', 'India'
-        
+            return result
         parts = [p.strip() for p in location_str.split(',')]
-        city = parts[0] if len(parts) > 0 else ''
-        state = parts[1] if len(parts) > 1 else ''
-        
-        return city, state, 'India'
+        if len(parts) >= 1:
+            result['city'] = parts[0]
+        if len(parts) >= 3:
+            result['state'] = parts[1]
+            result['country'] = parts[2]
+        elif len(parts) == 2:
+            result['country'] = parts[1]
+        if 'India' in location_str:
+            result['country'] = 'India'
+        return result
+
+
+if __name__ == "__main__":
+    scraper = AdobeScraper()
+    jobs = scraper.scrape()
+    print(f"\nTotal jobs found: {len(jobs)}")
+    for job in jobs:
+        print(f"- {job['title']} | {job['location']}")

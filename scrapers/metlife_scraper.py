@@ -22,7 +22,7 @@ class MetLifeScraper:
         self.url = 'https://jobs.metlife.com/search/?q=&locationsearch=India'
     
     def setup_driver(self):
-        """Set up Chrome driver with options"""
+        """Set up Chrome driver with anti-detection options"""
         chrome_options = Options()
         if HEADLESS_MODE:
             chrome_options.add_argument('--headless=new')
@@ -30,33 +30,23 @@ class MetLifeScraper:
         chrome_options.add_argument('--disable-dev-shm-usage')
         chrome_options.add_argument('--disable-gpu')
         chrome_options.add_argument('--window-size=1920,1080')
-        chrome_options.add_argument('--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36')
+        chrome_options.add_argument('--user-agent=AppleWebKit/537.36')
         chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-        chrome_options.add_experimental_option('excludeSwitches', ['enable-logging'])
-        
+        chrome_options.add_experimental_option('useAutomationExtension', False)
+        chrome_options.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
+
         try:
-            # Install and get the correct chromedriver path
-            driver_path = CHROMEDRIVER_PATH
-            logger.info(f"ChromeDriver installed at: {driver_path}")
-            
-            # Fix for macOS ARM - ensure we use the actual chromedriver binary
-            if 'chromedriver-mac-arm64' in driver_path and not driver_path.endswith('chromedriver'):
-                import os
-                driver_dir = os.path.dirname(driver_path)
-                actual_driver = os.path.join(driver_dir, 'chromedriver')
-                if os.path.exists(actual_driver):
-                    driver_path = actual_driver
-                    logger.info(f"Using corrected path: {driver_path}")
-            
-            service = Service(driver_path)
-            driver = webdriver.Chrome(service=service, options=chrome_options)
-            return driver
-        except Exception as e:
-            logger.error(f"ChromeDriver setup failed: {str(e)}")
-            # Fallback: try without service specification
-            logger.info("Attempting fallback driver setup...")
             driver = webdriver.Chrome(options=chrome_options)
-            return driver
+        except Exception as e:
+            logger.warning(f"Auto-detect failed: {str(e)}, trying explicit path")
+            service = Service(CHROMEDRIVER_PATH)
+            driver = webdriver.Chrome(service=service, options=chrome_options)
+
+        driver.execute_cdp_cmd('Network.setUserAgentOverride', {
+            "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+        })
+        driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+        return driver
     
     def generate_external_id(self, job_id, company):
         """Generate stable external ID"""
@@ -72,14 +62,31 @@ class MetLifeScraper:
             logger.info(f"Starting scrape for {self.company_name}")
             driver = self.setup_driver()
             driver.get(self.url)
-            
+
             # Wait for page to load
             wait = WebDriverWait(driver, SCRAPE_TIMEOUT)
-            time.sleep(10)
+            time.sleep(15)
+
+            # Dismiss cookie consent banner if present
+            try:
+                driver.execute_script("""
+                    var btns = document.querySelectorAll('button, a');
+                    for (var i = 0; i < btns.length; i++) {
+                        var t = btns[i].innerText.trim();
+                        if (t === 'Accept' || t === 'Accept all' || t === 'Accept All') {
+                            btns[i].click();
+                            break;
+                        }
+                    }
+                """)
+                time.sleep(3)
+                logger.info("Dismissed cookie consent banner")
+            except:
+                pass
 
             # Scroll to trigger lazy-loaded content
-            for scroll_i in range(4):
-                driver.execute_script("window.scrollTo(0, document.body.scrollHeight * %s);" % str((scroll_i + 1) / 4))
+            for scroll_i in range(5):
+                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
                 time.sleep(2)
             driver.execute_script("window.scrollTo(0, 0);")
             time.sleep(2)
@@ -119,175 +126,131 @@ class MetLifeScraper:
     def _go_to_next_page(self, driver, current_page):
         """Navigate to the next page"""
         try:
-            next_page_num = current_page + 1
-            
-            # Scroll to pagination area
             driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(1)
-            
-            # Try to find and click next page button
-            next_page_selectors = [
-                (By.XPATH, f'//a[text()="{next_page_num}"]'),
-                (By.XPATH, f'//button[text()="{next_page_num}"]'),
-                (By.CSS_SELECTOR, f'a[aria-label="Page {next_page_num}"]'),
-                (By.XPATH, '//a[@aria-label="Next page"]'),
-                (By.XPATH, '//button[contains(text(), "Next")]'),
-                (By.CSS_SELECTOR, 'a.pagination-next'),
-            ]
-            
-            for selector_type, selector_value in next_page_selectors:
+            time.sleep(2)
+
+            for selector_type, selector_value in [
+                (By.CSS_SELECTOR, 'a.paginationNextLink'),
+                (By.XPATH, '//a[contains(text(), "Next")]'),
+                (By.CSS_SELECTOR, 'a.pagination-show-next'),
+                (By.CSS_SELECTOR, 'a[title="Next"]'),
+                (By.CSS_SELECTOR, 'a[aria-label="Next page"]'),
+                (By.CSS_SELECTOR, 'a[aria-label="Next"]'),
+                (By.CSS_SELECTOR, '.pagination .next a'),
+                (By.CSS_SELECTOR, 'a.next-page'),
+            ]:
                 try:
                     next_button = driver.find_element(selector_type, selector_value)
-                    driver.execute_script("arguments[0].scrollIntoView();", next_button)
-                    time.sleep(0.5)
-                    next_button.click()
-                    logger.info(f"Clicked next page button")
-                    return True
+                    if next_button.is_displayed() and next_button.is_enabled():
+                        driver.execute_script("arguments[0].click();", next_button)
+                        logger.info("Clicked next page button")
+                        return True
                 except:
                     continue
-            
+
             logger.warning("Could not find next page button")
             return False
-                
+
         except Exception as e:
             logger.error(f"Error navigating to next page: {str(e)}")
             return False
     
     def _scrape_page(self, driver, wait):
-        """Scrape jobs from current page"""
+        """Scrape jobs from current page - SuccessFactors platform"""
         jobs = []
-        time.sleep(2)
-        
-        # Try multiple selectors for job listings
-        job_cards = []
-        selectors = [
-            (By.CSS_SELECTOR, 'div.job-card'),
-            (By.CSS_SELECTOR, 'div[class*="job"]'),
-            (By.CSS_SELECTOR, 'tr.data-row'),
-            (By.XPATH, '//div[contains(@class, "result")]'),
-            (By.CSS_SELECTOR, 'a[href*="/job/"]'),
-            (By.CSS_SELECTOR, 'a[href*="/jobs/"]'),
-            (By.CSS_SELECTOR, 'a[href*="/careers/"]'),
-            (By.CSS_SELECTOR, 'div[class*="opening"]'),
-            (By.CSS_SELECTOR, 'div[class*="position"]'),
-            (By.CSS_SELECTOR, 'li[class*="job"]'),
-            (By.CSS_SELECTOR, 'div[class*="career"]'),
-            (By.CSS_SELECTOR, 'div[class*="vacancy"]'),
-            (By.CSS_SELECTOR, 'table.searchResults tr'),
-            (By.TAG_NAME, 'article'),
-        ]
-        
-        for selector_type, selector_value in selectors:
+        time.sleep(3)
+
+        # Use JavaScript extraction with SuccessFactors-specific selectors
+        js_jobs = driver.execute_script("""
+            var results = [];
+            var seen = {};
+
+            // Strategy 1: SuccessFactors article cards (modern variant)
+            var articles = document.querySelectorAll('article.article--result');
+            for (var i = 0; i < articles.length; i++) {
+                var art = articles[i];
+                var titleLink = art.querySelector('h3 a, a.article__header__focusable, a.link');
+                if (!titleLink) continue;
+                var title = titleLink.innerText.trim();
+                if (title === 'Learn More >' || title === 'Learn more' || title === 'Apply') continue;
+                var url = titleLink.href || '';
+                if (!title || title.length < 3 || seen[url]) continue;
+                seen[url] = true;
+                var subtitle = art.querySelector('.article__header__text__subtitle');
+                var location = '';
+                if (subtitle) {
+                    var parts = subtitle.innerText.trim().split('\\u2022');
+                    if (parts.length > 0) location = parts[0].trim();
+                }
+                results.push({title: title, url: url, location: location, date: ''});
+            }
+
+            // Strategy 2: SuccessFactors table rows (classic)
+            if (results.length === 0) {
+                var rows = document.querySelectorAll('tr.data-row');
+                for (var i = 0; i < rows.length; i++) {
+                    var row = rows[i];
+                    var titleLink = row.querySelector('a.jobTitle-link, a[href*="/job/"]');
+                    if (!titleLink) continue;
+                    var title = titleLink.innerText.trim();
+                    var url = titleLink.href || '';
+                    if (!title || title.length < 3 || seen[url]) continue;
+                    seen[url] = true;
+                    var locTd = row.querySelector('td.colLocation, [class*="location"], [class*="Location"]');
+                    var location = locTd ? locTd.innerText.trim() : '';
+                    results.push({title: title, url: url, location: location, date: ''});
+                }
+            }
+
+            // Strategy 3: h3 links inside articles (fallback for any SuccessFactors variant)
+            if (results.length === 0) {
+                var h3Links = document.querySelectorAll('article h3 a');
+                for (var i = 0; i < h3Links.length; i++) {
+                    var el = h3Links[i];
+                    var title = el.innerText.trim();
+                    var url = el.href || '';
+                    if (!title || title.length < 3 || title.length > 200) continue;
+                    if (title === 'Learn More >' || title === 'Learn more' || title === 'Apply') continue;
+                    if (url.includes('login') || url.includes('javascript:')) continue;
+                    if (seen[url]) continue;
+                    seen[url] = true;
+                    results.push({title: title, url: url, location: '', date: ''});
+                }
+            }
+
+            return results;
+        """)
+
+        if not js_jobs:
+            logger.warning("No jobs found on this page")
             try:
-                wait.until(EC.presence_of_element_located((selector_type, selector_value)))
-                job_cards = driver.find_elements(selector_type, selector_value)
-                if job_cards and len(job_cards) > 0:
-                    logger.info(f"Found {len(job_cards)} job cards using selector: {selector_value}")
-                    break
+                body_text = driver.execute_script('return document.body ? document.body.innerText.substring(0, 500) : ""')
+                logger.info(f"Page body preview: {body_text}")
             except:
-                continue
-        
-        if not job_cards:
-            logger.warning("No job cards found with standard selectors, trying link-based fallback")
-            try:
-                all_links = driver.find_elements(By.TAG_NAME, 'a')
-                job_keywords = ['/job/', '/jobs/', '/career', '/position/', '/opening/', '/vacancy/', '/apply/', '/search/']
-                seen_urls = set()
-                for link in all_links:
-                    try:
-                        href = link.get_attribute('href') or ''
-                        link_text = link.text.strip()
-                        if not link_text or len(link_text) < 3:
-                            continue
-                        if not any(kw in href.lower() for kw in job_keywords):
-                            continue
-                        if href in seen_urls:
-                            continue
-                        seen_urls.add(href)
-
-                        job_id = href.split('/')[-1].split('?')[0] if href else f"metlife_link_{len(jobs)}"
-
-                        job_data = {
-                            'external_id': self.generate_external_id(job_id, self.company_name),
-                            'company_name': self.company_name,
-                            'title': link_text,
-                            'description': '',
-                            'location': '',
-                            'city': '',
-                            'state': '',
-                            'country': 'India',
-                            'employment_type': '',
-                            'department': '',
-                            'apply_url': href if href else self.url,
-                            'posted_date': '',
-                            'job_function': '',
-                            'experience_level': '',
-                            'salary_range': '',
-                            'remote_type': '',
-                            'status': 'active'
-                        }
-                        jobs.append(job_data)
-                        logger.info(f"Found job via link fallback: '{link_text}'")
-                    except:
-                        continue
-            except Exception as e:
-                logger.error(f"Link-based fallback failed: {str(e)}")
+                pass
             return jobs
 
-        # Extract from job cards
-        for idx, card in enumerate(job_cards):
+        logger.info(f"JS extraction found {len(js_jobs)} jobs")
+        for jdata in js_jobs:
             try:
-                card_text = card.text
-                if not card_text or len(card_text) < 10:
+                title = jdata.get('title', '').strip()
+                job_link = jdata.get('url', '').strip()
+                location = jdata.get('location', '').strip()
+                date = jdata.get('date', '').strip()
+
+                if not title or len(title) < 3:
                     continue
-                
-                # Get job title
-                job_title = ""
-                job_link = ""
-                try:
-                    title_link = card.find_element(By.TAG_NAME, 'a')
-                    job_title = title_link.text.strip()
-                    job_link = title_link.get_attribute('href')
-                except:
-                    try:
-                        title_elem = card.find_element(By.TAG_NAME, 'h3')
-                        job_title = title_elem.text.strip()
-                    except:
-                        job_title = card_text.split('\n')[0].strip()
-                
-                if not job_title or len(job_title) < 3:
-                    continue
-                
-                # Extract Job ID
-                job_id = f"metlife_{idx}"
+
+                job_id = f"metlife_{len(jobs)}"
                 if job_link:
-                    if '/job/' in job_link:
-                        job_id = job_link.split('/job/')[-1].split('?')[0].split('/')[0]
-                    elif 'id=' in job_link:
-                        job_id = job_link.split('id=')[-1].split('&')[0]
-                
-                # Extract location
-                location = ""
-                city = ""
-                state = ""
-                lines = card_text.split('\n')
-                for line in lines:
-                    if 'India' in line or ', IN' in line:
-                        location = line.strip()
-                        city, state, _ = self.parse_location(location)
-                        break
-                
-                # Extract posted date
-                posted_date = ""
-                for line in lines:
-                    if 'Posted' in line or 'days ago' in line:
-                        posted_date = line.replace('Posted', '').strip()
-                        break
-                
+                    job_id = hashlib.md5(job_link.encode()).hexdigest()[:12]
+
+                city, state, country = self.parse_location(location)
+
                 job_data = {
                     'external_id': self.generate_external_id(job_id, self.company_name),
                     'company_name': self.company_name,
-                    'title': job_title,
+                    'title': title,
                     'description': '',
                     'location': location,
                     'city': city,
@@ -296,25 +259,23 @@ class MetLifeScraper:
                     'employment_type': '',
                     'department': '',
                     'apply_url': job_link if job_link else self.url,
-                    'posted_date': posted_date,
+                    'posted_date': date,
                     'job_function': '',
                     'experience_level': '',
                     'salary_range': '',
                     'remote_type': '',
                     'status': 'active'
                 }
-                
-                # Fetch full details if enabled
+
                 if FETCH_FULL_JOB_DETAILS and job_link:
                     full_details = self._fetch_job_details(driver, job_link)
                     job_data.update(full_details)
-                
+
                 jobs.append(job_data)
-                
             except Exception as e:
-                logger.error(f"Error extracting job {idx}: {str(e)}")
+                logger.error(f"Error extracting job: {str(e)}")
                 continue
-        
+
         return jobs
     
     def _fetch_job_details(self, driver, job_url):

@@ -59,24 +59,21 @@ class AbbottScraper:
             driver.get(self.url)
             wait = WebDriverWait(driver, 10)
 
-            # Wait 15s for Phenom SPA to render
-            time.sleep(15)
-
-            # Try to detect Phenom job listings - use correct Phenom selectors
+            # Smart wait for Phenom SPA to render (replaces blind sleep(15))
             try:
                 wait.until(EC.presence_of_element_located((
-                    By.CSS_SELECTOR, "li[data-ph-at-id='job-listing'], li.job-cart, div.job-title, a.au-target, div.ph-facet-and-search-results-area"
+                    By.CSS_SELECTOR, "div.job-title, li[data-ph-at-id='job-listing'], a.au-target, div.ph-facet-and-search-results-area"
                 )))
                 logger.info("Phenom job listings detected")
             except:
-                logger.warning("Timeout waiting for Phenom job listings")
+                logger.warning("Timeout waiting for Phenom job listings, using fallback wait")
+                time.sleep(5)
 
-            # Scroll to trigger lazy loading - Phenom uses infinite scroll
-            for _ in range(5):
-                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                time.sleep(2)
+            # Single quick scroll to trigger lazy loading
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            time.sleep(1)
             driver.execute_script("window.scrollTo(0, 0);")
-            time.sleep(2)
+            time.sleep(0.5)
 
             current_page = 1
             while current_page <= max_pages:
@@ -87,7 +84,7 @@ class AbbottScraper:
                 if current_page < max_pages:
                     if not self._go_to_next_page(driver):
                         break
-                    time.sleep(3)
+                    # No extra sleep needed — _go_to_next_page polls for change
                 current_page += 1
 
             logger.info(f"Total jobs scraped: {len(all_jobs)}")
@@ -102,8 +99,17 @@ class AbbottScraper:
     def _go_to_next_page(self, driver):
         try:
             driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(2)
+            time.sleep(0.5)
+
+            # Capture current first job text for change detection
+            old_first = driver.execute_script("""
+                var card = document.querySelector('div.job-title');
+                return card ? card.innerText.substring(0, 50) : '';
+            """)
+
             for sel_type, sel_val in [
+                (By.CSS_SELECTOR, 'a[data-ph-at-id="pagination-next-link"]'),
+                (By.CSS_SELECTOR, 'a.next-btn'),
                 (By.CSS_SELECTOR, 'a[aria-label="Next"]'),
                 (By.CSS_SELECTOR, 'button[aria-label="Next"]'),
                 (By.CSS_SELECTOR, 'a[data-ph-at-id="pagination-next-btn"]'),
@@ -113,7 +119,20 @@ class AbbottScraper:
             ]:
                 try:
                     btn = driver.find_element(sel_type, sel_val)
+                    if not btn.is_displayed():
+                        continue
                     driver.execute_script("arguments[0].click();", btn)
+
+                    # Poll for page change (max 4s, usually <1s)
+                    for _ in range(20):
+                        time.sleep(0.2)
+                        new_first = driver.execute_script("""
+                            var card = document.querySelector('div.job-title');
+                            return card ? card.innerText.substring(0, 50) : '';
+                        """)
+                        if new_first and new_first != old_first:
+                            break
+                    time.sleep(0.5)  # Brief settle after change detected
                     return True
                 except:
                     continue
@@ -127,7 +146,9 @@ class AbbottScraper:
 
         try:
             driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(2)
+            time.sleep(0.5)
+            driver.execute_script("window.scrollTo(0, 0);")
+            time.sleep(0.3)
 
             job_elements = []
 

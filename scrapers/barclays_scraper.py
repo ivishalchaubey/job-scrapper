@@ -93,6 +93,7 @@ class BarclaysScraper:
         return all_jobs
 
     def _extract_jobs(self, driver):
+        """Extract jobs using NAS/Radancy platform selectors with India post-filter"""
         jobs = []
 
         try:
@@ -101,119 +102,55 @@ class BarclaysScraper:
             driver.execute_script("window.scrollTo(0, 0);")
             time.sleep(1)
 
-            # JavaScript extraction with NAS/Radancy platform selectors
+            # NAS/Radancy JS extraction: Barclays uses div.list-item instead of li
             js_jobs = driver.execute_script("""
                 var results = [];
                 var seen = {};
-
-                // Strategy 1: NAS/Radancy platform - li[data-job-id] elements
-                var jobItems = document.querySelectorAll('li[data-job-id]');
-                for (var i = 0; i < jobItems.length; i++) {
-                    var item = jobItems[i];
-                    var jobId = item.getAttribute('data-job-id') || '';
-                    var titleEl = item.querySelector('a.job-result-title, h2 a, h3 a, [class*="title"] a, a[href*="/job/"]');
-                    if (!titleEl) continue;
-                    var title = titleEl.innerText.trim();
-                    var url = titleEl.href || '';
-                    if (!title || title.length < 3 || seen[url || title]) continue;
-                    seen[url || title] = true;
-                    var location = '';
-                    var locEl = item.querySelector('.job-result-location, [class*="location"], [class*="Location"]');
-                    if (locEl) location = locEl.innerText.trim();
-                    var date = '';
-                    var dateEl = item.querySelector('.job-result-date, [class*="date"], [class*="Date"]');
-                    if (dateEl) date = dateEl.innerText.trim();
-                    results.push({title: title, url: url, location: location, date: date, jobId: jobId});
-                }
-
-                // Strategy 2: NAS search results section
-                if (results.length === 0) {
-                    var resultSection = document.querySelector('#search-results-list, [id*="search-results"], [class*="search-results"]');
-                    if (resultSection) {
-                        var items = resultSection.querySelectorAll('li, article, [class*="job-result"]');
-                        for (var i = 0; i < items.length; i++) {
-                            var item = items[i];
-                            var link = item.querySelector('a[href]');
-                            if (!link) continue;
-                            var title = '';
-                            var titleEl = item.querySelector('h2, h3, h4, [class*="title"], a.job-result-title');
-                            if (titleEl) title = titleEl.innerText.trim().split('\\n')[0];
-                            if (!title) title = link.innerText.trim().split('\\n')[0];
-                            var url = link.href || '';
-                            if (!title || title.length < 3 || !url || seen[url]) continue;
-                            seen[url] = true;
-                            var location = '';
-                            var locEl = item.querySelector('[class*="location"], [class*="Location"]');
-                            if (locEl) location = locEl.innerText.trim();
-                            results.push({title: title, url: url, location: location, date: '', jobId: ''});
-                        }
-                    }
-                }
-
-                // Strategy 3: Direct job links
-                if (results.length === 0) {
-                    var links = document.querySelectorAll('a[href*="/job/"], a[href*="/search-jobs/"]');
-                    for (var i = 0; i < links.length; i++) {
-                        var el = links[i];
-                        var title = (el.innerText || '').trim().split('\\n')[0].trim();
-                        var url = el.href || '';
-                        if (!title || title.length < 3 || title.length > 200) continue;
-                        if (url.includes('login') || url.includes('sign-in') || url.includes('javascript:')) continue;
-                        // Skip navigation links (search-jobs without job ID)
-                        if (url.match(/search-jobs\\/[^/]+\\/\\d+/) && !url.match(/\\/job\\//)) continue;
-                        if (seen[url]) continue;
+                var container = document.querySelector('#search-results-list');
+                if (container) {
+                    var items = container.querySelectorAll('div.list-item, li');
+                    for (var i = 0; i < items.length; i++) {
+                        var item = items[i];
+                        var link = item.querySelector('a.job-title--link, a[href]');
+                        if (!link) continue;
+                        var title = link.innerText.trim().split('\\n')[0];
+                        var url = link.href;
+                        if (!title || title.length < 3 || seen[url]) continue;
                         seen[url] = true;
-                        var location = '';
-                        var parent = el.closest('li, div[class*="job"], article');
-                        if (parent) {
-                            var locEl = parent.querySelector('[class*="location"], [class*="Location"]');
-                            if (locEl) location = locEl.innerText.trim();
-                        }
-                        results.push({title: title, url: url, location: location, date: '', jobId: ''});
+                        var locEl = item.querySelector('.job-location, [class*="location"]');
+                        var location = locEl ? locEl.innerText.trim() : '';
+                        var dateEl = item.querySelector('.job-date, .job-date-posted, [class*="date"]');
+                        var date = dateEl ? dateEl.innerText.trim() : '';
+                        results.push({title: title, url: url, location: location, date: date});
                     }
                 }
-
-                // Strategy 4: Generic link extraction
-                if (results.length === 0) {
-                    var allLinks = document.querySelectorAll('a[href]');
-                    for (var i = 0; i < allLinks.length; i++) {
-                        var href = allLinks[i].href || '';
-                        var text = (allLinks[i].innerText || '').trim();
-                        if (text.length > 3 && text.length < 200 && href.length > 10) {
-                            if ((href.includes('/job') || href.includes('/position') || href.includes('/career') || href.includes('/opening')) && !seen[href]) {
-                                if (!href.includes('login') && !href.includes('sign-in') && !href.includes('javascript:')) {
-                                    seen[href] = true;
-                                    results.push({title: text.split('\\n')[0].trim(), url: href, location: '', date: '', jobId: ''});
-                                }
-                            }
-                        }
-                    }
-                }
-
                 return results;
             """)
 
             if js_jobs:
-                logger.info(f"JS extraction found {len(js_jobs)} jobs")
-                seen_urls = set()
+                logger.info(f"NAS/Radancy extraction found {len(js_jobs)} jobs (pre-filter)")
+                india_keywords = ['india', 'mumbai', 'delhi', 'bangalore', 'bengaluru', 'hyderabad',
+                                  'chennai', 'pune', 'kolkata', 'gurgaon', 'gurugram', 'noida', 'kochi']
+
                 for jdata in js_jobs:
                     title = jdata.get('title', '').strip()
                     url = jdata.get('url', '').strip()
                     location = jdata.get('location', '').strip()
                     date = jdata.get('date', '').strip()
-                    nas_job_id = jdata.get('jobId', '').strip()
 
                     if not title or len(title) < 3:
                         continue
-                    if url in seen_urls:
+
+                    # India post-filter: reject non-India jobs (e.g. London)
+                    loc_lower = location.lower()
+                    if location and not any(kw in loc_lower for kw in india_keywords):
+                        logger.debug(f"Skipping non-India job: {title} | {location}")
                         continue
-                    if url:
-                        seen_urls.add(url)
 
                     if url and url.startswith('/'):
                         url = f"https://search.jobs.barclays{url}"
 
-                    job_id = nas_job_id or hashlib.md5((url or title).encode()).hexdigest()[:12]
+                    job_id = hashlib.md5((url or title).encode()).hexdigest()[:12]
                     if url and '/job/' in url:
                         parts = url.split('/job/')[-1].split('/')
                         if parts[0]:
@@ -233,7 +170,7 @@ class BarclaysScraper:
                         'posted_date': date,
                         'city': loc_data.get('city', ''),
                         'state': loc_data.get('state', ''),
-                        'country': loc_data.get('country', 'India'),
+                        'country': 'India',
                         'job_function': '',
                         'experience_level': '',
                         'salary_range': '',
@@ -242,9 +179,9 @@ class BarclaysScraper:
                     })
 
             if jobs:
-                logger.info(f"Successfully extracted {len(jobs)} jobs")
+                logger.info(f"Successfully extracted {len(jobs)} India jobs")
             else:
-                logger.warning("No jobs found on this page")
+                logger.warning("No India jobs found on this page")
 
         except Exception as e:
             logger.error(f"Error extracting jobs: {str(e)}")

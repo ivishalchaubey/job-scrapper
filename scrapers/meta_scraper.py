@@ -70,23 +70,37 @@ class MetaScraper:
 
             driver.get(self.url)
 
-            # SPA rendering wait - Meta's React app needs extra time to hydrate
-            logger.info("Waiting 20s for SPA rendering...")
-            time.sleep(20)
+            # Smart wait for SPA rendering — wait for job links to appear instead of blind sleep
+            logger.info("Waiting for job links to appear...")
+            try:
+                WebDriverWait(driver, 20).until(
+                    lambda d: d.execute_script("""
+                        var links = document.querySelectorAll('a[href]');
+                        for (var i = 0; i < links.length; i++) {
+                            var href = links[i].href || '';
+                            if (href.indexOf('/jobs/') !== -1 || href.indexOf('/job_details/') !== -1 ||
+                                href.indexOf('/profile/job_details/') !== -1 || href.indexOf('/v2/jobs/') !== -1) {
+                                return true;
+                            }
+                        }
+                        return false;
+                    """)
+                )
+                logger.info("Job links detected on page")
+            except:
+                logger.warning("WebDriverWait timed out, falling back to 5s sleep")
+                time.sleep(5)
 
             # Log page state for debugging
             page_title = driver.title
             current_url = driver.current_url
             logger.info(f"Page title: {page_title}, URL: {current_url}")
 
-            # Aggressive scrolling to trigger lazy loading of job cards
-            for i in range(8):
-                driver.execute_script(f"window.scrollTo(0, document.body.scrollHeight * {(i + 1) / 8});")
-                time.sleep(1.5)
+            # Quick scroll to trigger lazy loading (replaces 8-step aggressive scroll)
             driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(3)
+            time.sleep(1)
             driver.execute_script("window.scrollTo(0, 0);")
-            time.sleep(2)
+            time.sleep(0.5)
 
             # Use JavaScript to extract all jobs from the page
             # Meta uses atomic CSS classes that change, so we target by href pattern
@@ -115,7 +129,7 @@ class MetaScraper:
                     """)
                     # Scroll down for more results
                     driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                    time.sleep(3)
+                    time.sleep(0.5)
                     # Click "Show more" / "See more jobs" button if present
                     try:
                         driver.execute_script("""
@@ -129,21 +143,29 @@ class MetaScraper:
                                 }
                             }
                         """)
-                        time.sleep(3)
                     except:
                         pass
-                    new_count = driver.execute_script("""
-                        var count = 0;
-                        var links = document.querySelectorAll('a[href]');
-                        for (var i = 0; i < links.length; i++) {
-                            var href = links[i].href || '';
-                            if (href.indexOf('/jobs/') !== -1 || href.indexOf('/job_details/') !== -1 ||
-                                href.indexOf('/profile/job_details/') !== -1 || href.indexOf('/v2/jobs/') !== -1) {
-                                count++;
+
+                    # Poll-based change detection: wait for new jobs to load (max 5s)
+                    new_count = prev_count
+                    for _ in range(25):
+                        time.sleep(0.2)
+                        new_count = driver.execute_script("""
+                            var count = 0;
+                            var links = document.querySelectorAll('a[href]');
+                            for (var i = 0; i < links.length; i++) {
+                                var href = links[i].href || '';
+                                if (href.indexOf('/jobs/') !== -1 || href.indexOf('/job_details/') !== -1 ||
+                                    href.indexOf('/profile/job_details/') !== -1 || href.indexOf('/v2/jobs/') !== -1) {
+                                    count++;
+                                }
                             }
-                        }
-                        return count;
-                    """)
+                            return count;
+                        """)
+                        if new_count != prev_count:
+                            break
+                    time.sleep(0.5)  # Brief settle after change detected
+
                     if new_count == prev_count:
                         logger.info("No more jobs to load after scrolling")
                         break

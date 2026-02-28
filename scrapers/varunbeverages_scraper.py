@@ -78,20 +78,17 @@ class VarunBeveragesScraper:
             logger.info(f"Starting {self.company_name} scraping from {self.url}")
             driver.get(self.url)
 
-            # Oracle HCM Cloud is slow to render - wait 15s
-            time.sleep(15)
-
-            wait = WebDriverWait(driver, 10)
-            short_wait = WebDriverWait(driver, 5)
-
-            # Wait for Oracle HCM specific elements
+            # Smart wait for Oracle HCM content instead of blind sleep(15)
             try:
-                wait.until(EC.presence_of_element_located((
+                WebDriverWait(driver, 15).until(EC.presence_of_element_located((
                     By.CSS_SELECTOR, "span.job-tile__title, div.job-tile__header-container, div.search-jobs-root-container, div.job-list-item__content"
                 )))
                 logger.info("Oracle HCM elements detected")
             except:
-                logger.warning("Timeout waiting for Oracle HCM listings, proceeding anyway")
+                logger.warning("Timeout waiting for Oracle HCM listings, using fallback sleep")
+                time.sleep(5)
+
+            short_wait = WebDriverWait(driver, 5)
 
             jobs = self._scrape_page(driver, short_wait)
             all_jobs.extend(jobs)
@@ -118,10 +115,31 @@ class VarunBeveragesScraper:
                             break
 
                         driver.execute_script("arguments[0].scrollIntoView();", show_more)
-                        time.sleep(1)
+                        time.sleep(0.5)
+
+                        # Capture current state for change detection
+                        old_first = driver.execute_script("""
+                            var card = document.querySelector('span.job-tile__title, div.job-tile__header-container, div.job-list-item__content');
+                            return card ? card.innerText.substring(0, 50) : '';
+                        """)
+                        old_count = len(driver.find_elements(By.CSS_SELECTOR, 'span.job-tile__title'))
+
                         driver.execute_script("arguments[0].click();", show_more)
                         logger.info(f"Clicked show more/next for page {page}")
-                        time.sleep(5)
+
+                        # Poll for content change instead of blind sleep(5)
+                        for _ in range(20):
+                            time.sleep(0.2)
+                            new_count = len(driver.find_elements(By.CSS_SELECTOR, 'span.job-tile__title'))
+                            if new_count != old_count:
+                                break
+                            new_first = driver.execute_script("""
+                                var card = document.querySelector('span.job-tile__title, div.job-tile__header-container, div.job-list-item__content');
+                                return card ? card.innerText.substring(0, 50) : '';
+                            """)
+                            if new_first and new_first != old_first:
+                                break
+                        time.sleep(0.5)  # Brief settle after change detected
 
                         new_jobs = self._scrape_page(driver, short_wait)
                         # Only add jobs not already seen
@@ -150,12 +168,11 @@ class VarunBeveragesScraper:
         scraped_ids = set()
 
         try:
-            # Scroll to load dynamic content - Oracle HCM needs aggressive scrolling
-            for _ in range(5):
-                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                time.sleep(2)
+            # Quick scroll to trigger lazy loading
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            time.sleep(1)
             driver.execute_script("window.scrollTo(0, 0);")
-            time.sleep(2)
+            time.sleep(0.5)
 
             # Strategy 1: Oracle HCM - span.job-tile__title (primary selector from DOM analysis)
             job_titles = []
@@ -640,7 +657,12 @@ class VarunBeveragesScraper:
             driver.execute_script("window.open('');")
             driver.switch_to.window(driver.window_handles[-1])
             driver.get(job_url)
-            time.sleep(5)
+            try:
+                WebDriverWait(driver, 10).until(EC.presence_of_element_located((
+                    By.CSS_SELECTOR, ".job-description, [class*='description'], main"
+                )))
+            except:
+                time.sleep(3)
 
             for sel in [".job-description", "[class*='description']", "main"]:
                 try:

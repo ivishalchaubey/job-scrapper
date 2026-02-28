@@ -1,3 +1,4 @@
+# STATUS: DEAD - Greenhouse board (boards.greenhouse.io/myntra) no longer exists (tested 2026-02-22)
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait

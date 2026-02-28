@@ -82,7 +82,7 @@ class GMMCOScraper:
                 driver.get(all_jobs_url)
                 time.sleep(12)
             else:
-                logger.info("No allJobs link found, scraping current page")
+                logger.info("No allJobs link found, scraping current careers page directly")
 
             # Scroll to load all job tiles
             for i in range(5):
@@ -94,6 +94,32 @@ class GMMCOScraper:
             # Extract jobs
             page_jobs = self._scrape_darwinbox_jobs(driver)
             jobs.extend(page_jobs)
+
+            # If no jobs found and we didn't navigate to allJobs, try clicking any
+            # visible "Jobs" or "Open Positions" buttons/tabs on the page
+            if not jobs and not all_jobs_url:
+                logger.info("No jobs found on initial page, trying to click job tabs/buttons...")
+                clicked = driver.execute_script("""
+                    var elements = document.querySelectorAll('a, button, span, div');
+                    for (var i = 0; i < elements.length; i++) {
+                        var text = (elements[i].innerText || '').trim().toLowerCase();
+                        if (text === 'jobs' || text === 'open positions' || text === 'open jobs' ||
+                            text === 'current openings' || text === 'view jobs' || text === 'career opportunities') {
+                            elements[i].click();
+                            return true;
+                        }
+                    }
+                    return false;
+                """)
+                if clicked:
+                    time.sleep(8)
+                    for i in range(3):
+                        driver.execute_script('window.scrollTo(0, document.body.scrollHeight);')
+                        time.sleep(2)
+                    driver.execute_script('window.scrollTo(0, 0);')
+                    time.sleep(2)
+                    page_jobs = self._scrape_darwinbox_jobs(driver)
+                    jobs.extend(page_jobs)
 
             logger.info(f"Successfully scraped {len(jobs)} total jobs from {self.company_name}")
 
@@ -108,23 +134,47 @@ class GMMCOScraper:
         return jobs
 
     def _find_all_jobs_link(self, driver):
-        """Find the allJobs or Open Jobs link on a DarwinBox careers page"""
+        """Find the allJobs or Open Jobs link on a DarwinBox careers page - broad search"""
         try:
             all_jobs_url = driver.execute_script("""
+                // Strategy 1: Check href patterns
                 var links = document.querySelectorAll('a[href]');
                 for (var i = 0; i < links.length; i++) {
                     var href = links[i].href || '';
-                    if (href.includes('allJobs') || href.includes('all-jobs') || href.includes('openJobs')) {
+                    if (href.includes('allJobs') || href.includes('all-jobs') || href.includes('openJobs') ||
+                        href.includes('allOpenings') || href.includes('openPositions')) {
                         return href;
                     }
                 }
+
+                // Strategy 2: Check link text (case-insensitive, partial match)
+                for (var i = 0; i < links.length; i++) {
+                    var text = (links[i].innerText || '').trim().toLowerCase();
+                    if (text.includes('open jobs') || text.includes('view all') || text.includes('all jobs') ||
+                        text.includes('view openings') || text.includes('current openings') ||
+                        text.includes('job openings') || text.includes('open positions') ||
+                        text.includes('career opportunities') || text.includes('browse jobs')) {
+                        return links[i].href;
+                    }
+                }
+
+                // Strategy 3: Check buttons and spans for clickable text
                 var allElements = document.querySelectorAll('a, button, span');
                 for (var i = 0; i < allElements.length; i++) {
                     var text = (allElements[i].innerText || '').trim().toLowerCase();
-                    if (text === 'open jobs' || text === 'view all jobs' || text === 'all jobs' || text === 'view all') {
+                    if (text === 'open jobs' || text === 'view all jobs' || text === 'all jobs' ||
+                        text === 'view all' || text === 'view openings' || text === 'current openings' ||
+                        text === 'job openings' || text === 'open positions') {
                         if (allElements[i].href) return allElements[i].href;
                     }
                 }
+
+                // Strategy 4: Look for candidatev2 allJobs pattern in any element
+                var allLinks2 = document.querySelectorAll('a[href*="candidatev2"]');
+                for (var i = 0; i < allLinks2.length; i++) {
+                    return allLinks2[i].href;
+                }
+
                 return null;
             """)
             return all_jobs_url
@@ -139,70 +189,66 @@ class GMMCOScraper:
         try:
             js_jobs = driver.execute_script("""
                 var results = [];
-                var tiles = document.querySelectorAll('div.job-tile, div.jobs-section, div[class*="job-card"], div[class*="job-item"], div[class*="job-listing"]');
-                if (tiles.length === 0) {
-                    var jobLinks = document.querySelectorAll('a[href*="jobDetails"]');
-                    for (var i = 0; i < jobLinks.length; i++) {
-                        var link = jobLinks[i];
-                        var container = link.closest('div[class]') || link.parentElement;
-                        var text = (container.innerText || '').trim();
-                        var title = text.split('\\n')[0].trim();
-                        if (title.length >= 3 && title !== 'View and Apply' && title !== 'Apply') {
-                            results.push({
-                                title: title,
-                                url: link.href,
-                                location: '',
-                                experience: '',
-                                employment_type: ''
-                            });
+                var seen = {};
+
+                // DarwinBox v1 (/ms/candidate/careers) uses links like /ms/candidate/careers/{hash}
+                var jobLinks = document.querySelectorAll('a[href]');
+                for (var i = 0; i < jobLinks.length; i++) {
+                    var link = jobLinks[i];
+                    var href = link.href || '';
+                    // Match /ms/candidate/careers/{hash} but exclude /careers itself, /careers/others
+                    var match = href.match(/\\/ms\\/candidate\\/careers\\/([a-f0-9]{10,})/);
+                    if (!match) {
+                        // Also try /jobDetails/ pattern for v2
+                        if (!href.includes('jobDetails')) continue;
+                    }
+                    // Skip non-job links
+                    if (href.includes('/others')) continue;
+
+                    var title = (link.innerText || '').trim().split('\\n')[0].trim();
+                    if (title.length < 3 || title === 'View and Apply' || title === 'Apply' || title === 'apply here') continue;
+                    if (seen[href]) continue;
+                    seen[href] = true;
+
+                    // Try to get location from sibling/parent elements
+                    var location = '';
+                    var row = link.closest('tr, div.job-row, div[class*="result"]');
+                    if (row) {
+                        var cells = row.querySelectorAll('td');
+                        if (cells.length >= 2) {
+                            for (var c = 1; c < cells.length; c++) {
+                                var cellText = (cells[c].innerText || '').trim();
+                                if (cellText.match(/India|Haryana|Gujarat|Maharashtra|Karnataka|Delhi|Tamil Nadu|Rajasthan|Odisha|Jharkhand|Chhattisgarh|Andhra Pradesh|Telangana|Kerala|Punjab|West Bengal|Uttar Pradesh|Bengaluru|Bangalore|Mumbai|Chennai|Hyderabad|Pune|Gurgaon|Noida|Kolkata/i)) {
+                                    location = cellText;
+                                }
+                            }
                         }
                     }
-                    return results;
+
+                    results.push({
+                        title: title,
+                        url: href,
+                        location: location,
+                        experience: '',
+                        employment_type: ''
+                    });
                 }
 
-                for (var i = 0; i < tiles.length; i++) {
-                    var tile = tiles[i];
-                    var text = (tile.innerText || '').trim();
-                    if (text.length < 5) continue;
-
-                    var titleEl = tile.querySelector('span.job-title, .title-section, h3, h4, [class*="title"]');
-                    var title = titleEl ? titleEl.innerText.trim() : text.split('\\n')[0].trim();
-
-                    var linkEl = tile.querySelector('a[href*="jobDetails"]');
-                    var url = linkEl ? linkEl.href : '';
-
-                    var lines = text.split('\\n');
-                    var location = '';
-                    var experience = '';
-                    var employment_type = '';
-                    for (var j = 0; j < lines.length; j++) {
-                        var line = lines[j].trim();
-                        if (line.includes('India') || line.includes('Haryana') || line.includes('Gujarat') ||
-                            line.includes('Maharashtra') || line.includes('Karnataka') || line.includes('Goa') ||
-                            line.includes('Delhi') || line.includes('Tamil Nadu') || line.includes('Rajasthan') ||
-                            line.includes('Odisha') || line.includes('Jharkhand') || line.includes('Chhattisgarh') ||
-                            line.includes('Andhra Pradesh') || line.includes('Telangana') || line.includes('Kerala') ||
-                            line.includes('Punjab') || line.includes('West Bengal') || line.includes('Uttar Pradesh') ||
-                            line.includes('Bengaluru') || line.includes('Bangalore') || line.includes('Mumbai') ||
-                            line.includes('Chennai') || line.includes('Hyderabad') || line.includes('Pune')) {
-                            location = line;
+                // Fallback: try div.job-tile selectors for DarwinBox v2
+                if (results.length === 0) {
+                    var tiles = document.querySelectorAll('div.job-tile, div[class*="job-card"], div[class*="job-item"]');
+                    for (var i = 0; i < tiles.length; i++) {
+                        var tile = tiles[i];
+                        var text = (tile.innerText || '').trim();
+                        if (text.length < 5) continue;
+                        var titleEl = tile.querySelector('span.job-title, .title-section, h3, h4, [class*="title"]');
+                        var title = titleEl ? titleEl.innerText.trim() : text.split('\\n')[0].trim();
+                        var linkEl = tile.querySelector('a[href*="jobDetails"], a[href*="/careers/"]');
+                        var url = linkEl ? linkEl.href : '';
+                        if (title.length >= 3 && title !== 'View and Apply' && !seen[url || title]) {
+                            seen[url || title] = true;
+                            results.push({title: title, url: url, location: '', experience: '', employment_type: ''});
                         }
-                        if (line.includes('Years') || line.includes('years')) {
-                            experience = line;
-                        }
-                        if (line === 'Permanent' || line === 'Contract' || line === 'Probation' || line === 'Intern' || line === 'Full Time' || line === 'Part Time') {
-                            employment_type = line;
-                        }
-                    }
-
-                    if (title.length >= 3 && title !== 'View and Apply') {
-                        results.push({
-                            title: title,
-                            url: url,
-                            location: location,
-                            experience: experience,
-                            employment_type: employment_type
-                        });
                     }
                 }
                 return results;
@@ -254,6 +300,11 @@ class GMMCOScraper:
                     })
             else:
                 logger.warning("No job tiles found on DarwinBox page")
+                try:
+                    body_text = driver.execute_script('return document.body ? document.body.innerText.substring(0, 500) : ""')
+                    logger.info(f"Page body preview: {body_text}")
+                except:
+                    pass
 
         except Exception as e:
             logger.error(f"DarwinBox extraction error: {str(e)}")

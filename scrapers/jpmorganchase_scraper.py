@@ -1,12 +1,6 @@
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
+import requests
 import hashlib
 import time
-from datetime import datetime
 from pathlib import Path
 
 from core.logging import setup_logger
@@ -14,284 +8,282 @@ from config.scraper import SCRAPE_TIMEOUT, HEADLESS_MODE, FETCH_FULL_JOB_DETAILS
 
 logger = setup_logger('jpmorganchase_scraper')
 
-CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0.7559.133_fresh/chromedriver-mac-arm64/chromedriver'
 
 class JPMorganChaseScraper:
     def __init__(self):
         self.company_name = 'JPMorgan Chase'
         self.url = 'https://jpmc.fa.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/requisitions?location=India'
-    
-    def setup_driver(self):
-        """Set up Chrome driver with options"""
-        chrome_options = Options()
-        if HEADLESS_MODE:
-            chrome_options.add_argument('--headless=new')
-        chrome_options.add_argument('--no-sandbox')
-        chrome_options.add_argument('--disable-dev-shm-usage')
-        chrome_options.add_argument('--disable-gpu')
-        chrome_options.add_argument('--window-size=1920,1080')
-        chrome_options.add_argument('--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36')
-        chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-        chrome_options.add_experimental_option('excludeSwitches', ['enable-logging'])
-        
-        try:
-            # Install and get the correct chromedriver path
-            driver_path = CHROMEDRIVER_PATH
-            logger.info(f"ChromeDriver installed at: {driver_path}")
-            
-            # Fix for macOS ARM - ensure we use the actual chromedriver binary
-            if 'chromedriver-mac-arm64' in driver_path and not driver_path.endswith('chromedriver'):
-                import os
-                driver_dir = os.path.dirname(driver_path)
-                actual_driver = os.path.join(driver_dir, 'chromedriver')
-                if os.path.exists(actual_driver):
-                    driver_path = actual_driver
-                    logger.info(f"Using corrected path: {driver_path}")
-            
-            service = Service(driver_path)
-            driver = webdriver.Chrome(service=service, options=chrome_options)
-            return driver
-        except Exception as e:
-            logger.error(f"ChromeDriver setup failed: {str(e)}")
-            # Fallback: try without service specification
-            logger.info("Attempting fallback driver setup...")
-            driver = webdriver.Chrome(options=chrome_options)
-            return driver
-    
+        self.api_url = 'https://jpmc.fa.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions'
+        self.site_number = 'CX_1001'
+        self.page_size = 25
+        self.job_detail_base_url = 'https://jpmc.fa.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/job'
+
     def generate_external_id(self, job_id, company):
         """Generate stable external ID"""
         unique_string = f"{company}_{job_id}"
         return hashlib.md5(unique_string.encode()).hexdigest()
-    
+
     def scrape(self, max_pages=MAX_PAGES_TO_SCRAPE):
-        """Scrape jobs from JPMorgan Chase careers page with pagination support"""
-        jobs = []
-        driver = None
-        
+        """Scrape jobs from JPMorgan Chase Oracle Cloud REST API with pagination"""
+        all_jobs = []
+
         try:
-            logger.info(f"Starting scrape for {self.company_name}")
-            driver = self.setup_driver()
-            driver.get(self.url)
-            
-            # Wait for page to load
-            wait = WebDriverWait(driver, SCRAPE_TIMEOUT)
-            time.sleep(5)  # Wait for dynamic content
-            
-            current_page = 1
-            
-            while current_page <= max_pages:
-                logger.info(f"Scraping page {current_page} of {max_pages}")
-                
-                # Scrape current page
-                page_jobs = self._scrape_page(driver, wait)
-                jobs.extend(page_jobs)
-                
-                logger.info(f"Scraped {len(page_jobs)} jobs from page {current_page}")
-                
-                # Try to navigate to next page
-                if current_page < max_pages:
-                    if not self._go_to_next_page(driver, current_page):
-                        logger.info("No more pages available")
-                        break
-                    time.sleep(3)  # Wait for next page to load
-                
+            logger.info(f"Starting scrape for {self.company_name} via Oracle Cloud REST API")
+
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+                'Accept': 'application/json',
+            }
+
+            current_page = 0
+            total_jobs_count = None
+
+            while current_page < max_pages:
+                offset = current_page * self.page_size
+                logger.info(f"Fetching page {current_page + 1} (offset={offset})")
+
+                finder = (
+                    f'findReqs;siteNumber={self.site_number},'
+                    f'facetsList=LOCATIONS;WORK_LOCATIONS;WORKPLACE_TYPES;TITLES;CATEGORIES;ORGANIZATIONS;POSTING_DATES;FLEX_FIELDS,'
+                    f'limit={self.page_size},offset={offset},'
+                    f'lastSelectedFacet=LOCATIONS,'
+                    f'selectedLocationsFacet=300000000289360'
+                )
+
+                params = {
+                    'onlyData': 'true',
+                    'expand': 'requisitionList.secondaryLocations,flexFieldsFacet.values',
+                    'finder': finder,
+                }
+
+                try:
+                    response = requests.get(
+                        self.api_url,
+                        params=params,
+                        headers=headers,
+                        timeout=30
+                    )
+                    response.raise_for_status()
+                    data = response.json()
+                except requests.exceptions.RequestException as e:
+                    logger.error(f"API request failed on page {current_page + 1}: {str(e)}")
+                    # Try without location filter as fallback
+                    if current_page == 0:
+                        logger.info("Retrying without location facet...")
+                        all_jobs = self._scrape_without_location_filter(headers, max_pages)
+                        return all_jobs
+                    break
+                except ValueError as e:
+                    logger.error(f"Failed to parse JSON on page {current_page + 1}: {str(e)}")
+                    break
+
+                items = data.get('items', [])
+                if not items:
+                    logger.warning(f"No items in API response on page {current_page + 1}")
+                    break
+
+                item = items[0]
+
+                if total_jobs_count is None:
+                    total_jobs_count = item.get('TotalJobsCount', 0)
+                    logger.info(f"Total jobs available: {total_jobs_count}")
+
+                requisitions = item.get('requisitionList', [])
+                if not requisitions:
+                    logger.info(f"No more requisitions on page {current_page + 1}")
+                    break
+
+                logger.info(f"Page {current_page + 1}: {len(requisitions)} requisitions")
+
+                for req in requisitions:
+                    try:
+                        job_data = self._parse_requisition(req)
+                        if job_data:
+                            all_jobs.append(job_data)
+                    except Exception as e:
+                        logger.error(f"Error parsing requisition: {str(e)}")
+                        continue
+
+                if total_jobs_count and offset + len(requisitions) >= total_jobs_count:
+                    logger.info("Reached end of available jobs")
+                    break
+
                 current_page += 1
-            
-            logger.info(f"Successfully scraped {len(jobs)} total jobs from {self.company_name}")
-            
+                time.sleep(1)
+
+            logger.info(f"Successfully scraped {len(all_jobs)} total jobs from {self.company_name}")
+
         except Exception as e:
             logger.error(f"Error scraping {self.company_name}: {str(e)}")
-            raise
-        
-        finally:
-            if driver:
-                driver.quit()
-        
-        return jobs
-    
-    def _go_to_next_page(self, driver, current_page):
-        """Navigate to the next page"""
-        try:
-            next_page_num = current_page + 1
-            next_page_selectors = [
-                (By.XPATH, f'//a[text()="{next_page_num}"]'),
-                (By.CSS_SELECTOR, f'a[aria-label="Page {next_page_num}"]'),
-                (By.XPATH, '//a[@aria-label="Next page"]'),
-                (By.XPATH, '//button[contains(text(), "Next")]'),
-                (By.CSS_SELECTOR, 'a.pagination-next'),
-                (By.XPATH, '//button[@aria-label="Go to next page"]'),
-            ]
-            
-            for selector_type, selector_value in next_page_selectors:
-                try:
-                    next_button = driver.find_element(selector_type, selector_value)
-                    driver.execute_script("arguments[0].scrollIntoView();", next_button)
-                    time.sleep(1)
-                    next_button.click()
-                    logger.info(f"Clicked next page button using selector: {selector_value}")
-                    return True
-                except:
-                    continue
-            
-            logger.warning("Could not find next page button")
-            return False
-                
-        except Exception as e:
-            logger.error(f"Error navigating to next page: {str(e)}")
-            return False
-    
-    def _scrape_page(self, driver, wait):
-        """Scrape jobs from current page"""
-        jobs = []
-        time.sleep(2)  # Wait for page content
-        
-        # Try multiple selectors for job listings
-        job_cards = []
-        selectors = [
-            (By.CSS_SELECTOR, 'div.job-card'),
-            (By.CSS_SELECTOR, 'div[class*="job"]'),
-            (By.XPATH, '//div[contains(@class, "result")]'),
-            (By.TAG_NAME, 'article'),
-        ]
-        
-        for selector_type, selector_value in selectors:
+
+        return all_jobs
+
+    def _scrape_without_location_filter(self, headers, max_pages):
+        """Fallback: scrape without location facet and filter India jobs client-side"""
+        all_jobs = []
+        current_page = 0
+        total_jobs_count = None
+
+        while current_page < max_pages:
+            offset = current_page * self.page_size
+            logger.info(f"Fetching page {current_page + 1} without location filter (offset={offset})")
+
+            finder = (
+                f'findReqs;siteNumber={self.site_number},'
+                f'facetsList=LOCATIONS;WORK_LOCATIONS;WORKPLACE_TYPES;TITLES;CATEGORIES;ORGANIZATIONS;POSTING_DATES;FLEX_FIELDS,'
+                f'limit={self.page_size},offset={offset},'
+                f'keyword=India'
+            )
+
+            params = {
+                'onlyData': 'true',
+                'expand': 'requisitionList.secondaryLocations,flexFieldsFacet.values',
+                'finder': finder,
+            }
+
             try:
-                wait.until(EC.presence_of_element_located((selector_type, selector_value)))
-                job_cards = driver.find_elements(selector_type, selector_value)
-                if job_cards and len(job_cards) > 0:
-                    logger.info(f"Found {len(job_cards)} job cards using selector: {selector_value}")
-                    break
-            except:
-                continue
-        
-        if not job_cards:
-            logger.warning("No job cards found")
-            return jobs
-        
-        # Extract from job cards
-        for idx, card in enumerate(job_cards):
-            try:
-                card_text = card.text
-                if not card_text or len(card_text) < 10:
-                    continue
-                
-                # Get job title
-                job_title = ""
-                job_link = ""
-                try:
-                    title_link = card.find_element(By.TAG_NAME, 'a')
-                    job_title = title_link.text.strip()
-                    job_link = title_link.get_attribute('href')
-                except:
-                    job_title = card_text.split('\n')[0].strip()
-                
-                if not job_title or len(job_title) < 3:
-                    continue
-                
-                # Extract Job ID
-                job_id = f"jpmorganchase_{idx}"
-                if job_link:
-                    job_id = hashlib.md5(job_link.encode()).hexdigest()[:12]
-                
-                # Extract location
-                location = ""
-                city = ""
-                state = ""
-                lines = card_text.split('\n')
-                for line in lines:
-                    if any(city_name in line for city_name in ['Mumbai', 'Delhi', 'Bangalore', 'Hyderabad', 'Chennai', 'Pune', 'Kolkata', 'India']):
-                        location = line.strip()
-                        city, state, _ = self.parse_location(location)
-                        break
-                
-                job_data = {
-                    'external_id': self.generate_external_id(job_id, self.company_name),
-                    'company_name': self.company_name,
-                    'title': job_title,
-                    'description': '',
-                    'location': location,
-                    'city': city,
-                    'state': state,
-                    'country': 'India',
-                    'employment_type': '',
-                    'department': '',
-                    'apply_url': job_link if job_link else self.url,
-                    'posted_date': '',
-                    'job_function': '',
-                    'experience_level': '',
-                    'salary_range': '',
-                    'remote_type': '',
-                    'status': 'active'
-                }
-                
-                # Fetch full details if enabled
-                if FETCH_FULL_JOB_DETAILS and job_link:
-                    full_details = self._fetch_job_details(driver, job_link)
-                    job_data.update(full_details)
-                
-                jobs.append(job_data)
-                
+                response = requests.get(
+                    self.api_url,
+                    params=params,
+                    headers=headers,
+                    timeout=30
+                )
+                response.raise_for_status()
+                data = response.json()
             except Exception as e:
-                logger.error(f"Error extracting job {idx}: {str(e)}")
-                continue
-        
-        return jobs
-    
-    def _fetch_job_details(self, driver, job_url):
-        """Fetch full job details by visiting the job page"""
-        details = {}
-        
-        try:
-            # Open job in new tab to avoid losing search results page
-            original_window = driver.current_window_handle
-            driver.execute_script("window.open('');")
-            driver.switch_to.window(driver.window_handles[-1])
-            
-            driver.get(job_url)
-            time.sleep(3)
-            
-            # Extract description
-            try:
-                desc_selectors = [
-                    (By.CSS_SELECTOR, 'div[class*="description"]'),
-                    (By.XPATH, "//h2[contains(text(), 'Description')]/following-sibling::div"),
-                    (By.CSS_SELECTOR, 'div.job-description'),
-                ]
-                
-                for selector_type, selector_value in desc_selectors:
-                    try:
-                        desc_elem = driver.find_element(selector_type, selector_value)
-                        if desc_elem and desc_elem.text.strip():
-                            details['description'] = desc_elem.text.strip()[:2000]
-                            break
-                    except:
-                        continue
-            except:
-                pass
-            
-            # Close tab and return to search results
-            driver.close()
-            driver.switch_to.window(original_window)
-            
-        except Exception as e:
-            logger.error(f"Error fetching job details: {str(e)}")
-            # Make sure we return to original window
-            try:
-                if len(driver.window_handles) > 1:
-                    driver.close()
-                    driver.switch_to.window(driver.window_handles[0])
-            except:
-                pass
-        
-        return details
-    
+                logger.error(f"Fallback API request failed: {str(e)}")
+                break
+
+            items = data.get('items', [])
+            if not items:
+                break
+
+            item = items[0]
+
+            if total_jobs_count is None:
+                total_jobs_count = item.get('TotalJobsCount', 0)
+                logger.info(f"Total jobs available (keyword India): {total_jobs_count}")
+
+            requisitions = item.get('requisitionList', [])
+            if not requisitions:
+                break
+
+            logger.info(f"Page {current_page + 1}: {len(requisitions)} requisitions")
+
+            for req in requisitions:
+                try:
+                    job_data = self._parse_requisition(req)
+                    if job_data:
+                        all_jobs.append(job_data)
+                except Exception as e:
+                    logger.error(f"Error parsing requisition: {str(e)}")
+                    continue
+
+            if total_jobs_count and offset + len(requisitions) >= total_jobs_count:
+                break
+
+            current_page += 1
+            time.sleep(1)
+
+        return all_jobs
+
+    def _parse_requisition(self, req):
+        """Parse a single requisition from the Oracle API response into a job dict"""
+        job_id = req.get('Id', '')
+        title = req.get('Title', '')
+
+        if not title or not job_id:
+            return None
+
+        apply_url = f"{self.job_detail_base_url}/{job_id}"
+
+        primary_location = req.get('PrimaryLocation', '')
+        city, state, country = self.parse_location(primary_location)
+
+        secondary_locs = req.get('secondaryLocations', [])
+        secondary_loc_str = ''
+        if secondary_locs:
+            secondary_loc_str = '; '.join(
+                loc.get('Name', '') for loc in secondary_locs if loc.get('Name')
+            )
+
+        description_parts = []
+        short_desc = req.get('ShortDescriptionStr', '')
+        if short_desc:
+            description_parts.append(short_desc)
+        ext_quals = req.get('ExternalQualificationsStr', '')
+        if ext_quals:
+            description_parts.append(f"Qualifications: {ext_quals}")
+        ext_resp = req.get('ExternalResponsibilitiesStr', '')
+        if ext_resp:
+            description_parts.append(f"Responsibilities: {ext_resp}")
+        description = '\n\n'.join(description_parts)[:3000]
+
+        workplace_type = req.get('WorkplaceType', '') or ''
+        remote_type = ''
+        if 'remote' in workplace_type.lower():
+            remote_type = 'Remote'
+        elif 'hybrid' in workplace_type.lower():
+            remote_type = 'Hybrid'
+        elif workplace_type:
+            remote_type = 'On-site'
+
+        employment_type = ''
+        worker_type = req.get('WorkerType', '') or ''
+        contract_type = req.get('ContractType', '') or ''
+        if worker_type:
+            employment_type = worker_type
+        elif contract_type:
+            employment_type = contract_type
+
+        department = req.get('Department', '') or req.get('Organization', '') or ''
+        job_function = req.get('JobFunction', '') or req.get('JobFamily', '') or ''
+
+        posted_date = req.get('PostedDate', '') or ''
+
+        job_data = {
+            'external_id': self.generate_external_id(str(job_id), self.company_name),
+            'company_name': self.company_name,
+            'title': title,
+            'description': description,
+            'location': primary_location,
+            'city': city,
+            'state': state,
+            'country': country if country else 'India',
+            'employment_type': employment_type,
+            'department': department,
+            'apply_url': apply_url,
+            'posted_date': posted_date,
+            'job_function': job_function,
+            'experience_level': '',
+            'salary_range': '',
+            'remote_type': remote_type,
+            'status': 'active'
+        }
+
+        return job_data
+
     def parse_location(self, location_str):
         """Parse location string into city, state, country"""
         if not location_str:
             return '', '', 'India'
-        
+
         parts = [p.strip() for p in location_str.split(',')]
         city = parts[0] if len(parts) > 0 else ''
         state = parts[1] if len(parts) > 1 else ''
-        
-        return city, state, 'India'
+        country = parts[2] if len(parts) > 2 else ''
+
+        if not country and 'India' in location_str:
+            country = 'India'
+
+        return city, state, country
+
+
+if __name__ == "__main__":
+    scraper = JPMorganChaseScraper()
+    jobs = scraper.scrape()
+    print(f"\nTotal jobs found: {len(jobs)}")
+    for i, job in enumerate(jobs[:10], 1):
+        print(f"{i}. {job['title']} | {job['location']} | {job['posted_date']}")
+    if len(jobs) > 10:
+        print(f"... and {len(jobs) - 10} more")

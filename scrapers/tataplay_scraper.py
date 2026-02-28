@@ -42,11 +42,13 @@ class TataPlayScraper:
                 offset = current_page * self.page_size
                 logger.info(f"Fetching page {current_page + 1} (offset={offset})")
 
+                # Oracle HCM finder: fetch all jobs without location filter
+                # (Tata Play is India-only so no filtering needed)
                 finder = (
                     f'findReqs;siteNumber={self.site_number},'
                     f'facetsList=LOCATIONS;WORK_LOCATIONS;WORKPLACE_TYPES;TITLES;CATEGORIES;ORGANIZATIONS;POSTING_DATES;FLEX_FIELDS,'
                     f'limit={self.page_size},offset={offset},'
-                    f'lastSelectedFacet=LOCATIONS'
+                    f'sortBy=POSTING_DATES_DESC'
                 )
 
                 params = {
@@ -81,6 +83,9 @@ class TataPlayScraper:
                 if total_jobs_count is None:
                     total_jobs_count = item.get('TotalJobsCount', 0)
                     logger.info(f"Total jobs available: {total_jobs_count}")
+                    if total_jobs_count == 0:
+                        logger.info("No jobs currently available on the portal")
+                        break
 
                 requisitions = item.get('requisitionList', [])
                 if not requisitions:

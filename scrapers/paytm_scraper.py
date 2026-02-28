@@ -9,6 +9,11 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+try:
+    import requests as req_lib
+except ImportError:
+    req_lib = None
+
 from core.logging import setup_logger
 from config.scraper import SCRAPE_TIMEOUT, HEADLESS_MODE, FETCH_FULL_JOB_DETAILS, MAX_PAGES_TO_SCRAPE
 
@@ -20,7 +25,8 @@ class PaytmScraper:
     def __init__(self):
         self.company_name = 'Paytm'
         self.url = 'https://jobs.lever.co/paytm'
-    
+        self.api_url = 'https://api.lever.co/v0/postings/paytm?mode=json'
+
     def setup_driver(self):
         """Set up Chrome driver with options"""
         chrome_options = Options()
@@ -30,368 +36,307 @@ class PaytmScraper:
         chrome_options.add_argument('--disable-dev-shm-usage')
         chrome_options.add_argument('--disable-gpu')
         chrome_options.add_argument('--window-size=1920,1080')
-        chrome_options.add_argument('--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36')
+        chrome_options.add_argument('--user-agent=AppleWebKit/537.36')
         chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-        chrome_options.add_experimental_option('excludeSwitches', ['enable-logging'])
-        
+        chrome_options.add_experimental_option('useAutomationExtension', False)
+        chrome_options.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
+
         try:
-            # Install and get the correct chromedriver path
-            driver_path = CHROMEDRIVER_PATH
-            logger.info(f"ChromeDriver installed at: {driver_path}")
-            
-            # Fix for macOS ARM - ensure we use the actual chromedriver binary
-            if 'chromedriver-mac-arm64' in driver_path and not driver_path.endswith('chromedriver'):
-                import os
-                driver_dir = os.path.dirname(driver_path)
-                actual_driver = os.path.join(driver_dir, 'chromedriver')
-                if os.path.exists(actual_driver):
-                    driver_path = actual_driver
-                    logger.info(f"Using corrected path: {driver_path}")
-            
-            service = Service(driver_path)
-            driver = webdriver.Chrome(service=service, options=chrome_options)
-            return driver
-        except Exception as e:
-            logger.error(f"ChromeDriver setup failed: {str(e)}")
-            # Fallback: try without service specification
-            logger.info("Attempting fallback driver setup...")
             driver = webdriver.Chrome(options=chrome_options)
-            return driver
-    
+        except Exception as e:
+            logger.warning(f"Auto-detect failed: {str(e)}, trying explicit path")
+            service = Service(CHROMEDRIVER_PATH)
+            driver = webdriver.Chrome(service=service, options=chrome_options)
+
+        driver.execute_cdp_cmd('Network.setUserAgentOverride', {
+            "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+        })
+        driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+        return driver
+
     def generate_external_id(self, job_id, company):
         """Generate stable external ID"""
         unique_string = f"{company}_{job_id}"
         return hashlib.md5(unique_string.encode()).hexdigest()
-    
-    def scrape(self, max_pages=MAX_PAGES_TO_SCRAPE):
-        """Scrape jobs from Paytm careers page with pagination support"""
-        jobs = []
-        driver = None
-        
-        try:
-            logger.info(f"Starting scrape for {self.company_name}")
-            driver = self.setup_driver()
-            driver.get(self.url)
-            
-            # Wait for page to load - Lever pages are relatively fast
-            wait = WebDriverWait(driver, SCRAPE_TIMEOUT)
-            time.sleep(10)  # Wait for Lever page to fully render
 
-            # Scroll to trigger lazy loading on Lever
-            logger.info("Scrolling to load all Lever postings...")
+    def scrape(self, max_pages=MAX_PAGES_TO_SCRAPE):
+        """Scrape jobs from Paytm via Lever JSON API (primary) or Selenium (fallback)."""
+        # Primary method: Lever JSON API via requests
+        if req_lib is not None:
+            try:
+                api_jobs = self._scrape_via_api(max_pages)
+                if api_jobs:
+                    logger.info(f"Lever API method returned {len(api_jobs)} jobs")
+                    return api_jobs
+                else:
+                    logger.warning("Lever API returned 0 jobs, falling back to Selenium")
+            except Exception as e:
+                logger.warning(f"Lever API method failed: {str(e)}, falling back to Selenium")
+        else:
+            logger.warning("requests library not available, using Selenium only")
+
+        # Fallback: Selenium-based scraping
+        return self._scrape_via_selenium(max_pages)
+
+    def _scrape_via_api(self, max_pages=MAX_PAGES_TO_SCRAPE):
+        """Scrape Paytm jobs using Lever JSON API directly."""
+        all_jobs = []
+
+        headers = {
+            'Accept': 'application/json',
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        }
+
+        try:
+            logger.info(f"Fetching all Paytm postings from Lever API: {self.api_url}")
+            response = req_lib.get(self.api_url, headers=headers, timeout=30)
+            response.raise_for_status()
+            postings = response.json()
+
+            if not isinstance(postings, list):
+                logger.error(f"Unexpected API response type: {type(postings)}")
+                return all_jobs
+
+            logger.info(f"Lever API returned {len(postings)} total postings")
+
+            # Filter for India-based jobs
+            india_keywords = ['india', 'noida', 'delhi', 'mumbai', 'bangalore', 'bengaluru',
+                              'pune', 'hyderabad', 'gurgaon', 'gurugram', 'chennai', 'kolkata',
+                              'jaipur', 'ahmedabad', 'lucknow', 'chandigarh', 'indore',
+                              'uttar pradesh', 'maharashtra', 'karnataka', 'telangana',
+                              'tamil nadu', 'haryana', 'rajasthan', 'west bengal']
+
+            for posting in postings:
+                try:
+                    title = posting.get('text', '')
+                    if not title:
+                        continue
+
+                    categories = posting.get('categories', {})
+                    location = categories.get('location', '')
+                    country = posting.get('country', '')
+
+                    # Filter for India
+                    location_lower = location.lower()
+                    is_india = (
+                        country == 'IN' or
+                        any(kw in location_lower for kw in india_keywords)
+                    )
+                    if not is_india:
+                        continue
+
+                    job_id = posting.get('id', '')
+                    if not job_id:
+                        job_id = f"paytm_{hashlib.md5(title.encode()).hexdigest()[:12]}"
+
+                    department = categories.get('department', '')
+                    team = categories.get('team', '')
+                    commitment = categories.get('commitment', '')
+                    workplace_type = posting.get('workplaceType', '')
+                    hosted_url = posting.get('hostedUrl', '')
+                    apply_url = posting.get('applyUrl', hosted_url)
+                    created_at = posting.get('createdAt', 0)
+
+                    # Parse createdAt timestamp (milliseconds)
+                    posted_date = ''
+                    if created_at:
+                        try:
+                            posted_date = datetime.fromtimestamp(created_at / 1000).strftime('%Y-%m-%d')
+                        except Exception:
+                            pass
+
+                    # Map workplaceType to remote_type
+                    remote_type = ''
+                    if workplace_type == 'onsite':
+                        remote_type = 'On-site'
+                    elif workplace_type == 'remote':
+                        remote_type = 'Remote'
+                    elif workplace_type == 'hybrid':
+                        remote_type = 'Hybrid'
+
+                    # Map commitment to employment_type
+                    employment_type = ''
+                    if commitment:
+                        commitment_lower = commitment.lower()
+                        if 'full' in commitment_lower:
+                            employment_type = 'Full Time'
+                        elif 'part' in commitment_lower:
+                            employment_type = 'Part Time'
+                        elif 'intern' in commitment_lower:
+                            employment_type = 'Intern'
+                        elif 'contract' in commitment_lower:
+                            employment_type = 'Contract'
+                        else:
+                            employment_type = commitment
+
+                    location_parts = self.parse_location(location)
+
+                    job_data = {
+                        'external_id': self.generate_external_id(job_id, self.company_name),
+                        'company_name': self.company_name,
+                        'title': title,
+                        'description': '',
+                        'location': location,
+                        'city': location_parts.get('city', ''),
+                        'state': location_parts.get('state', ''),
+                        'country': location_parts.get('country', 'India'),
+                        'employment_type': employment_type,
+                        'department': department if department else team,
+                        'apply_url': apply_url if apply_url else self.url,
+                        'posted_date': posted_date,
+                        'job_function': team if department and team else '',
+                        'experience_level': '',
+                        'salary_range': '',
+                        'remote_type': remote_type,
+                        'status': 'active'
+                    }
+
+                    all_jobs.append(job_data)
+                    logger.info(f"Added job: {title} | {location}")
+
+                except Exception as e:
+                    logger.error(f"Error processing posting: {str(e)}")
+                    continue
+
+        except Exception as e:
+            logger.error(f"Lever API request failed: {str(e)}")
+
+        logger.info(f"Total India jobs from Lever API: {len(all_jobs)}")
+        return all_jobs
+
+    def _scrape_via_selenium(self, max_pages=MAX_PAGES_TO_SCRAPE):
+        """Fallback: scrape Paytm jobs from Lever page using Selenium."""
+        driver = None
+        all_jobs = []
+
+        try:
+            driver = self.setup_driver()
+            logger.info(f"Starting {self.company_name} Selenium scraping from {self.url}")
+
+            driver.get(self.url)
+            time.sleep(10)
+
+            # Scroll to load all Lever postings
             for i in range(5):
                 driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
                 time.sleep(2)
             driver.execute_script("window.scrollTo(0, 0);")
             time.sleep(2)
 
-            current_page = 1
-            
-            while current_page <= max_pages:
-                logger.info(f"Scraping page {current_page} of {max_pages}")
-                
-                # Scrape current page
-                page_jobs = self._scrape_page(driver, wait)
-                jobs.extend(page_jobs)
-                
-                logger.info(f"Scraped {len(page_jobs)} jobs from page {current_page}")
-                
-                # Try to navigate to next page
-                if current_page < max_pages:
-                    if not self._go_to_next_page(driver, current_page):
-                        logger.info("No more pages available")
-                        break
-                    time.sleep(3)  # Wait for next page to load
-                
-                current_page += 1
-            
-            logger.info(f"Successfully scraped {len(jobs)} total jobs from {self.company_name}")
-            
-        except Exception as e:
-            logger.error(f"Error scraping {self.company_name}: {str(e)}")
-            raise
-        
-        finally:
-            if driver:
-                driver.quit()
-        
-        return jobs
-    
-    def _go_to_next_page(self, driver, current_page):
-        """Navigate to the next page"""
-        try:
-            next_page_num = current_page + 1
-            next_page_selectors = [
-                (By.XPATH, f'//a[text()="{next_page_num}"]'),
-                (By.CSS_SELECTOR, f'a[aria-label="Page {next_page_num}"]'),
-                (By.XPATH, '//a[@aria-label="Next page"]'),
-                (By.XPATH, '//button[contains(text(), "Next")]'),
-                (By.CSS_SELECTOR, 'a.pagination-next'),
-            ]
-            
-            for selector_type, selector_value in next_page_selectors:
-                try:
-                    next_button = driver.find_element(selector_type, selector_value)
-                    driver.execute_script("arguments[0].scrollIntoView();", next_button)
-                    time.sleep(1)
-                    next_button.click()
-                    logger.info(f"Clicked next page button")
-                    return True
-                except:
-                    continue
-            
-            logger.warning("Could not find next page button")
-            return False
-                
-        except Exception as e:
-            logger.error(f"Error navigating to next page: {str(e)}")
-            return False
-    
-    def _scrape_page(self, driver, wait):
-        """Scrape jobs from Lever platform page"""
-        jobs = []
-        time.sleep(2)  # Wait for page content
+            # Extract jobs from Lever page using JavaScript
+            js_jobs = driver.execute_script("""
+                var results = [];
+                var postings = document.querySelectorAll('.posting');
+                for (var i = 0; i < postings.length; i++) {
+                    var posting = postings[i];
+                    var titleEl = posting.querySelector('.posting-title h5, h5');
+                    var title = titleEl ? titleEl.innerText.trim() : '';
+                    var linkEl = posting.querySelector('a.posting-title, a[href*="lever.co"]');
+                    var url = linkEl ? linkEl.href : '';
+                    if (!title && linkEl) title = (linkEl.innerText || '').trim().split('\\n')[0];
+                    var locEl = posting.querySelector('.posting-categories .sort-by-time, .location');
+                    var location = locEl ? locEl.innerText.trim() : '';
+                    var deptEl = posting.querySelector('.posting-categories .department');
+                    var department = deptEl ? deptEl.innerText.trim() : '';
+                    var text = (posting.innerText || '').trim();
+                    var empType = '';
+                    if (text.includes('FULL TIME')) empType = 'Full Time';
+                    else if (text.includes('INTERN')) empType = 'Intern';
+                    else if (text.includes('CONTRACT')) empType = 'Contract';
+                    if (title.length >= 3) {
+                        results.push({
+                            title: title, url: url, location: location,
+                            department: department, employment_type: empType
+                        });
+                    }
+                }
+                return results;
+            """)
 
-        # LEVER-SPECIFIC SELECTORS - Lever uses .posting as the main job card
-        job_cards = []
-        lever_selectors = [
-            (By.CSS_SELECTOR, '.posting'),
-            (By.CSS_SELECTOR, '[class*="posting"]'),
-            (By.CSS_SELECTOR, 'a[href*="/jobs/"]'),
-        ]
-
-        for selector_type, selector_value in lever_selectors:
-            try:
-                wait.until(EC.presence_of_element_located((selector_type, selector_value)))
-                job_cards = driver.find_elements(selector_type, selector_value)
-                if job_cards and len(job_cards) > 0:
-                    logger.info(f"Found {len(job_cards)} Lever postings using selector: {selector_value}")
-                    break
-            except:
-                continue
-
-        if job_cards:
-            for idx, card in enumerate(job_cards):
-                try:
-                    card_text = card.text
-                    if not card_text or len(card_text) < 5:
+            if js_jobs:
+                logger.info(f"Selenium found {len(js_jobs)} Lever postings")
+                seen_titles = set()
+                for idx, job_data in enumerate(js_jobs):
+                    title = job_data.get('title', '')
+                    if not title or title in seen_titles:
                         continue
+                    seen_titles.add(title)
 
-                    # Lever title: .posting-title h5 or just the link text
-                    job_title = ""
-                    job_link = ""
+                    url = job_data.get('url', '')
+                    location = job_data.get('location', '')
 
-                    # Try Lever-specific title selector
-                    try:
-                        title_elem = card.find_element(By.CSS_SELECTOR, '.posting-title h5')
-                        job_title = title_elem.text.strip()
-                    except:
-                        pass
-
-                    if not job_title:
-                        try:
-                            title_elem = card.find_element(By.CSS_SELECTOR, 'h5')
-                            job_title = title_elem.text.strip()
-                        except:
-                            pass
-
-                    if not job_title:
-                        try:
-                            title_link = card.find_element(By.TAG_NAME, 'a')
-                            job_title = title_link.text.strip()
-                        except:
-                            job_title = card_text.split('\n')[0].strip()
-
-                    # Get link - Lever postings have links to /jobs/ paths
-                    try:
-                        link_elem = card.find_element(By.CSS_SELECTOR, '.posting-btn-submit a, a[href*="/jobs/"], a')
-                        job_link = link_elem.get_attribute('href')
-                    except:
-                        pass
-                    if not job_link and card.tag_name == 'a':
-                        job_link = card.get_attribute('href')
-
-                    if not job_title or len(job_title) < 3:
-                        continue
-
-                    # Extract Job ID from Lever URL
                     job_id = f"paytm_{idx}"
-                    if job_link:
-                        # Lever URLs look like: /jobs/<uuid>
-                        parts = job_link.rstrip('/').split('/')
-                        if len(parts) > 0:
-                            job_id = parts[-1]
+                    if url and 'lever.co' in url:
+                        parts = url.rstrip('/').split('/')
+                        job_id = parts[-1] if parts else job_id
 
-                    # Lever location: .posting-categories .sort-by-time
-                    location = ""
-                    try:
-                        loc_elem = card.find_element(By.CSS_SELECTOR, '.posting-categories .sort-by-time')
-                        location = loc_elem.text.strip()
-                    except:
-                        pass
-                    if not location:
-                        try:
-                            loc_elem = card.find_element(By.CSS_SELECTOR, '.posting-categories span:last-child')
-                            location = loc_elem.text.strip()
-                        except:
-                            pass
-                    if not location:
-                        lines = card_text.split('\n')
-                        for line in lines:
-                            if any(c in line for c in ['Noida', 'Delhi', 'Mumbai', 'Bangalore', 'Bengaluru', 'India', 'Pune', 'Gurgaon', 'Remote']):
-                                location = line.strip()
-                                break
+                    city, state, _ = self.parse_location_tuple(location)
 
-                    city, state, _ = self.parse_location(location)
-
-                    # Lever department: .posting-categories .department
-                    department = ""
-                    try:
-                        dept_elem = card.find_element(By.CSS_SELECTOR, '.posting-categories .department')
-                        department = dept_elem.text.strip()
-                    except:
-                        pass
-
-                    job_data = {
+                    all_jobs.append({
                         'external_id': self.generate_external_id(job_id, self.company_name),
                         'company_name': self.company_name,
-                        'title': job_title,
+                        'title': title,
                         'description': '',
                         'location': location,
                         'city': city,
                         'state': state,
                         'country': 'India',
-                        'employment_type': '',
-                        'department': department,
-                        'apply_url': job_link if job_link else self.url,
+                        'employment_type': job_data.get('employment_type', ''),
+                        'department': job_data.get('department', ''),
+                        'apply_url': url if url else self.url,
                         'posted_date': '',
                         'job_function': '',
                         'experience_level': '',
                         'salary_range': '',
                         'remote_type': '',
                         'status': 'active'
-                    }
+                    })
 
-                    if FETCH_FULL_JOB_DETAILS and job_link:
-                        full_details = self._fetch_job_details(driver, job_link)
-                        job_data.update(full_details)
+            logger.info(f"Total jobs scraped via Selenium: {len(all_jobs)}")
+            return all_jobs
 
-                    jobs.append(job_data)
-
-                except Exception as e:
-                    logger.error(f"Error extracting Lever posting {idx}: {str(e)}")
-                    continue
-
-        # FALLBACK: Link-based extraction for Lever
-        if not jobs:
-            logger.info("Trying link-based fallback for Paytm Lever page...")
-            all_links = driver.find_elements(By.TAG_NAME, 'a')
-            seen_titles = set()
-            for idx, link in enumerate(all_links):
-                try:
-                    href = link.get_attribute('href') or ''
-                    text = link.text.strip()
-                    if not text or len(text) < 5 or len(text) > 200:
-                        continue
-                    # Lever job links contain /jobs/ in the path
-                    if '/jobs/' in href.lower() or 'lever.co' in href.lower():
-                        if text in seen_titles:
-                            continue
-                        seen_titles.add(text)
-                        exclude_words = ['home', 'about', 'contact', 'login', 'sign', 'privacy', 'terms', 'apply']
-                        if any(w in text.lower() for w in exclude_words):
-                            continue
-
-                        job_id = href.rstrip('/').split('/')[-1] if '/' in href else f"paytm_link_{idx}"
-
-                        location = ''
-                        try:
-                            parent = link.find_element(By.XPATH, '..')
-                            parent_text = parent.text
-                            for city_name in ['Noida', 'Delhi', 'Mumbai', 'Bangalore', 'Bengaluru', 'Pune', 'Gurgaon', 'India']:
-                                if city_name in parent_text:
-                                    location = city_name
-                                    break
-                        except:
-                            pass
-
-                        city, state, _ = self.parse_location(location)
-                        jobs.append({
-                            'external_id': self.generate_external_id(job_id, self.company_name),
-                            'company_name': self.company_name,
-                            'title': text,
-                            'description': '',
-                            'location': location,
-                            'city': city,
-                            'state': state,
-                            'country': 'India',
-                            'employment_type': '',
-                            'department': '',
-                            'apply_url': href if href.startswith('http') else self.url,
-                            'posted_date': '',
-                            'job_function': '',
-                            'experience_level': '',
-                            'salary_range': '',
-                            'remote_type': '',
-                            'status': 'active'
-                        })
-                except:
-                    continue
-            if jobs:
-                logger.info(f"Link-based fallback found {len(jobs)} jobs")
-
-        return jobs
-    
-    def _fetch_job_details(self, driver, job_url):
-        """Fetch full job details by visiting the job page"""
-        details = {}
-        
-        try:
-            # Open job in new tab to avoid losing search results page
-            original_window = driver.current_window_handle
-            driver.execute_script("window.open('');")
-            driver.switch_to.window(driver.window_handles[-1])
-            
-            driver.get(job_url)
-            time.sleep(3)
-            
-            # Extract description
-            try:
-                desc_elem = driver.find_element(By.CSS_SELECTOR, 'div[class*="description"]')
-                details['description'] = desc_elem.text.strip()[:2000]
-            except:
-                pass
-            
-            # Extract department
-            try:
-                dept_elem = driver.find_element(By.CSS_SELECTOR, 'span[class*="department"]')
-                details['department'] = dept_elem.text.strip()
-            except:
-                pass
-            
-            # Close tab and return to search results
-            driver.close()
-            driver.switch_to.window(original_window)
-            
         except Exception as e:
-            logger.error(f"Error fetching job details: {str(e)}")
-            # Make sure we return to original window
-            try:
-                if len(driver.window_handles) > 1:
-                    driver.close()
-                    driver.switch_to.window(driver.window_handles[0])
-            except:
-                pass
-        
-        return details
-    
+            logger.error(f"Error during Selenium scraping: {str(e)}")
+            return all_jobs
+        finally:
+            if driver:
+                driver.quit()
+                logger.info("Browser closed")
+
     def parse_location(self, location_str):
-        """Parse location string into city, state, country"""
+        """Parse location string into dict with city, state, country."""
+        result = {'city': '', 'state': '', 'country': 'India'}
+        if not location_str:
+            return result
+
+        location_str = location_str.strip()
+        parts = [p.strip() for p in location_str.split(',')]
+
+        if len(parts) >= 1:
+            result['city'] = parts[0]
+        if len(parts) >= 2:
+            result['state'] = parts[1]
+        if len(parts) >= 3:
+            result['country'] = parts[2]
+
+        if 'India' in location_str or 'IND' in location_str:
+            result['country'] = 'India'
+
+        return result
+
+    def parse_location_tuple(self, location_str):
+        """Parse location string into (city, state, country) tuple."""
         if not location_str:
             return '', '', 'India'
-        
         parts = [p.strip() for p in location_str.split(',')]
         city = parts[0] if len(parts) > 0 else ''
         state = parts[1] if len(parts) > 1 else ''
-        
         return city, state, 'India'
+
+
+if __name__ == "__main__":
+    scraper = PaytmScraper()
+    jobs = scraper.scrape()
+    print(f"\nTotal jobs found: {len(jobs)}")
+    for job in jobs[:10]:
+        print(f"- {job['title']} | {job['location']} | {job['department']}")

@@ -19,7 +19,10 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 class AppleScraper:
     def __init__(self):
         self.company_name = 'Apple'
-        self.url = 'https://jobs.apple.com/en-in/search?location=india'
+        # NOTE: The en-in locale auto-filters for India jobs.
+        # Do NOT add ?location=india — that param format doesn't match
+        # Apple's internal location IDs and returns 0 results.
+        self.url = 'https://jobs.apple.com/en-in/search'
 
     def setup_driver(self):
         """Set up Chrome driver with options"""
@@ -67,40 +70,40 @@ class AppleScraper:
             driver = self.setup_driver()
             driver.get(self.url)
 
-            wait = WebDriverWait(driver, 5)
-            short_wait = WebDriverWait(driver, 5)
+            wait = WebDriverWait(driver, 15)
 
-            # Wait for page to load and dynamic content to render
-            logger.info("Waiting for page to load...")
-            time.sleep(12)
+            # Wait for the job list accordion to appear
+            logger.info("Waiting for job list to load...")
+            try:
+                wait.until(EC.presence_of_element_located((By.ID, 'search-job-list')))
+                logger.info("Job list found")
+            except Exception as e:
+                logger.warning(f"Job list not found via ID, trying fallback: {str(e)}")
+                # Fallback: wait for any job title link
+                wait.until(EC.presence_of_element_located((
+                    By.CSS_SELECTOR, 'a.link-inline[href*="/details/"]'
+                )))
+                logger.info("Job links found via fallback selector")
 
-            # Scroll to trigger lazy-loaded content
-            logger.info("Scrolling to load dynamic content...")
-            for _ in range(5):
-                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                time.sleep(2)
-            driver.execute_script("window.scrollTo(0, 0);")
+            # Short wait for rendering to complete
             time.sleep(2)
 
-            # Log current URL to detect redirects
+            # Log current URL and total results
             current_url = driver.current_url
             logger.info(f"Current URL after load: {current_url}")
 
-            # Try to wait for search results with short wait and Apple-specific selectors
             try:
-                short_wait.until(EC.presence_of_element_located((
-                    By.CSS_SELECTOR, 'a[href*="/en-in/details/"], table#jobs-list tr, div[class*="table-row"], a.table-col-1'
-                )))
-                logger.info("Job listing container found")
-            except Exception as e:
-                logger.warning(f"Could not find job listing container: {str(e)}")
+                count_el = driver.find_element(By.ID, 'search-result-count')
+                logger.info(f"Total results displayed: {count_el.text}")
+            except Exception:
+                pass
 
             current_page = 1
 
             while current_page <= max_pages:
                 logger.info(f"Scraping page {current_page} of {max_pages}")
 
-                page_jobs = self._scrape_page(driver, wait, short_wait)
+                page_jobs = self._scrape_page(driver)
                 jobs.extend(page_jobs)
 
                 logger.info(f"Scraped {len(page_jobs)} jobs from page {current_page}, total so far: {len(jobs)}")
@@ -109,14 +112,21 @@ class AppleScraper:
                     try:
                         page_text = driver.find_element(By.TAG_NAME, 'body').text[:500]
                         logger.warning(f"No jobs found on first page. Page text preview: {page_text}")
-                    except:
+                    except Exception:
                         pass
 
                 if current_page < max_pages:
-                    if not self._go_to_next_page(driver, current_page):
+                    if not self._go_to_next_page(driver):
                         logger.info("No more pages available")
                         break
-                    time.sleep(3)
+                    # Wait for the job list to update after page change
+                    time.sleep(2)
+                    try:
+                        wait.until(EC.presence_of_element_located((
+                            By.CSS_SELECTOR, '#search-job-list > li'
+                        )))
+                    except Exception:
+                        pass
 
                 current_page += 1
 
@@ -134,308 +144,141 @@ class AppleScraper:
 
         return jobs
 
-    def _go_to_next_page(self, driver, current_page):
-        """Navigate to the next page"""
+    def _go_to_next_page(self, driver):
+        """Navigate to the next page using Apple's pagination controls"""
         try:
-            next_page_selectors = [
-                (By.XPATH, '//button[contains(text(), "Next Page")]'),
-                (By.CSS_SELECTOR, 'button[aria-label="Next Page"]'),
-                (By.XPATH, '//a[contains(text(), "Next")]'),
-                (By.CSS_SELECTOR, 'a[aria-label="Next"]'),
-                (By.XPATH, '//button[contains(@class, "next")]'),
-                (By.CSS_SELECTOR, '[class*="pagination"] a:last-child'),
-                (By.CSS_SELECTOR, 'a[class*="next"]'),
-            ]
+            # Apple uses rc-pagination with a "Next Page" button
+            next_button = driver.find_element(
+                By.CSS_SELECTOR, 'button[aria-label="Next Page"]'
+            )
 
-            for selector_type, selector_value in next_page_selectors:
-                try:
-                    next_button = driver.find_element(selector_type, selector_value)
+            # Check if the button is disabled (last page)
+            is_disabled = next_button.get_attribute('disabled')
+            if is_disabled:
+                logger.info("Next page button is disabled - no more pages")
+                return False
 
-                    is_disabled = next_button.get_attribute('disabled')
-                    if is_disabled:
-                        logger.info("Next page button is disabled - no more pages")
-                        return False
+            # Record current first job title to detect page change
+            try:
+                first_job = driver.find_element(
+                    By.CSS_SELECTOR, '#search-job-list > li:first-child a.link-inline'
+                )
+                old_title = first_job.text.strip()
+            except Exception:
+                old_title = None
 
-                    driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", next_button)
-                    time.sleep(1)
+            # Click the next page button
+            driver.execute_script(
+                "arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});",
+                next_button
+            )
+            time.sleep(0.5)
 
+            try:
+                next_button.click()
+            except Exception:
+                driver.execute_script("arguments[0].click();", next_button)
+
+            logger.info("Clicked next page button")
+
+            # Poll for page content to change (faster than blind sleep)
+            if old_title:
+                for _ in range(20):
+                    time.sleep(0.3)
                     try:
-                        next_button.click()
-                    except:
-                        driver.execute_script("arguments[0].click();", next_button)
+                        new_first = driver.find_element(
+                            By.CSS_SELECTOR,
+                            '#search-job-list > li:first-child a.link-inline'
+                        )
+                        if new_first.text.strip() != old_title:
+                            logger.info("Page content changed - new page loaded")
+                            break
+                    except Exception:
+                        continue
+            else:
+                time.sleep(3)
 
-                    logger.info(f"Clicked next page button")
-                    time.sleep(2)
-                    return True
-                except:
-                    continue
-
-            logger.warning("Could not find next page button")
-            return False
+            return True
 
         except Exception as e:
-            logger.error(f"Error navigating to next page: {str(e)}")
+            logger.warning(f"Could not find or click next page button: {str(e)}")
             return False
 
-    def _scrape_page(self, driver, wait, short_wait):
-        """Scrape jobs from current page"""
+    def _scrape_page(self, driver):
+        """Scrape jobs from current page using JavaScript for speed and accuracy.
+
+        Apple's job page uses an accordion list (ul#search-job-list) where each
+        li contains:
+          - a.link-inline: job title link (href has /details/{jobId}/...)
+          - span.team-name: department/team
+          - span.job-posted-date: posting date
+          - span.table--advanced-search__location-sub: location
+        """
         jobs = []
 
-        # Wait for job listings to load
-        time.sleep(3)
-
         try:
-            short_wait.until(lambda d: len(d.find_elements(By.TAG_NAME, 'a')) > 10)
-            logger.info("Page loaded with links")
-        except Exception as e:
-            logger.warning(f"Page may not have loaded properly: {str(e)}")
+            # Extract all jobs from the current page via JavaScript
+            raw_jobs = driver.execute_script("""
+                var jobs = [];
+                var items = document.querySelectorAll('#search-job-list > li');
+                items.forEach(function(item) {
+                    var titleLink = item.querySelector('a.link-inline[href*="/details/"]');
+                    if (!titleLink) return;
 
-        try:
-            # PRIORITY: Apple-specific selectors
-            apple_priority_selectors = [
-                (By.CSS_SELECTOR, 'a[href*="/en-in/details/"]'),
-                (By.CSS_SELECTOR, 'table#jobs-list tr'),
-                (By.CSS_SELECTOR, 'div[class*="table-row"]'),
-                (By.CSS_SELECTOR, 'a.table-col-1'),
-            ]
+                    var teamEl = item.querySelector('.team-name');
+                    var dateEl = item.querySelector('.job-posted-date');
+                    var locEl = item.querySelector('.table--advanced-search__location-sub');
 
-            main_job_links = []
-            seen_urls = set()
-
-            for sel_type, sel_val in apple_priority_selectors:
-                try:
-                    found = driver.find_elements(sel_type, sel_val)
-                    for link in found:
-                        try:
-                            link_text = link.text.strip()
-                            link_href = link.get_attribute('href')
-                            if not link_text or not link_href or len(link_text) < 3:
-                                continue
-                            if link_href in seen_urls:
-                                continue
-                            if any(skip in link_text for skip in ['Submit CV', 'Add to Favourites', 'Share this']):
-                                continue
-                            main_job_links.append({
-                                'title': link_text,
-                                'apply_url': link_href,
-                                'element': link
-                            })
-                            seen_urls.add(link_href)
-                        except:
-                            continue
-                    if main_job_links:
-                        logger.info(f"Found {len(main_job_links)} jobs using Apple priority selector: {sel_val}")
-                        break
-                except:
-                    continue
-
-            # Secondary Apple selectors
-            if not main_job_links:
-                apple_selectors = [
-                    (By.CSS_SELECTOR, 'a[href*="#jobs/"]'),
-                    (By.CSS_SELECTOR, 'table#jobs-table tbody tr a'),
-                    (By.CSS_SELECTOR, '[role="row"] a'),
-                    (By.CSS_SELECTOR, 'tbody tr td a[href*="details"]'),
-                    (By.CSS_SELECTOR, '[class*="table-col-1"] a'),
-                    (By.CSS_SELECTOR, 'table[id*="jobs"] tr a'),
-                    (By.CSS_SELECTOR, '[class*="table-row"] a'),
-                    (By.CSS_SELECTOR, 'a[href*="/details/"]'),
-                ]
-
-                for sel_type, sel_val in apple_selectors:
-                    try:
-                        found = driver.find_elements(sel_type, sel_val)
-                        for link in found:
-                            try:
-                                link_text = link.text.strip()
-                                link_href = link.get_attribute('href')
-                                if not link_text or not link_href or len(link_text) < 3:
-                                    continue
-                                if link_href in seen_urls:
-                                    continue
-                                if any(skip in link_text for skip in ['Submit CV', 'Add to Favourites', 'Share this']):
-                                    continue
-                                main_job_links.append({
-                                    'title': link_text,
-                                    'apply_url': link_href,
-                                    'element': link
-                                })
-                                seen_urls.add(link_href)
-                            except:
-                                continue
-                        if main_job_links:
-                            logger.info(f"Found {len(main_job_links)} jobs using Apple selector: {sel_val}")
-                            break
-                    except:
-                        continue
-
-            # Fallback: get all links and filter for job detail links
-            if not main_job_links:
-                all_links = driver.find_elements(By.TAG_NAME, 'a')
-                logger.info(f"Found {len(all_links)} total links on page, filtering for jobs...")
-
-                for link in all_links:
-                    try:
-                        link_text = link.text.strip()
-                        link_href = link.get_attribute('href')
-
-                        if not link_text or not link_href:
-                            continue
-
-                        if '/details/' not in link_href and '#jobs/' not in link_href and '/en-in/details/' not in link_href:
-                            continue
-
-                        if any(skip in link_text for skip in ['Submit CV', 'Add to Favourites', 'Share this']):
-                            continue
-
-                        if link_href in seen_urls:
-                            continue
-
-                        if len(link_text) > 3:
-                            main_job_links.append({
-                                'title': link_text,
-                                'apply_url': link_href,
-                                'element': link
-                            })
-                            seen_urls.add(link_href)
-
-                    except Exception as e:
-                        continue
-
-            # JS-based link extraction fallback
-            if not main_job_links:
-                logger.info("Trying JS-based link extraction fallback")
-                js_links = driver.execute_script("""
-                    var results = [];
-                    document.querySelectorAll('a[href]').forEach(function(link) {
-                        var text = (link.innerText || '').trim();
-                        var href = link.href || '';
-                        if (text.length > 3 && text.length < 200 && href.length > 10) {
-                            var lhref = href.toLowerCase();
-                            if (lhref.includes('/job') || lhref.includes('/position') || lhref.includes('/career') ||
-                                lhref.includes('/opening') || lhref.includes('/detail') || lhref.includes('/requisition') ||
-                                lhref.includes('/vacancy') || lhref.includes('/role')) {
-                                results.push({title: text.split('\\n')[0].trim(), url: href});
-                            }
-                        }
+                    jobs.push({
+                        title: titleLink.textContent.trim(),
+                        url: titleLink.href,
+                        ariaLabel: titleLink.getAttribute('aria-label') || '',
+                        team: teamEl ? teamEl.textContent.trim() : '',
+                        posted: dateEl ? dateEl.textContent.trim() : '',
+                        location: locEl ? locEl.textContent.trim() : ''
                     });
-                    return results;
-                """)
-                if js_links:
-                    seen = set()
-                    for link_data in js_links:
-                        title = link_data.get('title', '')
-                        url = link_data.get('url', '')
-                        if not title or not url or len(title) < 3 or title in seen:
-                            continue
-                        exclude = ['home', 'about', 'contact', 'login', 'sign', 'privacy', 'terms', 'cookie', 'blog']
-                        if any(w in title.lower() for w in exclude):
-                            continue
-                        seen.add(title)
-                        job_id = hashlib.md5(url.encode()).hexdigest()[:12]
-                        jobs.append({
-                            'external_id': self.generate_external_id(job_id, self.company_name),
-                            'company_name': self.company_name,
-                            'title': title,
-                            'description': '',
-                            'location': '',
-                            'city': '',
-                            'state': '',
-                            'country': 'India',
-                            'employment_type': '',
-                            'department': '',
-                            'apply_url': url,
-                            'posted_date': '',
-                            'job_function': '',
-                            'experience_level': '',
-                            'salary_range': '',
-                            'remote_type': '',
-                            'status': 'active'
-                        })
-                    if jobs:
-                        logger.info(f"JS fallback found {len(jobs)} jobs")
-                        return jobs
+                });
+                return jobs;
+            """)
 
-            logger.info(f"Found {len(main_job_links)} job links on page")
+            if not raw_jobs:
+                logger.warning("JS extraction returned no jobs, trying Selenium fallback")
+                raw_jobs = self._scrape_page_selenium(driver)
 
-            # Extract details for each job
-            for idx, job_info in enumerate(main_job_links):
+            logger.info(f"Found {len(raw_jobs)} jobs on current page")
+
+            seen_urls = set()
+            for job_data in raw_jobs:
                 try:
-                    job_title = job_info['title']
-                    job_link = job_info['apply_url']
+                    title = job_data.get('title', '').strip()
+                    url = job_data.get('url', '').strip()
 
-                    job_id = f"apple_{idx}_{int(time.time())}"
-                    try:
-                        title_parts = job_title.split()
-                        for part in reversed(title_parts):
-                            if part.isdigit() and len(part) >= 8:
-                                job_id = part
-                                break
+                    if not title or not url or len(title) < 3:
+                        continue
+                    if url in seen_urls:
+                        continue
+                    seen_urls.add(url)
 
-                        if job_id.startswith('apple_') and '/details/' in job_link:
-                            url_parts = job_link.split('/details/')
-                            if len(url_parts) > 1:
-                                job_id = url_parts[1].split('/')[0].split('?')[0]
+                    # Extract job ID from URL: /details/{jobId}/...
+                    job_id = self._extract_job_id(url, job_data.get('ariaLabel', ''))
 
-                        if job_id.startswith('apple_') and '/en-in/details/' in job_link:
-                            url_parts = job_link.split('/en-in/details/')
-                            if len(url_parts) > 1:
-                                job_id = url_parts[1].split('/')[0].split('?')[0]
-                    except Exception as e:
-                        logger.debug(f"Could not extract job ID: {str(e)}")
+                    # Parse location
+                    location = job_data.get('location', '')
+                    city, state, country = self.parse_location(location)
 
-                    # Clean up title (remove job ID if it's at the end)
-                    clean_title = job_title
-                    try:
-                        title_words = job_title.split()
-                        if title_words and title_words[-1].isdigit():
-                            clean_title = ' '.join(title_words[:-1])
-                    except:
-                        pass
-
-                    # Try to get location from the job element's parent
-                    location = ""
-                    city = ""
-                    state = ""
-
-                    try:
-                        job_elem = job_info['element']
-                        parent = job_elem.find_element(By.XPATH, './ancestor::*[contains(@class, "result") or contains(@role, "listitem") or self::tr][1]')
-
-                        location_selectors = [
-                            'span[class*="location"]',
-                            'div[class*="location"]',
-                            'p[class*="location"]',
-                            'td[class*="location"]',
-                            'td:nth-child(2)',
-                        ]
-
-                        for loc_sel in location_selectors:
-                            try:
-                                loc_elem = parent.find_element(By.CSS_SELECTOR, loc_sel)
-                                location = loc_elem.text.strip()
-                                if location:
-                                    city, state, _ = self.parse_location(location)
-                                    break
-                            except:
-                                continue
-                    except Exception as e:
-                        logger.debug(f"Could not extract location: {str(e)}")
-
-                    # Build job data
-                    job_data = {
+                    job = {
                         'external_id': self.generate_external_id(job_id, self.company_name),
                         'company_name': self.company_name,
-                        'title': clean_title,
+                        'title': title,
                         'description': '',
                         'location': location if location else 'India',
                         'city': city,
                         'state': state,
-                        'country': 'India',
+                        'country': country,
                         'employment_type': '',
-                        'department': '',
-                        'apply_url': job_link,
-                        'posted_date': '',
+                        'department': job_data.get('team', ''),
+                        'apply_url': url,
+                        'posted_date': job_data.get('posted', ''),
                         'job_function': '',
                         'experience_level': '',
                         'salary_range': '',
@@ -443,24 +286,102 @@ class AppleScraper:
                         'status': 'active'
                     }
 
-                    if FETCH_FULL_JOB_DETAILS and job_link:
-                        try:
-                            full_details = self._fetch_job_details(driver, job_link)
-                            job_data.update(full_details)
-                        except Exception as e:
-                            logger.error(f"Error fetching full details for {clean_title}: {str(e)}")
-
-                    jobs.append(job_data)
-                    logger.debug(f"Successfully extracted job {idx + 1}: {clean_title}")
+                    jobs.append(job)
 
                 except Exception as e:
-                    logger.error(f"Error extracting job {idx}: {str(e)}")
+                    logger.error(f"Error processing job: {str(e)}")
                     continue
 
         except Exception as e:
-            logger.error(f"Error finding job links: {str(e)}")
+            logger.error(f"Error scraping page: {str(e)}")
 
         return jobs
+
+    def _scrape_page_selenium(self, driver):
+        """Fallback: scrape jobs using Selenium element queries"""
+        raw_jobs = []
+        try:
+            job_items = driver.find_elements(By.CSS_SELECTOR, '#search-job-list > li')
+            for item in job_items:
+                try:
+                    title_link = item.find_element(
+                        By.CSS_SELECTOR, 'a.link-inline[href*="/details/"]'
+                    )
+                    title = title_link.text.strip()
+                    url = title_link.get_attribute('href')
+                    aria_label = title_link.get_attribute('aria-label') or ''
+
+                    team = ''
+                    try:
+                        team_el = item.find_element(By.CSS_SELECTOR, '.team-name')
+                        team = team_el.text.strip()
+                    except Exception:
+                        pass
+
+                    posted = ''
+                    try:
+                        date_el = item.find_element(By.CSS_SELECTOR, '.job-posted-date')
+                        posted = date_el.text.strip()
+                    except Exception:
+                        pass
+
+                    location = ''
+                    try:
+                        loc_el = item.find_element(
+                            By.CSS_SELECTOR, '.table--advanced-search__location-sub'
+                        )
+                        location = loc_el.text.strip()
+                    except Exception:
+                        pass
+
+                    if title and url:
+                        raw_jobs.append({
+                            'title': title,
+                            'url': url,
+                            'ariaLabel': aria_label,
+                            'team': team,
+                            'posted': posted,
+                            'location': location,
+                        })
+                except Exception:
+                    continue
+        except Exception as e:
+            logger.error(f"Selenium fallback failed: {str(e)}")
+
+        return raw_jobs
+
+    def _extract_job_id(self, url, aria_label=''):
+        """Extract Apple job ID from the detail URL or aria-label.
+
+        URL format: /en-in/details/{jobId}/{slug}?team=...
+        aria-label format: 'Job Title {jobId}'
+        """
+        job_id = ''
+
+        # Try from URL first (most reliable)
+        try:
+            if '/details/' in url:
+                parts = url.split('/details/')
+                if len(parts) > 1:
+                    # jobId is right after /details/, e.g. 200314122 or 200645931-1052
+                    job_id = parts[1].split('/')[0].split('?')[0]
+        except Exception:
+            pass
+
+        # Fallback: extract from aria-label (e.g. "IN-Technical Specialist 200314122")
+        if not job_id and aria_label:
+            try:
+                parts = aria_label.strip().split()
+                if parts and parts[-1].replace('-', '').isdigit():
+                    job_id = parts[-1]
+            except Exception:
+                pass
+
+        # Last resort: hash the URL
+        if not job_id:
+            job_id = hashlib.md5(url.encode()).hexdigest()[:12]
+
+        return job_id
 
     def _fetch_job_details(self, driver, job_url):
         """Fetch full job details by visiting the job page"""
@@ -490,7 +411,7 @@ class AppleScraper:
                         if desc_text and len(desc_text) > 50:
                             details['description'] = desc_text[:2000]
                             break
-                    except:
+                    except Exception:
                         continue
             except Exception as e:
                 logger.debug(f"Could not extract description: {str(e)}")
@@ -512,9 +433,9 @@ class AppleScraper:
                             details['city'] = city
                             details['state'] = state
                             break
-                    except:
+                    except Exception:
                         continue
-            except:
+            except Exception:
                 pass
 
             # Extract team/department
@@ -531,9 +452,9 @@ class AppleScraper:
                         if team_text and len(team_text) > 2:
                             details['department'] = team_text
                             break
-                    except:
+                    except Exception:
                         continue
-            except:
+            except Exception:
                 pass
 
             driver.close()
@@ -545,7 +466,7 @@ class AppleScraper:
                 if len(driver.window_handles) > 1:
                     driver.close()
                     driver.switch_to.window(driver.window_handles[0])
-            except:
+            except Exception:
                 pass
 
         return details
@@ -553,6 +474,10 @@ class AppleScraper:
     def parse_location(self, location_str):
         """Parse location string into city, state, country"""
         if not location_str:
+            return '', '', 'India'
+
+        # Handle "Various locations within India" pattern
+        if 'various locations' in location_str.lower():
             return '', '', 'India'
 
         parts = [p.strip() for p in location_str.split(',')]

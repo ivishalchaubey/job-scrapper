@@ -22,7 +22,7 @@ class CitigroupScraper:
         self.url = 'https://jobs.citi.com/search-jobs/India/287/1/2/6252001/19x9434/-2x2371/50/2'
     
     def setup_driver(self):
-        """Set up Chrome driver with options"""
+        """Set up Chrome driver with anti-detection options"""
         chrome_options = Options()
         if HEADLESS_MODE:
             chrome_options.add_argument('--headless=new')
@@ -30,33 +30,27 @@ class CitigroupScraper:
         chrome_options.add_argument('--disable-dev-shm-usage')
         chrome_options.add_argument('--disable-gpu')
         chrome_options.add_argument('--window-size=1920,1080')
-        chrome_options.add_argument('--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36')
+        chrome_options.add_argument('--user-agent=AppleWebKit/537.36')
         chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-        chrome_options.add_experimental_option('excludeSwitches', ['enable-logging'])
-        
+        chrome_options.add_experimental_option('useAutomationExtension', False)
+        chrome_options.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
+
         try:
-            # Install and get the correct chromedriver path
-            driver_path = CHROMEDRIVER_PATH
-            logger.info(f"ChromeDriver installed at: {driver_path}")
-            
-            # Fix for macOS ARM - ensure we use the actual chromedriver binary
-            if 'chromedriver-mac-arm64' in driver_path and not driver_path.endswith('chromedriver'):
-                import os
-                driver_dir = os.path.dirname(driver_path)
-                actual_driver = os.path.join(driver_dir, 'chromedriver')
-                if os.path.exists(actual_driver):
-                    driver_path = actual_driver
-                    logger.info(f"Using corrected path: {driver_path}")
-            
-            service = Service(driver_path)
-            driver = webdriver.Chrome(service=service, options=chrome_options)
-            return driver
+            import os
+            if os.path.exists(CHROMEDRIVER_PATH):
+                service = Service(CHROMEDRIVER_PATH)
+                driver = webdriver.Chrome(service=service, options=chrome_options)
+            else:
+                driver = webdriver.Chrome(options=chrome_options)
         except Exception as e:
-            logger.error(f"ChromeDriver setup failed: {str(e)}")
-            # Fallback: try without service specification
-            logger.info("Attempting fallback driver setup...")
+            logger.warning(f"Primary driver setup failed: {str(e)}, trying fallback")
             driver = webdriver.Chrome(options=chrome_options)
-            return driver
+
+        driver.execute_cdp_cmd('Network.setUserAgentOverride', {
+            "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+        })
+        driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+        return driver
     
     def generate_external_id(self, job_id, company):
         """Generate stable external ID"""
@@ -141,73 +135,57 @@ class CitigroupScraper:
             return False
     
     def _scrape_page(self, driver, wait):
-        """Scrape jobs from current page"""
+        """Scrape jobs from current page using NAS/Radancy platform selectors"""
         jobs = []
-        time.sleep(2)  # Wait for page content
-        
-        # Try multiple selectors for job listings
-        job_cards = []
-        selectors = [
-            (By.CSS_SELECTOR, 'div.job-card'),
-            (By.CSS_SELECTOR, 'div[class*="job"]'),
-            (By.XPATH, '//div[contains(@class, "result")]'),
-            (By.TAG_NAME, 'article'),
-        ]
-        
-        for selector_type, selector_value in selectors:
-            try:
-                wait.until(EC.presence_of_element_located((selector_type, selector_value)))
-                job_cards = driver.find_elements(selector_type, selector_value)
-                if job_cards and len(job_cards) > 0:
-                    logger.info(f"Found {len(job_cards)} job cards using selector: {selector_value}")
-                    break
-            except:
-                continue
-        
-        if not job_cards:
-            logger.warning("No job cards found")
+        time.sleep(2)
+
+        # NAS/Radancy JS extraction: #search-results-list li a
+        js_jobs = driver.execute_script("""
+            var results = [];
+            var seen = {};
+            var container = document.querySelector('#search-results-list');
+            if (container) {
+                var items = container.querySelectorAll('li');
+                for (var i = 0; i < items.length; i++) {
+                    var item = items[i];
+                    var link = item.querySelector('a[href]');
+                    if (!link) continue;
+                    var title = link.innerText.trim().split('\\n')[0];
+                    var url = link.href;
+                    if (!title || title.length < 3 || seen[url]) continue;
+                    seen[url] = true;
+                    var locEl = item.querySelector('.job-location, [class*="location"]');
+                    var location = locEl ? locEl.innerText.trim() : '';
+                    var dateEl = item.querySelector('.job-date-posted, [class*="date"]');
+                    var date = dateEl ? dateEl.innerText.trim() : '';
+                    results.push({title: title, url: url, location: location, date: date});
+                }
+            }
+            return results;
+        """)
+
+        if not js_jobs:
+            logger.warning("No jobs found via NAS/Radancy selectors")
             return jobs
-        
-        # Extract from job cards
-        for idx, card in enumerate(job_cards):
+
+        logger.info(f"NAS/Radancy extraction found {len(js_jobs)} jobs")
+
+        for jdata in js_jobs:
             try:
-                card_text = card.text
-                if not card_text or len(card_text) < 10:
+                title = jdata.get('title', '').strip()
+                url = jdata.get('url', '').strip()
+                location = jdata.get('location', '').strip()
+
+                if not title or len(title) < 3 or not url:
                     continue
-                
-                # Get job title
-                job_title = ""
-                job_link = ""
-                try:
-                    title_link = card.find_element(By.TAG_NAME, 'a')
-                    job_title = title_link.text.strip()
-                    job_link = title_link.get_attribute('href')
-                except:
-                    job_title = card_text.split('\n')[0].strip()
-                
-                if not job_title or len(job_title) < 3:
-                    continue
-                
-                # Extract Job ID
-                job_id = f"citigroup_{idx}"
-                if job_link:
-                    job_id = hashlib.md5(job_link.encode()).hexdigest()[:12]
-                
-                # Extract location
-                location = ""
-                city = ""
-                state = ""
-                lines = card_text.split('\n')
-                for line in lines:
-                    if any(city_name in line for city_name in ['Mumbai', 'Delhi', 'Bangalore', 'Hyderabad', 'Chennai', 'Pune', 'Kolkata', 'India']):
-                        location = line.strip()
-                        city, state, _ = self.parse_location(location)
-                        break
-                
+
+                job_id = hashlib.md5(url.encode()).hexdigest()[:12]
+                city, state, _ = self.parse_location(location)
+
                 job_data = {
                     'external_id': self.generate_external_id(job_id, self.company_name),
                     'company_name': self.company_name,
-                    'title': job_title,
+                    'title': title,
                     'description': '',
                     'location': location,
                     'city': city,
@@ -215,26 +193,25 @@ class CitigroupScraper:
                     'country': 'India',
                     'employment_type': '',
                     'department': '',
-                    'apply_url': job_link if job_link else self.url,
-                    'posted_date': '',
+                    'apply_url': url,
+                    'posted_date': jdata.get('date', ''),
                     'job_function': '',
                     'experience_level': '',
                     'salary_range': '',
                     'remote_type': '',
                     'status': 'active'
                 }
-                
-                # Fetch full details if enabled
-                if FETCH_FULL_JOB_DETAILS and job_link:
-                    full_details = self._fetch_job_details(driver, job_link)
+
+                if FETCH_FULL_JOB_DETAILS and url:
+                    full_details = self._fetch_job_details(driver, url)
                     job_data.update(full_details)
-                
+
                 jobs.append(job_data)
-                
+
             except Exception as e:
-                logger.error(f"Error extracting job {idx}: {str(e)}")
+                logger.error(f"Error extracting job: {str(e)}")
                 continue
-        
+
         return jobs
     
     def _fetch_job_details(self, driver, job_url):

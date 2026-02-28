@@ -32,7 +32,8 @@ class AWSScraper:
         chrome_options.add_argument('--window-size=1920,1080')
         chrome_options.add_argument('--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36')
         chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-        chrome_options.add_experimental_option('excludeSwitches', ['enable-logging'])
+        chrome_options.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
+        chrome_options.add_experimental_option('useAutomationExtension', False)
         
         try:
             # Install and get the correct chromedriver path
@@ -50,6 +51,10 @@ class AWSScraper:
             
             service = Service(driver_path)
             driver = webdriver.Chrome(service=service, options=chrome_options)
+            driver.execute_cdp_cmd('Network.setUserAgentOverride', {
+                "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            })
+            driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
             return driver
         except Exception as e:
             logger.error(f"ChromeDriver setup failed: {str(e)}")
@@ -74,9 +79,14 @@ class AWSScraper:
             driver = self.setup_driver()
             driver.get(self.url)
             
-            # Wait for page to load
+            # Smart wait for job content instead of blind sleep
             wait = WebDriverWait(driver, SCRAPE_TIMEOUT)
-            time.sleep(5)  # Wait for dynamic content
+            try:
+                wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, 'div.job-tile')))
+                logger.info("Job content loaded")
+            except:
+                logger.warning("Timeout waiting for job tiles, using fallback wait")
+                time.sleep(3)
             
             current_page = 1
             
@@ -94,7 +104,7 @@ class AWSScraper:
                     if not self._go_to_next_page(driver, current_page):
                         logger.info("No more pages available")
                         break
-                    time.sleep(3)  # Wait for next page to load
+                    # No extra sleep — _go_to_next_page already handles waiting
                 
                 current_page += 1
             
@@ -127,30 +137,53 @@ class AWSScraper:
                 try:
                     next_button = driver.find_element(selector_type, selector_value)
                     driver.execute_script("arguments[0].scrollIntoView();", next_button)
-                    time.sleep(1)
+                    time.sleep(0.5)
+
+                    # Capture current state for change detection
+                    old_first = driver.execute_script("""
+                        var card = document.querySelector('div.job-tile');
+                        return card ? card.innerText.substring(0, 50) : '';
+                    """)
+
                     next_button.click()
                     logger.info(f"Clicked next page button using selector: {selector_value}")
+
+                    # Poll for content change
+                    for _ in range(20):
+                        time.sleep(0.2)
+                        new_first = driver.execute_script("""
+                            var card = document.querySelector('div.job-tile');
+                            return card ? card.innerText.substring(0, 50) : '';
+                        """)
+                        if new_first and new_first != old_first:
+                            break
+                    time.sleep(0.5)
                     return True
                 except:
                     continue
-            
+
             # Method 2: Modify URL with offset parameter
             current_url = driver.current_url
             if 'offset=' in current_url:
-                # Update offset
                 import re
-                new_offset = current_page * 10  # 10 jobs per page
+                new_offset = current_page * 10
                 new_url = re.sub(r'offset=\d+', f'offset={new_offset}', current_url)
                 driver.get(new_url)
                 logger.info(f"Navigated to next page via URL modification")
-                return True
             else:
-                # Add offset parameter
                 separator = '&' if '?' in current_url else '?'
                 new_url = f"{current_url}{separator}offset={current_page * 10}"
                 driver.get(new_url)
                 logger.info(f"Navigated to next page via URL modification")
-                return True
+
+            # Smart wait after URL navigation
+            try:
+                WebDriverWait(driver, 10).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, 'div.job-tile'))
+                )
+            except:
+                time.sleep(3)
+            return True
                 
         except Exception as e:
             logger.error(f"Error navigating to next page: {str(e)}")
@@ -159,7 +192,11 @@ class AWSScraper:
     def _scrape_page(self, driver, wait):
         """Scrape jobs from current page"""
         jobs = []
-        time.sleep(2)  # Wait for page content
+        # Quick scroll for lazy loading
+        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+        time.sleep(0.5)
+        driver.execute_script("window.scrollTo(0, 0);")
+        time.sleep(0.3)
         
         # Try multiple selectors for job listings
         job_cards = []

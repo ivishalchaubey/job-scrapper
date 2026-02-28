@@ -234,21 +234,18 @@ class MorganStanleyScraper:
 
             driver.get(self.url)
 
-            # Eightfold AI is a React SPA - needs 12-15s for initial rendering
-            logger.info("Waiting 14s for Eightfold AI SPA to render...")
-            time.sleep(14)
-
-            wait = WebDriverWait(driver, 10)
-
-            # Wait for the job cards to appear using actual DOM selectors
+            # Smart wait for Eightfold AI SPA to render (replaces blind sleep(14))
             try:
-                wait.until(EC.presence_of_element_located((
-                    By.CSS_SELECTOR,
-                    'div[class*="cardContainer"], a[class*="card-"], div[class*="cardlist"]'
-                )))
+                WebDriverWait(driver, 15).until(
+                    EC.presence_of_element_located((
+                        By.CSS_SELECTOR,
+                        'div[class*="cardContainer"], a[class*="card-"], div[class*="cardlist"]'
+                    ))
+                )
                 logger.info("Job card containers detected")
             except Exception as e:
-                logger.warning(f"Timeout waiting for card containers: {str(e)}")
+                logger.warning(f"Timeout waiting for card containers: {str(e)}, using fallback wait")
+                time.sleep(5)
 
             scraped_ids = set()
             current_page = 1
@@ -256,12 +253,11 @@ class MorganStanleyScraper:
             while current_page <= max_pages:
                 logger.info(f"Scraping page {current_page}")
 
-                # Scroll down to trigger lazy loading of cards
-                for scroll_pass in range(3):
-                    driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                    time.sleep(2)
+                # Quick scroll to trigger lazy loading of cards
+                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                time.sleep(0.5)
                 driver.execute_script("window.scrollTo(0, 0);")
-                time.sleep(1)
+                time.sleep(0.3)
 
                 jobs_on_page = self._extract_jobs_from_page(driver, scraped_ids)
                 all_jobs.extend(jobs_on_page)
@@ -270,7 +266,7 @@ class MorganStanleyScraper:
                 if current_page < max_pages:
                     if not self._go_to_next_page(driver):
                         break
-                    time.sleep(5)
+                    # No extra sleep needed — _go_to_next_page handles waiting
                 current_page += 1
 
             logger.info(f"Total jobs scraped via Selenium: {len(all_jobs)}")
@@ -625,10 +621,16 @@ class MorganStanleyScraper:
         return jobs
 
     def _go_to_next_page(self, driver):
-        """Navigate to the next page of results."""
+        """Navigate to the next page of results with poll-based change detection."""
         try:
             driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(2)
+            time.sleep(0.5)
+
+            # Capture first card text before click for change detection
+            old_first = driver.execute_script("""
+                var card = document.querySelector('div[class*="cardContainer"], a[class*="card-"], a[id^="job-card-"]');
+                return card ? card.innerText.substring(0, 50) : '';
+            """)
 
             next_selectors = [
                 (By.CSS_SELECTOR, 'button[aria-label="Next"]'),
@@ -645,8 +647,20 @@ class MorganStanleyScraper:
                     next_button = driver.find_element(selector_type, selector_value)
                     if next_button.is_enabled() and next_button.is_displayed():
                         driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", next_button)
-                        time.sleep(1)
+                        time.sleep(0.3)
                         driver.execute_script("arguments[0].click();", next_button)
+
+                        # Poll until content changes (max 5s, usually <1s)
+                        for _ in range(25):
+                            time.sleep(0.2)
+                            new_first = driver.execute_script("""
+                                var card = document.querySelector('div[class*="cardContainer"], a[class*="card-"], a[id^="job-card-"]');
+                                return card ? card.innerText.substring(0, 50) : '';
+                            """)
+                            if new_first and new_first != old_first:
+                                break
+                        time.sleep(0.5)  # Brief settle after change detected
+
                         logger.info("Navigated to next page")
                         return True
                 except Exception:

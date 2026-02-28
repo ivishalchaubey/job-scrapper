@@ -103,64 +103,43 @@ class IntuitScraper:
                 var results = [];
                 var seen = {};
 
-                // Strategy 0: NAS/Radancy platform selectors
-                var cards = document.querySelectorAll('tr.data-row, tr[class*="data-row"]');
-                if (cards.length === 0) cards = document.querySelectorAll('.jobs-table tbody tr, table.jobs-list tbody tr');
-                if (cards.length === 0) cards = document.querySelectorAll('[class*="job-result"], [class*="jobResult"]');
-
-                for (var i = 0; i < cards.length; i++) {
-                    var card = cards[i];
-                    var titleEl = card.querySelector('a.jobTitle-link, a[class*="jobTitle"], .job-title a, td.colTitle a, a');
-                    var locEl = card.querySelector('td.colLocation, .job-location, [class*="location"], [class*="Location"]');
-
-                    var title = titleEl ? titleEl.innerText.trim().split('\\n')[0] : '';
-                    var href = titleEl ? titleEl.href : '';
-                    var location = locEl ? locEl.innerText.trim() : '';
-
-                    if (title && title.length > 2 && title.length < 200 && href && !seen[href]) {
-                        if (!href.includes('login') && !href.includes('sign-in') && !href.includes('javascript:')) {
-                            seen[href] = true;
-                            var dateEl = card.querySelector('[class*="date"], [class*="Date"], td.colDate');
-                            var date = dateEl ? dateEl.innerText.trim() : '';
-                            results.push({title: title, location: location, url: href, date: date});
-                        }
-                    }
+                // Strategy 1: SuccessFactors table rows (classic)
+                var rows = document.querySelectorAll('tr.data-row');
+                for (var i = 0; i < rows.length; i++) {
+                    var row = rows[i];
+                    var titleLink = row.querySelector('a.jobTitle-link, a[href*="/job/"]');
+                    if (!titleLink) continue;
+                    var title = titleLink.innerText.trim();
+                    var url = titleLink.href || '';
+                    if (!title || title.length < 3 || seen[url]) continue;
+                    seen[url] = true;
+                    var locTd = row.querySelector('td.colLocation, [class*="location"], [class*="Location"]');
+                    var location = locTd ? locTd.innerText.trim() : '';
+                    var dateTd = row.querySelector('td.colDate, [class*="date"]');
+                    var date = dateTd ? dateTd.innerText.trim() : '';
+                    results.push({title: title, url: url, location: location, date: date});
                 }
 
-                // Strategy 1: Phenom/NAS platform selectors
+                // Strategy 2: SuccessFactors job list items (newer variant)
                 if (results.length === 0) {
-                    cards = document.querySelectorAll('li[data-ph-at-id="job-listing"], div[data-ph-at-id="job-listing"]');
-                    if (cards.length === 0) cards = document.querySelectorAll('a[data-ph-at-id="job-link"]');
-                    if (cards.length === 0) cards = document.querySelectorAll('li[data-job-id]');
-                    if (cards.length === 0) cards = document.querySelectorAll('[class*="job-card"], [class*="jobCard"], [class*="search-result"], [class*="searchResult"]');
-                    if (cards.length === 0) cards = document.querySelectorAll('[class*="job-listing"], [class*="jobListing"], [class*="position-card"]');
-                    if (cards.length === 0) cards = document.querySelectorAll('li[class*="job"], div[class*="job-item"], article[class*="job"]');
-
-                    for (var i = 0; i < cards.length; i++) {
-                        var card = cards[i];
-                        var titleEl = card.querySelector('.job-title, [class*="job-title"], [class*="jobTitle"], a.job-result-title, h2, h3, h4, [class*="title"]');
-                        var locEl = card.querySelector('.job-location, .job-result-location, [class*="location"], [class*="Location"]');
-                        var linkEl = card.tagName === 'A' ? card : card.querySelector('a[href*="/job/"], a[href*="/jb/"], a[href*="/position/"], a[href*="/job-details/"], a');
-
-                        var title = titleEl ? titleEl.innerText.trim().split('\\n')[0] : '';
-                        if (!title && linkEl) title = linkEl.innerText.trim().split('\\n')[0];
+                    var items = document.querySelectorAll('[class*="jobResultItem"], [class*="resultsBody"] tr');
+                    for (var i = 0; i < items.length; i++) {
+                        var item = items[i];
+                        var link = item.querySelector('a[href*="/job"]');
+                        if (!link) continue;
+                        var title = link.innerText.trim();
+                        var url = link.href;
+                        if (!title || title.length < 3 || seen[url]) continue;
+                        seen[url] = true;
+                        var locEl = item.querySelector('[class*="location"]');
                         var location = locEl ? locEl.innerText.trim() : '';
-                        var href = linkEl ? linkEl.href : '';
-
-                        if (title && title.length > 2 && title.length < 200 && href && !seen[href]) {
-                            if (!href.includes('login') && !href.includes('sign-in') && !href.includes('javascript:')) {
-                                seen[href] = true;
-                                var dateEl = card.querySelector('[class*="date"], [class*="Date"], .job-result-date');
-                                var date = dateEl ? dateEl.innerText.trim() : '';
-                                results.push({title: title, location: location, url: href, date: date});
-                            }
-                        }
+                        results.push({title: title, url: url, location: location, date: ''});
                     }
                 }
 
-                // Strategy 2: Direct job links
+                // Strategy 3: Direct job links fallback
                 if (results.length === 0) {
-                    var jobLinks = document.querySelectorAll('a[href*="/job/"], a[href*="/job-"], a[href*="/jobs/"], a[href*="/jb/"], a[href*="/position/"], a[href*="/vacancy/"], a[href*="/career/"], a[href*="/opening/"], a[href*="/requisition/"]');
+                    var jobLinks = document.querySelectorAll('a[href*="/job/"]');
                     for (var i = 0; i < jobLinks.length; i++) {
                         var el = jobLinks[i];
                         var title = (el.innerText || '').trim().split('\\n')[0].trim();
@@ -170,46 +149,13 @@ class IntuitScraper:
                         if (seen[url]) continue;
                         seen[url] = true;
                         var location = '';
-                        var parent = el.closest('li, div[class*="job"], article, tr, div[class*="result"]');
+                        var parent = el.closest('tr, li, div[class*="job"], div[class*="result"]');
                         if (parent) {
                             var locEl = parent.querySelector('[class*="location"], [class*="Location"]');
                             if (locEl && locEl !== el) location = locEl.innerText.trim();
                         }
                         results.push({title: title, url: url, location: location, date: ''});
                     }
-                }
-
-                // Strategy 3: Table rows
-                if (results.length === 0) {
-                    var rows = document.querySelectorAll('table tbody tr, table tr.dataRow, table tr[class*="job"]');
-                    for (var i = 0; i < rows.length; i++) {
-                        var row = rows[i];
-                        var link = row.querySelector('a[href]');
-                        if (!link) continue;
-                        var title = link.innerText.trim().split('\\n')[0];
-                        var href = link.href || '';
-                        if (!title || title.length < 3 || !href || seen[href]) continue;
-                        seen[href] = true;
-                        var locTd = row.querySelector('td:nth-child(2), [class*="location"]');
-                        var location = locTd ? locTd.innerText.trim() : '';
-                        results.push({title: title, url: href, location: location, date: ''});
-                    }
-                }
-
-                // Strategy 4: Generic fallback
-                if (results.length === 0) {
-                    document.querySelectorAll('a[href]').forEach(function(link) {
-                        var href = link.href || '';
-                        var text = (link.innerText || '').trim();
-                        if (text.length > 5 && text.length < 200 && href.length > 10) {
-                            if ((href.includes('/job') || href.includes('/position') || href.includes('/career') || href.includes('/opening') || href.includes('/vacancy')) && !seen[href]) {
-                                if (!href.includes('login') && !href.includes('sign-in') && !href.includes('javascript:') && !href.includes('#')) {
-                                    seen[href] = true;
-                                    results.push({title: text.split('\\n')[0].trim(), url: href, location: '', date: ''});
-                                }
-                            }
-                        }
-                    });
                 }
 
                 return results;

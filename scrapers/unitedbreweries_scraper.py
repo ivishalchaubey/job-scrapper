@@ -22,6 +22,14 @@ class UnitedBreweriesScraper:
     def __init__(self):
         self.company_name = 'United Breweries'
         self.url = 'https://careers.theheinekencompany.com/India/search/?createNewAlert=false&q=&locationsearch=India'
+        # Department listing pages that contain India jobs
+        self.department_urls = [
+            'https://careers.theheinekencompany.com/India/go/India-Corporate-Affairs/8746801/',
+            'https://careers.theheinekencompany.com/India/go/India-Finance/8746901/',
+            'https://careers.theheinekencompany.com/India/go/India-Human-Resources/8747001/',
+            'https://careers.theheinekencompany.com/India/go/India-Marketing-and-Sales/8747201/',
+            'https://careers.theheinekencompany.com/India/go/India-Supply-Chain/8747301/',
+        ]
 
     def setup_driver(self):
         chrome_options = Options()
@@ -53,274 +61,123 @@ class UnitedBreweriesScraper:
         unique_string = f"{company}_{job_id}"
         return hashlib.md5(unique_string.encode()).hexdigest()
 
+    def _bypass_age_gate(self, driver):
+        """Bypass the Heineken age gate using Selenium send_keys.
+
+        The age gate form has:
+        - A country select (pre-selected to India based on URL)
+        - Three input fields: #input-date-day (DD), #input-date-month (MM), #input-date-year (YYYY)
+        - A submit button with class 'form-age__button'
+        """
+        try:
+            # Wait for age gate form to be ready
+            WebDriverWait(driver, 15).until(
+                EC.presence_of_element_located((By.ID, 'input-date-day'))
+            )
+
+            # Fill date of birth using send_keys (JS value setting doesn't work)
+            day_field = driver.find_element(By.ID, 'input-date-day')
+            month_field = driver.find_element(By.ID, 'input-date-month')
+            year_field = driver.find_element(By.ID, 'input-date-year')
+
+            day_field.clear()
+            day_field.send_keys('15')
+            time.sleep(0.3)
+
+            month_field.clear()
+            month_field.send_keys('06')
+            time.sleep(0.3)
+
+            year_field.clear()
+            year_field.send_keys('1990')
+            time.sleep(0.3)
+
+            logger.info("Filled age gate date fields via send_keys")
+
+            # Click enter/submit button
+            submit_btn = driver.find_element(By.CSS_SELECTOR, 'button.form-age__button')
+            submit_btn.click()
+            logger.info("Clicked age gate submit button")
+
+            # Wait for redirect to careers page
+            time.sleep(10)
+
+            if 'agegate' not in driver.current_url.lower():
+                logger.info(f"Age gate bypassed, now at: {driver.current_url}")
+                return True
+            else:
+                logger.warning("Still on age gate after submit")
+                return False
+
+        except Exception as e:
+            logger.error(f"Age gate bypass failed: {str(e)}")
+            return False
+
     def scrape(self, max_pages=MAX_PAGES_TO_SCRAPE):
         driver = None
         all_jobs = []
+        seen_ids = set()
 
         try:
             driver = self.setup_driver()
-            logger.info(f"Starting {self.company_name} scraping from {self.url}")
+            logger.info(f"Starting {self.company_name} scraping")
 
+            # Step 1: Navigate to career page (will redirect to age gate)
             driver.get(self.url)
-            time.sleep(15)
+            time.sleep(10)
 
-            # Check if we're on the age gate page
-            current_url = driver.current_url
-            logger.info(f"Current URL after load: {current_url}")
+            # Step 2: Handle age gate
+            if 'agegate' in driver.current_url.lower():
+                logger.info("Age gate detected, bypassing...")
+                if not self._bypass_age_gate(driver):
+                    logger.error("Could not bypass age gate")
+                    return all_jobs
+            else:
+                logger.info("No age gate detected")
 
-            if 'agegate' in current_url.lower() or 'age' in current_url.lower():
-                logger.info("Age gate detected, attempting to bypass...")
+            # Step 3: Try the main search page first
+            logger.info("Checking main India search page...")
+            time.sleep(3)
+            page_jobs = self._scrape_page(driver, seen_ids)
+            if page_jobs:
+                all_jobs.extend(page_jobs)
+                logger.info(f"Found {len(page_jobs)} jobs on main search page")
 
-                # Investigate the form structure
-                try:
-                    form_html = driver.execute_script(
-                        "return document.querySelector('form') ? document.querySelector('form').innerHTML.substring(0,2000) : document.body.innerHTML.substring(0,2000)"
-                    )
-                    logger.info(f"Age gate form HTML: {form_html[:500]}")
-                except Exception as e:
-                    logger.warning(f"Could not inspect form: {str(e)}")
-
-                # Try to fill in date of birth fields using JavaScript
-                age_gate_bypassed = False
-
-                # Approach 1: Try select dropdowns for day/month/year
-                try:
-                    result = driver.execute_script("""
-                        var selects = document.querySelectorAll('select');
-                        var filled = 0;
-                        for (var i = 0; i < selects.length; i++) {
-                            var s = selects[i];
-                            var name = (s.name || s.id || s.getAttribute('data-type') || '').toLowerCase();
-                            var options = s.querySelectorAll('option');
-                            var optTexts = [];
-                            for (var j = 0; j < options.length; j++) {
-                                optTexts.push(options[j].value + ':' + options[j].textContent.trim());
-                            }
-
-                            if (name.indexOf('day') !== -1 || name.indexOf('dd') !== -1) {
-                                s.value = '15';
-                                s.dispatchEvent(new Event('change', {bubbles: true}));
-                                filled++;
-                            } else if (name.indexOf('month') !== -1 || name.indexOf('mm') !== -1) {
-                                s.value = '06';
-                                s.dispatchEvent(new Event('change', {bubbles: true}));
-                                filled++;
-                            } else if (name.indexOf('year') !== -1 || name.indexOf('yy') !== -1) {
-                                s.value = '1990';
-                                s.dispatchEvent(new Event('change', {bubbles: true}));
-                                filled++;
-                            } else if (selects.length === 3) {
-                                // If exactly 3 selects, assume day/month/year order
-                                if (i === 0) { s.value = '15'; }
-                                else if (i === 1) { s.value = '06'; }
-                                else if (i === 2) { s.value = '1990'; }
-                                s.dispatchEvent(new Event('change', {bubbles: true}));
-                                filled++;
-                            }
-                        }
-                        return filled;
-                    """)
-                    if result and result > 0:
-                        logger.info(f"Filled {result} select dropdowns")
-                        age_gate_bypassed = True
-                except Exception as e:
-                    logger.warning(f"Select dropdown approach failed: {str(e)}")
-
-                # Approach 2: Try input fields for day/month/year
-                if not age_gate_bypassed:
+            # Step 4: If main search page had few/no jobs, scrape department pages
+            if len(all_jobs) < 5:
+                logger.info("Few jobs on main page, checking department pages...")
+                for dept_url in self.department_urls:
                     try:
-                        result = driver.execute_script("""
-                            var inputs = document.querySelectorAll('input[type="text"], input[type="number"], input[type="tel"], input:not([type="hidden"]):not([type="submit"]):not([type="button"])');
-                            var filled = 0;
-                            for (var i = 0; i < inputs.length; i++) {
-                                var inp = inputs[i];
-                                var name = (inp.name || inp.id || inp.placeholder || inp.getAttribute('data-type') || inp.getAttribute('aria-label') || '').toLowerCase();
+                        logger.info(f"Scraping department: {dept_url}")
+                        driver.get(dept_url)
+                        time.sleep(8)
 
-                                if (name.indexOf('day') !== -1 || name.indexOf('dd') !== -1) {
-                                    inp.value = '15';
-                                    inp.dispatchEvent(new Event('input', {bubbles: true}));
-                                    inp.dispatchEvent(new Event('change', {bubbles: true}));
-                                    filled++;
-                                } else if (name.indexOf('month') !== -1 || name.indexOf('mm') !== -1) {
-                                    inp.value = '06';
-                                    inp.dispatchEvent(new Event('input', {bubbles: true}));
-                                    inp.dispatchEvent(new Event('change', {bubbles: true}));
-                                    filled++;
-                                } else if (name.indexOf('year') !== -1 || name.indexOf('yy') !== -1) {
-                                    inp.value = '1990';
-                                    inp.dispatchEvent(new Event('input', {bubbles: true}));
-                                    inp.dispatchEvent(new Event('change', {bubbles: true}));
-                                    filled++;
-                                } else if (inputs.length === 3) {
-                                    // If exactly 3 inputs, assume day/month/year order
-                                    if (i === 0) { inp.value = '15'; }
-                                    else if (i === 1) { inp.value = '06'; }
-                                    else if (i === 2) { inp.value = '1990'; }
-                                    inp.dispatchEvent(new Event('input', {bubbles: true}));
-                                    inp.dispatchEvent(new Event('change', {bubbles: true}));
-                                    filled++;
-                                }
-                            }
-                            return filled;
-                        """)
-                        if result and result > 0:
-                            logger.info(f"Filled {result} input fields")
-                            age_gate_bypassed = True
+                        # Handle age gate again if needed
+                        if 'agegate' in driver.current_url.lower():
+                            if not self._bypass_age_gate(driver):
+                                continue
+
+                        dept_jobs = self._scrape_page(driver, seen_ids)
+                        if dept_jobs:
+                            all_jobs.extend(dept_jobs)
+                            logger.info(f"Found {len(dept_jobs)} jobs from department page")
+
+                        # Paginate within department page
+                        current_page = 1
+                        while current_page < max_pages:
+                            if not self._go_to_next_page(driver, current_page):
+                                break
+                            time.sleep(5)
+                            current_page += 1
+                            page_jobs = self._scrape_page(driver, seen_ids)
+                            if not page_jobs:
+                                break
+                            all_jobs.extend(page_jobs)
+                            logger.info(f"Department page {current_page}: {len(page_jobs)} jobs")
+
                     except Exception as e:
-                        logger.warning(f"Input field approach failed: {str(e)}")
-
-                # Approach 3: Try a single date input field
-                if not age_gate_bypassed:
-                    try:
-                        result = driver.execute_script("""
-                            var dateInput = document.querySelector('input[type="date"]');
-                            if (dateInput) {
-                                dateInput.value = '1990-06-15';
-                                dateInput.dispatchEvent(new Event('input', {bubbles: true}));
-                                dateInput.dispatchEvent(new Event('change', {bubbles: true}));
-                                return 1;
-                            }
-                            return 0;
-                        """)
-                        if result and result > 0:
-                            logger.info("Filled date input field")
-                            age_gate_bypassed = True
-                    except Exception as e:
-                        logger.warning(f"Date input approach failed: {str(e)}")
-
-                time.sleep(2)
-
-                # Click the submit/enter button
-                try:
-                    driver.execute_script("""
-                        var btn = document.querySelector('button[type="submit"], input[type="submit"]');
-                        if (!btn) btn = document.querySelector('button.enter-button, a.enter-button, .enter-button');
-                        if (!btn) {
-                            // Look for button with text "Enter" or "Submit" or "Confirm"
-                            var allBtns = document.querySelectorAll('button, input[type="button"], a.btn, a.button');
-                            for (var i = 0; i < allBtns.length; i++) {
-                                var text = (allBtns[i].innerText || allBtns[i].value || '').trim().toLowerCase();
-                                if (text === 'enter' || text === 'submit' || text === 'confirm' || text === 'verify') {
-                                    btn = allBtns[i];
-                                    break;
-                                }
-                            }
-                        }
-                        if (!btn) {
-                            // Last resort: any submit-like element
-                            btn = document.querySelector('[type="submit"], [role="button"], .submit-btn, .btn-submit, .ag-submit');
-                        }
-                        if (btn) {
-                            btn.click();
-                            return 'clicked';
-                        }
-                        return 'no button found';
-                    """)
-                    logger.info("Clicked submit/enter button on age gate")
-                except Exception as e:
-                    logger.warning(f"Could not click submit button: {str(e)}")
-
-                # Wait for redirect back to careers page
-                time.sleep(12)
-
-                # Check if we're still on the age gate
-                new_url = driver.current_url
-                logger.info(f"URL after age gate attempt: {new_url}")
-
-                if 'agegate' in new_url.lower():
-                    logger.warning("Still on age gate, trying form submit directly")
-                    try:
-                        driver.execute_script("""
-                            var form = document.querySelector('form');
-                            if (form) form.submit();
-                        """)
-                        time.sleep(10)
-                        new_url = driver.current_url
-                        logger.info(f"URL after form.submit(): {new_url}")
-                    except Exception as e:
-                        logger.warning(f"Form submit failed: {str(e)}")
-
-                # If still on age gate, try navigating directly with cookie
-                if 'agegate' in driver.current_url.lower():
-                    logger.warning("Age gate still present, trying direct navigation to careers URL")
-                    # Some age gates set a cookie; try setting it manually
-                    try:
-                        driver.add_cookie({'name': 'agegate', 'value': 'true', 'domain': '.theheinekencompany.com'})
-                        driver.add_cookie({'name': 'age_verified', 'value': 'true', 'domain': '.theheinekencompany.com'})
-                        driver.add_cookie({'name': 'ageGateBirthDate', 'value': '1990-06-15', 'domain': '.theheinekencompany.com'})
-                    except Exception as e:
-                        logger.warning(f"Could not set cookies: {str(e)}")
-
-                    driver.get(self.url)
-                    time.sleep(15)
-
-                    final_url = driver.current_url
-                    logger.info(f"URL after retry with cookies: {final_url}")
-
-                    if 'agegate' in final_url.lower():
-                        logger.error("Could not bypass age gate after all attempts")
-                    else:
-                        logger.info("Successfully bypassed age gate on retry")
-                else:
-                    logger.info("Successfully bypassed age gate")
-
-            # Also check page content for age gate (in case URL didn't change)
-            try:
-                page_text = driver.execute_script("return (document.body.innerText || '').substring(0, 500).toLowerCase()")
-                if 'date of birth' in page_text or 'age verification' in page_text:
-                    logger.warning("Age gate content detected on page even though URL looks normal")
-            except:
-                pass
-
-            for _ in range(3):
-                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                time.sleep(2)
-            driver.execute_script("window.scrollTo(0, 0);")
-            time.sleep(2)
-
-            try:
-                iframes = driver.find_elements(By.TAG_NAME, 'iframe')
-                for iframe in iframes:
-                    src = iframe.get_attribute('src') or ''
-                    if 'job' in src.lower() or 'career' in src.lower() or 'search' in src.lower():
-                        logger.info(f"Switching to iframe: {src}")
-                        driver.switch_to.frame(iframe)
-                        time.sleep(5)
-                        break
-            except Exception as e:
-                logger.warning(f"Iframe check failed: {str(e)}")
-
-            short_wait = WebDriverWait(driver, 5)
-            try:
-                short_wait.until(EC.presence_of_element_located((
-                    By.CSS_SELECTOR, "table.searchResults, a.jobTitle-link, span.jobTitle, tr.data-row, a[href*='/job/']"
-                )))
-                logger.info("Job listings loaded")
-            except Exception as e:
-                logger.warning(f"Timeout waiting for job listings: {str(e)}")
-
-            current_page = 1
-            seen_ids = set()
-            consecutive_empty_pages = 0
-            while current_page <= max_pages:
-                logger.info(f"Scraping page {current_page}")
-                jobs = self._scrape_page(driver, seen_ids)
-                all_jobs.extend(jobs)
-                logger.info(f"Page {current_page}: found {len(jobs)} new jobs (total: {len(all_jobs)})")
-
-                if len(jobs) == 0:
-                    consecutive_empty_pages += 1
-                    if consecutive_empty_pages >= 2:
-                        logger.info("No new jobs on 2 consecutive pages, stopping pagination")
-                        break
-                else:
-                    consecutive_empty_pages = 0
-
-                if current_page < max_pages:
-                    if not self._go_to_next_page(driver, current_page):
-                        break
-                    time.sleep(5)
-                current_page += 1
+                        logger.warning(f"Error scraping department {dept_url}: {str(e)}")
+                        continue
 
             logger.info(f"Total jobs scraped: {len(all_jobs)}")
             return all_jobs
@@ -384,6 +241,7 @@ class UnitedBreweriesScraper:
             return False
 
     def _scrape_page(self, driver, seen_ids):
+        """Scrape jobs from current SuccessFactors page."""
         jobs = []
 
         try:
@@ -394,13 +252,17 @@ class UnitedBreweriesScraper:
 
             js_jobs = driver.execute_script("""
                 var results = [];
+                var seen = {};
+
+                // Strategy 1: SuccessFactors job title links
                 var titleLinks = document.querySelectorAll('span.jobTitle.hidden-phone a.jobTitle-link');
                 if (titleLinks.length === 0) { titleLinks = document.querySelectorAll('a.jobTitle-link'); }
                 if (titleLinks.length > 0) {
                     titleLinks.forEach(function(link) {
                         var title = (link.innerText || link.textContent || '').trim();
                         var href = link.href || link.getAttribute('href') || '';
-                        if (!title || !href) return;
+                        if (!title || !href || seen[href]) return;
+                        seen[href] = true;
                         var row = link.closest('tr');
                         var location = '', department = '', postedDate = '';
                         if (row) {
@@ -414,6 +276,8 @@ class UnitedBreweriesScraper:
                         results.push({ title: title, url: href, location: location, department: department, postedDate: postedDate });
                     });
                 }
+
+                // Strategy 2: Search results table
                 if (results.length === 0) {
                     var rows = document.querySelectorAll('table.searchResults tr');
                     rows.forEach(function(row) {
@@ -421,7 +285,8 @@ class UnitedBreweriesScraper:
                         if (!link) return;
                         var title = (link.innerText || link.textContent || '').trim();
                         var href = link.href || link.getAttribute('href') || '';
-                        if (!title || !href || href === '#') return;
+                        if (!title || !href || href === '#' || seen[href]) return;
+                        seen[href] = true;
                         var location = '', department = '', postedDate = '';
                         var locElem = row.querySelector('span.jobLocation, [class*="location"]');
                         if (locElem) location = (locElem.innerText || locElem.textContent || '').trim();
@@ -432,12 +297,23 @@ class UnitedBreweriesScraper:
                         results.push({ title: title.split('\\n')[0].trim(), url: href, location: location, department: department, postedDate: postedDate });
                     });
                 }
+
+                // Strategy 3: Generic job links fallback
                 if (results.length === 0) {
                     document.querySelectorAll('a[href*="/job/"]').forEach(function(link) {
                         var title = (link.innerText || link.textContent || '').trim();
                         var href = link.href || '';
-                        if (title && title.length > 3 && title.length < 200 && href) {
-                            results.push({ title: title.split('\\n')[0].trim(), url: href, location: '', department: '', postedDate: '' });
+                        if (title && title.length > 3 && title.length < 200 && href && !seen[href]) {
+                            seen[href] = true;
+                            var parent = link.closest('tr, div, li');
+                            var location = '', department = '';
+                            if (parent) {
+                                var locElem = parent.querySelector('span.jobLocation, [class*="location"]');
+                                if (locElem && locElem !== link) location = (locElem.innerText || '').trim();
+                                var deptElem = parent.querySelector('span.jobDepartment, [class*="department"]');
+                                if (deptElem && deptElem !== link) department = (deptElem.innerText || '').trim();
+                            }
+                            results.push({ title: title.split('\\n')[0].trim(), url: href, location: location, department: department, postedDate: '' });
                         }
                     });
                 }
@@ -472,96 +348,12 @@ class UnitedBreweriesScraper:
                     seen_ids.add(external_id)
                     logger.info(f"Extracted: {title} | {location}")
             else:
-                logger.warning("JavaScript extraction found no jobs, trying Selenium fallback")
-                jobs = self._scrape_page_selenium(driver, seen_ids)
+                logger.info("No jobs found on this page")
 
         except Exception as e:
             logger.error(f"Error scraping page: {str(e)}")
 
-        if not jobs:
-            try:
-                body_text = driver.execute_script('return document.body ? document.body.innerText.substring(0, 500) : ""')
-                logger.info(f"Page body preview: {body_text}")
-            except:
-                pass
         return jobs
-
-    def _scrape_page_selenium(self, driver, seen_ids):
-        jobs = []
-        try:
-            job_elements = []
-            for selector in ["a.jobTitle-link", "table.searchResults tr", "tr.data-row", "span.jobTitle a", "a[href*='/job/']", "div[class*='job-card']", "li[class*='job']"]:
-                try:
-                    elements = driver.find_elements(By.CSS_SELECTOR, selector)
-                    if elements:
-                        job_elements = elements
-                        logger.info(f"Selenium found {len(elements)} elements using: {selector}")
-                        break
-                except:
-                    continue
-            if not job_elements:
-                return jobs
-            for idx, elem in enumerate(job_elements, 1):
-                try:
-                    job_data = self._extract_job_from_element(elem, idx)
-                    if job_data and job_data['external_id'] not in seen_ids:
-                        jobs.append(job_data)
-                        seen_ids.add(job_data['external_id'])
-                except:
-                    continue
-        except Exception as e:
-            logger.error(f"Selenium fallback error: {str(e)}")
-        return jobs
-
-    def _extract_job_from_element(self, job_elem, idx):
-        try:
-            title, job_url = "", ""
-            if job_elem.tag_name == 'a':
-                title = job_elem.text.strip()
-                job_url = job_elem.get_attribute('href')
-            else:
-                for sel in ["a.jobTitle-link", "span.jobTitle a", "a[href*='/job/']", "a"]:
-                    try:
-                        el = job_elem.find_element(By.CSS_SELECTOR, sel)
-                        title = el.text.strip()
-                        job_url = el.get_attribute('href')
-                        if title and job_url: break
-                    except: continue
-            if not title:
-                text = job_elem.text.strip()
-                if text: title = text.split('\n')[0].strip()
-            if not title or not job_url: return None
-            job_id = self._extract_job_id(job_url)
-            location, department = "", ""
-            try:
-                for sel in ["span.jobLocation", "[class*='location']"]:
-                    try:
-                        loc_elem = job_elem.find_element(By.CSS_SELECTOR, sel)
-                        location = loc_elem.text.strip()
-                        if location: break
-                    except: continue
-            except: pass
-            try:
-                for sel in ["span.jobDepartment", "[class*='department']"]:
-                    try:
-                        dept_elem = job_elem.find_element(By.CSS_SELECTOR, sel)
-                        department = dept_elem.text.strip()
-                        if department: break
-                    except: continue
-            except: pass
-            job_data = {
-                'external_id': self.generate_external_id(job_id, self.company_name),
-                'company_name': self.company_name, 'title': title, 'apply_url': job_url,
-                'location': location, 'department': department, 'employment_type': '',
-                'description': '', 'posted_date': '', 'city': '', 'state': '',
-                'country': 'India', 'job_function': '', 'experience_level': '',
-                'salary_range': '', 'remote_type': '', 'status': 'active'
-            }
-            job_data.update(self.parse_location(location))
-            return job_data
-        except Exception as e:
-            logger.error(f"Error extracting job data: {str(e)}")
-            return None
 
     def _extract_job_id(self, job_url):
         job_id = ""

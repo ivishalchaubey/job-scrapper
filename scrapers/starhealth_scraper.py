@@ -63,7 +63,14 @@ class StarHealthScraper:
         return city, state, 'India'
 
     def scrape(self, max_pages=MAX_PAGES_TO_SCRAPE):
-        """Scrape jobs from Star Health Insurance PeopleStrong careers page."""
+        """Scrape jobs from Star Health Insurance PeopleStrong careers page.
+
+        PeopleStrong is an Angular SPA. The jobs-listing container renders
+        job cards dynamically. We wait for Angular to finish rendering,
+        then extract using the actual DOM selectors found on the site:
+        - Container: div.jobs-listing
+        - Each job row contains a link with href /job/jobdetail/...
+        """
         jobs = []
         driver = None
 
@@ -72,7 +79,25 @@ class StarHealthScraper:
             driver = self.setup_driver()
 
             driver.get(self.url)
-            time.sleep(12)
+
+            # Wait for Angular SPA to render (PeopleStrong needs extra time)
+            try:
+                WebDriverWait(driver, 20).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, 'div.jobs-listing, app-root'))
+                )
+                logger.info("PeopleStrong Angular app loaded")
+            except Exception:
+                logger.warning("Timeout waiting for Angular app, continuing anyway")
+
+            time.sleep(5)
+
+            # Check if site reports no jobs
+            body_text = driver.execute_script(
+                "return (document.body.innerText || '').toLowerCase()"
+            )
+            if 'no jobs available' in body_text or 'no openings' in body_text:
+                logger.info("Site reports no jobs available at this time")
+                return jobs
 
             # Scroll to load all content
             for i in range(5):
@@ -111,7 +136,13 @@ class StarHealthScraper:
         return jobs
 
     def _extract_jobs_js(self, driver):
-        """Extract jobs from PeopleStrong page using JavaScript"""
+        """Extract jobs from PeopleStrong Angular page using JavaScript.
+
+        PeopleStrong Angular DOM structure uses:
+        - div.jobs-listing as the main container
+        - Job items inside with links to /job/jobdetail/...
+        - Location, department info in sibling/child elements
+        """
         jobs = []
 
         try:
@@ -119,58 +150,84 @@ class StarHealthScraper:
                 var results = [];
                 var seen = {};
 
-                // Strategy 1: Job cards with class containing 'job'
-                var selectors = [
-                    'div.job-card', 'div[class*="job-card"]', 'div[class*="jobCard"]',
-                    'div[class*="job-list"]', 'div[class*="jobList"]',
-                    'li[class*="job"]', 'div.card[class*="job"]',
-                    'div[class*="position"]', 'div[class*="opening"]',
-                    'div[class*="vacancy"]'
-                ];
+                // Strategy 1: PeopleStrong Angular specific — jobs-listing container
+                var container = document.querySelector('div.jobs-listing');
+                if (container) {
+                    // Find all job item links within the listing
+                    var jobLinks = container.querySelectorAll('a[href*="/job/"]');
+                    for (var i = 0; i < jobLinks.length; i++) {
+                        var link = jobLinks[i];
+                        var title = link.innerText.trim().split('\\n')[0].trim();
+                        var href = link.href;
+                        if (!title || title.length < 3 || seen[href]) continue;
+                        seen[href] = true;
 
-                for (var s = 0; s < selectors.length; s++) {
-                    var cards = document.querySelectorAll(selectors[s]);
-                    if (cards.length > 0) {
-                        for (var i = 0; i < cards.length; i++) {
-                            var card = cards[i];
-                            var title = '';
-                            var href = '';
-                            var location = '';
-                            var department = '';
-
-                            var heading = card.querySelector('h1, h2, h3, h4, h5, a[href*="/job/"]');
-                            if (heading) {
-                                title = heading.innerText.trim().split('\\n')[0].trim();
-                                if (heading.tagName === 'A') href = heading.href;
-                            }
-                            if (!title) {
-                                var firstLink = card.querySelector('a');
-                                if (firstLink) {
-                                    title = firstLink.innerText.trim().split('\\n')[0].trim();
-                                    href = firstLink.href;
-                                }
-                            }
-                            if (!href) {
-                                var jobLink = card.querySelector('a[href*="/job/"], a[href*="jobdetail"], a[href*="job-detail"]');
-                                if (jobLink) href = jobLink.href;
-                            }
-
-                            var locEl = card.querySelector('[class*="location"], [class*="Location"], [data-field="location"]');
+                        var parent = link.closest('div[class*="clearfix"], div[class*="row"], div, li');
+                        var location = '', department = '';
+                        if (parent) {
+                            var locEl = parent.querySelector('[class*="location"], [class*="Location"]');
                             if (locEl) location = locEl.innerText.trim();
-
-                            var deptEl = card.querySelector('[class*="department"], [class*="Department"], [class*="category"], [data-field="department"]');
+                            var deptEl = parent.querySelector('[class*="department"], [class*="Department"], [class*="category"], [class*="function"]');
                             if (deptEl) department = deptEl.innerText.trim();
-
-                            if (title && title.length > 2 && !seen[title + href]) {
-                                seen[title + href] = true;
-                                results.push({title: title, href: href, location: location, department: department});
-                            }
                         }
-                        if (results.length > 0) break;
+                        results.push({title: title, href: href, location: location, department: department});
                     }
                 }
 
-                // Strategy 2: Links with job-related hrefs
+                // Strategy 2: Job cards with class containing 'job'
+                if (results.length === 0) {
+                    var selectors = [
+                        'div.job-card', 'div[class*="job-card"]', 'div[class*="jobCard"]',
+                        'div[class*="job-list"]', 'div[class*="jobList"]',
+                        'li[class*="job"]', 'div.card[class*="job"]',
+                        'div[class*="position"]', 'div[class*="opening"]',
+                        'div[class*="vacancy"]'
+                    ];
+
+                    for (var s = 0; s < selectors.length; s++) {
+                        var cards = document.querySelectorAll(selectors[s]);
+                        if (cards.length > 0) {
+                            for (var i = 0; i < cards.length; i++) {
+                                var card = cards[i];
+                                var title = '';
+                                var href = '';
+                                var location = '';
+                                var department = '';
+
+                                var heading = card.querySelector('h1, h2, h3, h4, h5, a[href*="/job/"]');
+                                if (heading) {
+                                    title = heading.innerText.trim().split('\\n')[0].trim();
+                                    if (heading.tagName === 'A') href = heading.href;
+                                }
+                                if (!title) {
+                                    var firstLink = card.querySelector('a');
+                                    if (firstLink) {
+                                        title = firstLink.innerText.trim().split('\\n')[0].trim();
+                                        href = firstLink.href;
+                                    }
+                                }
+                                if (!href) {
+                                    var jobLink = card.querySelector('a[href*="/job/"], a[href*="jobdetail"], a[href*="job-detail"]');
+                                    if (jobLink) href = jobLink.href;
+                                }
+
+                                var locEl = card.querySelector('[class*="location"], [class*="Location"], [data-field="location"]');
+                                if (locEl) location = locEl.innerText.trim();
+
+                                var deptEl = card.querySelector('[class*="department"], [class*="Department"], [class*="category"], [data-field="department"]');
+                                if (deptEl) department = deptEl.innerText.trim();
+
+                                if (title && title.length > 2 && !seen[title + href]) {
+                                    seen[title + href] = true;
+                                    results.push({title: title, href: href, location: location, department: department});
+                                }
+                            }
+                            if (results.length > 0) break;
+                        }
+                    }
+                }
+
+                // Strategy 3: Links with job-related hrefs (fallback)
                 if (results.length === 0) {
                     var links = document.querySelectorAll('a[href*="/job/"], a[href*="jobdetail"], a[href*="job-detail"]');
                     for (var i = 0; i < links.length; i++) {
@@ -189,27 +246,6 @@ class StarHealthScraper:
                                 if (deptEl) dept = deptEl.innerText.trim();
                             }
                             results.push({title: text, href: href, location: loc, department: dept});
-                        }
-                    }
-                }
-
-                // Strategy 3: Table rows
-                if (results.length === 0) {
-                    var rows = document.querySelectorAll('table tr, div[role="row"]');
-                    for (var i = 0; i < rows.length; i++) {
-                        var row = rows[i];
-                        var cells = row.querySelectorAll('td, div[role="cell"]');
-                        if (cells.length >= 2) {
-                            var titleCell = cells[0];
-                            var link = titleCell.querySelector('a');
-                            var title = titleCell.innerText.trim().split('\\n')[0].trim();
-                            var href = link ? link.href : '';
-                            var location = cells.length > 1 ? cells[1].innerText.trim() : '';
-                            var dept = cells.length > 2 ? cells[2].innerText.trim() : '';
-                            if (title.length > 3 && !seen[title + href]) {
-                                seen[title + href] = true;
-                                results.push({title: title, href: href, location: location, department: dept});
-                            }
                         }
                     }
                 }
@@ -250,6 +286,8 @@ class StarHealthScraper:
                         'remote_type': '',
                         'status': 'active'
                     })
+            else:
+                logger.info("No job data found on page (site may have no open positions)")
         except Exception as e:
             logger.error(f"JS extraction failed: {e}")
 

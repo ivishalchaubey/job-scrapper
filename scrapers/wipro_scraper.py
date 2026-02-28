@@ -69,30 +69,27 @@ class WiproScraper:
             driver = self.setup_driver()
             logger.info(f"Starting {self.company_name} scraping from {self.url}")
             driver.get(self.url)
-            time.sleep(12)  # SPA needs time to render
 
-            # Wait for the job list container to appear
-            wait = WebDriverWait(driver, 10)
-            short_wait = WebDriverWait(driver, 5)
-
-            # Scroll to trigger lazy loading
-            for _ in range(3):
-                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                time.sleep(2)
-            driver.execute_script("window.scrollTo(0, 0);")
-            time.sleep(2)
-
-            # Wait for SuccessFactors job list elements
+            # Smart wait: return as soon as job content appears (instead of blind sleep)
+            JOB_SELECTOR = (
+                'tr.data-row, a.jobTitle-link, td.colTitle, '
+                'div[class*="jobTitle"], a[href*="jobDetail"], '
+                'li[class*="JobsList"], a[class*="jobCardTitle"]'
+            )
             try:
-                short_wait.until(EC.presence_of_element_located((
-                    By.CSS_SELECTOR,
-                    'tr.data-row, a.jobTitle-link, td.colTitle, '
-                    'div[class*="jobTitle"], a[href*="jobDetail"], '
-                    'li[class*="JobsList"], a[class*="jobCardTitle"]'
-                )))
+                WebDriverWait(driver, 15).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, JOB_SELECTOR))
+                )
                 logger.info("Job list container detected")
             except:
-                logger.warning("Timeout waiting for job list container, proceeding anyway")
+                logger.warning("Timeout waiting for job list, falling back to short sleep")
+                time.sleep(5)
+
+            # Quick single scroll to trigger any lazy loading
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            time.sleep(1)
+            driver.execute_script("window.scrollTo(0, 0);")
+            time.sleep(0.5)
 
             current_page = 1
             while current_page <= max_pages:
@@ -103,7 +100,7 @@ class WiproScraper:
                 if current_page < max_pages:
                     if not self._go_to_next_page(driver, current_page):
                         break
-                    time.sleep(5)
+                    # No extra sleep needed — _go_to_next_page already polls for change
                 current_page += 1
 
             logger.info(f"Total jobs scraped: {len(all_jobs)}")
@@ -118,7 +115,14 @@ class WiproScraper:
     def _go_to_next_page(self, driver, current_page):
         try:
             driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(2)
+            time.sleep(0.5)
+
+            # Capture current first job text for change detection
+            old_first = driver.execute_script("""
+                var card = document.querySelector('tr.data-row, a.jobTitle-link, td.colTitle, a[href*="jobDetail"]');
+                return card ? card.innerText.substring(0, 50) : '';
+            """)
+
             # Try various pagination selectors
             for sel_type, sel_val in [
                 (By.CSS_SELECTOR, 'a[aria-label="Next"]'),
@@ -134,6 +138,17 @@ class WiproScraper:
                     btn = driver.find_element(sel_type, sel_val)
                     driver.execute_script("arguments[0].click();", btn)
                     logger.info(f"Navigated to page {current_page + 1}")
+
+                    # Poll for page change instead of blind sleep (max 4s, usually <1s)
+                    for _ in range(20):
+                        time.sleep(0.2)
+                        new_first = driver.execute_script("""
+                            var card = document.querySelector('tr.data-row, a.jobTitle-link, td.colTitle, a[href*="jobDetail"]');
+                            return card ? card.innerText.substring(0, 50) : '';
+                        """)
+                        if new_first and new_first != old_first:
+                            break
+                    time.sleep(0.5)  # Brief settle after change detected
                     return True
                 except:
                     continue

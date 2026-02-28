@@ -109,7 +109,14 @@ class MicrosoftScraper:
             # Visit the Eightfold-powered careers search page to establish session
             logger.info(f"Loading Microsoft PCSX careers page: {self.search_url}")
             driver.get(self.search_url)
-            time.sleep(15)  # SPA needs time to render and establish auth
+            # Smart wait: return as soon as page content appears instead of blind sleep
+            try:
+                WebDriverWait(driver, 15).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, 'a[class*="card-"], div[class*="position-card"], [class*="job"]'))
+                )
+                time.sleep(1)  # Brief settle for SPA to finish rendering
+            except Exception:
+                time.sleep(5)  # Fallback if selectors not found
 
             logger.info(f"Page loaded: {driver.current_url}, title: {driver.title}")
 
@@ -270,15 +277,20 @@ class MicrosoftScraper:
 
                 driver.get(page_url)
 
-                # SPA rendering wait
-                time.sleep(15)
+                # Smart wait: return as soon as job cards appear instead of blind sleep
+                try:
+                    WebDriverWait(driver, 15).until(
+                        EC.presence_of_element_located((By.CSS_SELECTOR, 'a[class*="card-"], a[href*="/careers/job/"], div[class*="position-card"]'))
+                    )
+                    time.sleep(1)  # Brief settle for SPA rendering
+                except Exception:
+                    time.sleep(5)  # Fallback if selectors not found
 
-                # Scroll to trigger lazy loading
-                for _ in range(3):
-                    driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                    time.sleep(2)
+                # Quick scroll to trigger lazy loading (single scroll instead of 3)
+                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                time.sleep(0.5)
                 driver.execute_script("window.scrollTo(0, 0);")
-                time.sleep(2)
+                time.sleep(0.3)
 
                 logger.info(f"Page loaded: {driver.current_url}")
 

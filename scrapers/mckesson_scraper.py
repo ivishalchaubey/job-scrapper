@@ -62,13 +62,20 @@ class McKessonScraper:
             driver = self.setup_driver()
             logger.info(f"Starting {self.company_name} scraping from {self.url}")
             driver.get(self.url)
-            time.sleep(15)
 
-            for _ in range(5):
-                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                time.sleep(2)
+            # Wait for NAS Recruitment search results to load
+            try:
+                WebDriverWait(driver, 15).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, '#search-results-list li'))
+                )
+            except:
+                time.sleep(5)
+
+            # Quick scroll to trigger lazy loading
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            time.sleep(1)
             driver.execute_script("window.scrollTo(0, 0);")
-            time.sleep(2)
+            time.sleep(0.5)
 
             for page in range(max_pages):
                 page_jobs = self._extract_jobs(driver)
@@ -77,9 +84,9 @@ class McKessonScraper:
                 all_jobs.extend(page_jobs)
                 logger.info(f"Page {page + 1}: {len(page_jobs)} jobs (total: {len(all_jobs)})")
 
-                if not self._go_to_next_page(driver):
-                    break
-                time.sleep(5)
+                if page < max_pages - 1:
+                    if not self._go_to_next_page(driver):
+                        break
 
             logger.info(f"Total jobs scraped: {len(all_jobs)}")
         except Exception as e:
@@ -93,97 +100,58 @@ class McKessonScraper:
         jobs = []
 
         try:
-            for _ in range(3):
-                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                time.sleep(2)
+            # Single scroll to ensure all items are loaded
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            time.sleep(0.5)
             driver.execute_script("window.scrollTo(0, 0);")
-            time.sleep(1)
+            time.sleep(0.3)
 
             js_jobs = driver.execute_script("""
                 var results = [];
                 var seen = {};
 
-                // Strategy 1: Phenom/NAS platform selectors
-                var cards = document.querySelectorAll('li[data-ph-at-id="job-listing"], div[data-ph-at-id="job-listing"]');
-                if (cards.length === 0) cards = document.querySelectorAll('a[data-ph-at-id="job-link"]');
-                if (cards.length === 0) cards = document.querySelectorAll('li[data-job-id]');
-                if (cards.length === 0) cards = document.querySelectorAll('[class*="job-card"], [class*="jobCard"], [class*="search-result"], [class*="searchResult"]');
-                if (cards.length === 0) cards = document.querySelectorAll('[class*="job-listing"], [class*="jobListing"], [class*="position-card"]');
-                if (cards.length === 0) cards = document.querySelectorAll('li[class*="job"], div[class*="job-item"], article[class*="job"]');
+                // NAS Recruitment platform: #search-results-list li
+                var items = document.querySelectorAll('#search-results-list li');
 
-                for (var i = 0; i < cards.length; i++) {
-                    var card = cards[i];
-                    var titleEl = card.querySelector('.job-title, [class*="job-title"], [class*="jobTitle"], a.job-result-title, h2, h3, h4, [class*="title"]');
-                    var locEl = card.querySelector('.job-location, .job-result-location, [class*="location"], [class*="Location"]');
-                    var linkEl = card.tagName === 'A' ? card : card.querySelector('a[href*="/job/"], a[href*="/jb/"], a[href*="/position/"], a[href*="/job-details/"], a');
+                for (var i = 0; i < items.length; i++) {
+                    var item = items[i];
+                    var titleLink = item.querySelector('a.search-results__job-title-link, a[data-job-id]');
+                    if (!titleLink) titleLink = item.querySelector('a[href*="/job/"]');
+                    if (!titleLink) continue;
 
-                    var title = titleEl ? titleEl.innerText.trim().split('\\n')[0] : '';
-                    if (!title && linkEl) title = linkEl.innerText.trim().split('\\n')[0];
+                    var title = titleLink.innerText.trim();
+                    var href = titleLink.href || '';
+                    if (!title || title.length < 3 || !href || seen[href]) continue;
+                    seen[href] = true;
+
+                    var locEl = item.querySelector('span.search-results__job-location, [class*="location"]');
                     var location = locEl ? locEl.innerText.trim() : '';
-                    var href = linkEl ? linkEl.href : '';
 
-                    if (title && title.length > 2 && title.length < 200 && href && !seen[href]) {
-                        if (!href.includes('login') && !href.includes('sign-in') && !href.includes('javascript:')) {
-                            seen[href] = true;
-                            var dateEl = card.querySelector('[class*="date"], [class*="Date"], .job-result-date');
-                            var date = dateEl ? dateEl.innerText.trim() : '';
-                            results.push({title: title, location: location, url: href, date: date});
-                        }
-                    }
+                    var dateEl = item.querySelector('span.search-results__job-date, [class*="date"]');
+                    var date = dateEl ? dateEl.innerText.trim() : '';
+
+                    results.push({title: title, url: href, location: location, date: date});
                 }
 
-                // Strategy 2: Direct job links
+                // Fallback: direct job links
                 if (results.length === 0) {
-                    var jobLinks = document.querySelectorAll('a[href*="/job/"], a[href*="/job-"], a[href*="/jobs/"], a[href*="/jb/"], a[href*="/position/"], a[href*="/vacancy/"], a[href*="/career/"], a[href*="/opening/"], a[href*="/requisition/"]');
-                    for (var i = 0; i < jobLinks.length; i++) {
-                        var el = jobLinks[i];
+                    var links = document.querySelectorAll('a[href*="/job/"]');
+                    for (var i = 0; i < links.length; i++) {
+                        var el = links[i];
                         var title = (el.innerText || '').trim().split('\\n')[0].trim();
                         var url = el.href || '';
                         if (!title || title.length < 3 || title.length > 200) continue;
-                        if (url.includes('login') || url.includes('sign-in') || url.includes('javascript:')) continue;
+                        if (url.includes('login') || url.includes('javascript:')) continue;
                         if (seen[url]) continue;
                         seen[url] = true;
+                        var parent = el.closest('li, div, tr');
                         var location = '';
-                        var parent = el.closest('li, div[class*="job"], article, tr, div[class*="result"]');
                         if (parent) {
-                            var locEl = parent.querySelector('[class*="location"], [class*="Location"]');
-                            if (locEl && locEl !== el) location = locEl.innerText.trim();
+                            var locEl = parent.querySelector('[class*="location"]');
+                            if (locEl) location = locEl.innerText.trim();
                         }
                         results.push({title: title, url: url, location: location, date: ''});
                     }
-                }
-
-                // Strategy 3: Table rows
-                if (results.length === 0) {
-                    var rows = document.querySelectorAll('table tbody tr, table tr.dataRow, table tr[class*="job"]');
-                    for (var i = 0; i < rows.length; i++) {
-                        var row = rows[i];
-                        var link = row.querySelector('a[href]');
-                        if (!link) continue;
-                        var title = link.innerText.trim().split('\\n')[0];
-                        var href = link.href || '';
-                        if (!title || title.length < 3 || !href || seen[href]) continue;
-                        seen[href] = true;
-                        var locTd = row.querySelector('td:nth-child(2), [class*="location"]');
-                        var location = locTd ? locTd.innerText.trim() : '';
-                        results.push({title: title, url: href, location: location, date: ''});
-                    }
-                }
-
-                // Strategy 4: Generic fallback
-                if (results.length === 0) {
-                    document.querySelectorAll('a[href]').forEach(function(link) {
-                        var href = link.href || '';
-                        var text = (link.innerText || '').trim();
-                        if (text.length > 5 && text.length < 200 && href.length > 10) {
-                            if ((href.includes('/job') || href.includes('/position') || href.includes('/career') || href.includes('/opening') || href.includes('/vacancy')) && !seen[href]) {
-                                if (!href.includes('login') && !href.includes('sign-in') && !href.includes('javascript:') && !href.includes('#')) {
-                                    seen[href] = true;
-                                    results.push({title: text.split('\\n')[0].trim(), url: href, location: '', date: ''});
-                                }
-                            }
-                        }
-                    });
                 }
 
                 return results;
@@ -216,24 +184,28 @@ class McKessonScraper:
                     loc_data = self.parse_location(location)
                     jobs.append({
                         'external_id': self.generate_external_id(job_id, self.company_name),
-                        'company_name': self.company_name, 'title': title,
-                        'apply_url': url or self.url, 'location': location,
-                        'department': '', 'employment_type': '', 'description': '',
-                        'posted_date': date, 'city': loc_data.get('city', ''),
+                        'company_name': self.company_name,
+                        'title': title,
+                        'apply_url': url or self.url,
+                        'location': location,
+                        'department': '',
+                        'employment_type': '',
+                        'description': '',
+                        'posted_date': date,
+                        'city': loc_data.get('city', ''),
                         'state': loc_data.get('state', ''),
                         'country': loc_data.get('country', 'India'),
-                        'job_function': '', 'experience_level': '', 'salary_range': '',
-                        'remote_type': '', 'status': 'active'
+                        'job_function': '',
+                        'experience_level': '',
+                        'salary_range': '',
+                        'remote_type': '',
+                        'status': 'active'
                     })
 
             if jobs:
                 logger.info(f"Successfully extracted {len(jobs)} jobs")
             else:
                 logger.warning("No jobs found on this page")
-                try:
-                    body_text = driver.execute_script('return document.body ? document.body.innerText.substring(0, 500) : ""')
-                    logger.info(f"Page body preview: {body_text}")
-                except: pass
 
         except Exception as e:
             logger.error(f"Error extracting jobs: {str(e)}")
@@ -243,30 +215,36 @@ class McKessonScraper:
     def _go_to_next_page(self, driver):
         try:
             driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(2)
+            time.sleep(0.5)
 
+            # Get current first job to detect page change
+            old_first = driver.execute_script("""
+                var item = document.querySelector('#search-results-list li a');
+                return item ? item.innerText.substring(0, 50) : '';
+            """)
+
+            # NAS platform pagination
             for sel_type, sel_val in [
-                (By.CSS_SELECTOR, 'button[data-ph-at-id="load-more-jobs-button"]'),
-                (By.CSS_SELECTOR, 'a[data-ph-at-id="pagination-next-btn"]'),
                 (By.CSS_SELECTOR, 'a[aria-label="Next"]'),
-                (By.CSS_SELECTOR, 'button[aria-label="Next"]'),
-                (By.CSS_SELECTOR, '.pagination .next a'),
-                (By.CSS_SELECTOR, 'a.next-page'),
+                (By.CSS_SELECTOR, 'a.pagination-paging__link--next'),
+                (By.CSS_SELECTOR, '.pagination-paging a.next'),
                 (By.CSS_SELECTOR, 'a[rel="next"]'),
-                (By.CSS_SELECTOR, 'li.pagination-next a'),
                 (By.XPATH, '//a[contains(text(), "Next")]'),
-                (By.XPATH, '//button[contains(text(), "Next")]'),
-                (By.CSS_SELECTOR, '[class*="pagination"] a[class*="next"]'),
-                (By.CSS_SELECTOR, '[class*="pagination"] button[class*="next"]'),
-                (By.CSS_SELECTOR, 'button[class*="load-more"]'),
-                (By.XPATH, '//button[contains(text(), "Load more")]'),
-                (By.XPATH, '//button[contains(text(), "Show more")]'),
             ]:
                 try:
                     btn = driver.find_element(sel_type, sel_val)
                     if btn.is_displayed() and btn.is_enabled():
                         driver.execute_script("arguments[0].click();", btn)
-                        logger.info("Navigated to next page")
+                        # Poll for page change
+                        for _ in range(20):
+                            time.sleep(0.2)
+                            new_first = driver.execute_script("""
+                                var item = document.querySelector('#search-results-list li a');
+                                return item ? item.innerText.substring(0, 50) : '';
+                            """)
+                            if new_first and new_first != old_first:
+                                break
+                        time.sleep(0.5)
                         return True
                 except:
                     continue
@@ -276,15 +254,18 @@ class McKessonScraper:
 
     def parse_location(self, location_str):
         result = {'city': '', 'state': '', 'country': 'India'}
-        if not location_str: return result
+        if not location_str:
+            return result
         parts = [p.strip() for p in location_str.split(',')]
-        if len(parts) >= 1: result['city'] = parts[0]
+        if len(parts) >= 1:
+            result['city'] = parts[0]
         if len(parts) >= 3:
             result['state'] = parts[1]
             result['country'] = parts[2]
         elif len(parts) == 2:
             result['country'] = parts[1]
-        if 'India' in location_str: result['country'] = 'India'
+        if 'India' in location_str:
+            result['country'] = 'India'
         return result
 
 
@@ -293,4 +274,4 @@ if __name__ == "__main__":
     jobs = scraper.scrape()
     print(f"\nTotal jobs found: {len(jobs)}")
     for job in jobs:
-                print(f"- {job['title']} | {job['location']}")
+        print(f"- {job['title']} | {job['location']}")

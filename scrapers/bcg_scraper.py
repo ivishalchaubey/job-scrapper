@@ -70,25 +70,21 @@ class BCGScraper:
 
             driver.get(self.url)
 
-            # Wait 15s for Phenom SPA rendering
-            time.sleep(15)
-
-            # Try to detect Phenom job listings
+            # Smart wait for Phenom job listings instead of blind sleep
             try:
-                short_wait = WebDriverWait(driver, 10)
-                short_wait.until(EC.presence_of_element_located((
+                WebDriverWait(driver, 15).until(EC.presence_of_element_located((
                     By.CSS_SELECTOR, "div.job-title, li[data-ph-at-id='job-listing'], a.apply-btn, div.phs-facet-results"
                 )))
                 logger.info("Job listings loaded")
             except Exception as e:
                 logger.warning(f"Timeout waiting for Phenom job listings: {str(e)}")
+                time.sleep(5)
 
-            # Scroll to trigger lazy loading
-            for _ in range(5):
-                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                time.sleep(2)
+            # Quick scroll to trigger lazy loading
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            time.sleep(1)
             driver.execute_script("window.scrollTo(0, 0);")
-            time.sleep(2)
+            time.sleep(0.5)
 
             # Scrape current page
             wait = WebDriverWait(driver, 5)
@@ -118,9 +114,11 @@ class BCGScraper:
         scraped_ids = set()
 
         try:
-            # Scroll to load all content
+            # Quick scroll to load content
             driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(2)
+            time.sleep(0.5)
+            driver.execute_script("window.scrollTo(0, 0);")
+            time.sleep(0.3)
 
             # --- Strategy 1: JavaScript extraction using Phenom DOM selectors ---
             logger.info("Trying JS-based Phenom extraction (div.job-title, a.apply-btn)")

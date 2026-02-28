@@ -64,6 +64,23 @@ class LenovoScraper:
             driver.get(self.url)
             time.sleep(15)
 
+            # Dismiss cookie consent banner if present
+            try:
+                driver.execute_script("""
+                    var btns = document.querySelectorAll('button, a');
+                    for (var i = 0; i < btns.length; i++) {
+                        var t = btns[i].innerText.trim();
+                        if (t === 'Accept All' || t === 'Accept all' || t === 'ACCEPT ALL') {
+                            btns[i].click();
+                            break;
+                        }
+                    }
+                """)
+                time.sleep(3)
+                logger.info("Dismissed cookie consent banner")
+            except:
+                pass
+
             for _ in range(5):
                 driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
                 time.sleep(2)
@@ -103,113 +120,47 @@ class LenovoScraper:
                 var results = [];
                 var seen = {};
 
-                // Strategy 0: NAS/Radancy platform selectors
-                var cards = document.querySelectorAll('tr.data-row, tr[class*="data-row"]');
-                if (cards.length === 0) cards = document.querySelectorAll('.jobs-table tbody tr, table.jobs-list tbody tr');
-                if (cards.length === 0) cards = document.querySelectorAll('[class*="job-result"], [class*="jobResult"]');
-
-                for (var i = 0; i < cards.length; i++) {
-                    var card = cards[i];
-                    var titleEl = card.querySelector('a.jobTitle-link, a[class*="jobTitle"], .job-title a, td.colTitle a, a');
-                    var locEl = card.querySelector('td.colLocation, .job-location, [class*="location"], [class*="Location"]');
-
-                    var title = titleEl ? titleEl.innerText.trim().split('\\n')[0] : '';
-                    var href = titleEl ? titleEl.href : '';
-                    var location = locEl ? locEl.innerText.trim() : '';
-
-                    if (title && title.length > 2 && title.length < 200 && href && !seen[href]) {
-                        if (!href.includes('login') && !href.includes('sign-in') && !href.includes('javascript:')) {
-                            seen[href] = true;
-                            var dateEl = card.querySelector('[class*="date"], [class*="Date"], td.colDate');
-                            var date = dateEl ? dateEl.innerText.trim() : '';
-                            results.push({title: title, location: location, url: href, date: date});
-                        }
-                    }
-                }
-
-                // Strategy 1: Phenom/NAS platform selectors
-                if (results.length === 0) {
-                    cards = document.querySelectorAll('li[data-ph-at-id="job-listing"], div[data-ph-at-id="job-listing"]');
-                    if (cards.length === 0) cards = document.querySelectorAll('a[data-ph-at-id="job-link"]');
-                    if (cards.length === 0) cards = document.querySelectorAll('li[data-job-id]');
-                    if (cards.length === 0) cards = document.querySelectorAll('[class*="job-card"], [class*="jobCard"], [class*="search-result"], [class*="searchResult"]');
-                    if (cards.length === 0) cards = document.querySelectorAll('[class*="job-listing"], [class*="jobListing"], [class*="position-card"]');
-                    if (cards.length === 0) cards = document.querySelectorAll('li[class*="job"], div[class*="job-item"], article[class*="job"]');
-
-                    for (var i = 0; i < cards.length; i++) {
-                        var card = cards[i];
-                        var titleEl = card.querySelector('.job-title, [class*="job-title"], [class*="jobTitle"], a.job-result-title, h2, h3, h4, [class*="title"]');
-                        var locEl = card.querySelector('.job-location, .job-result-location, [class*="location"], [class*="Location"]');
-                        var linkEl = card.tagName === 'A' ? card : card.querySelector('a[href*="/job/"], a[href*="/jb/"], a[href*="/position/"], a[href*="/job-details/"], a');
-
-                        var title = titleEl ? titleEl.innerText.trim().split('\\n')[0] : '';
-                        if (!title && linkEl) title = linkEl.innerText.trim().split('\\n')[0];
-                        var location = locEl ? locEl.innerText.trim() : '';
-                        var href = linkEl ? linkEl.href : '';
-
-                        if (title && title.length > 2 && title.length < 200 && href && !seen[href]) {
-                            if (!href.includes('login') && !href.includes('sign-in') && !href.includes('javascript:')) {
-                                seen[href] = true;
-                                var dateEl = card.querySelector('[class*="date"], [class*="Date"], .job-result-date');
-                                var date = dateEl ? dateEl.innerText.trim() : '';
-                                results.push({title: title, location: location, url: href, date: date});
+                // Strategy 1: SuccessFactors article cards (modern variant)
+                var articles = document.querySelectorAll('article.article--result');
+                for (var i = 0; i < articles.length; i++) {
+                    var art = articles[i];
+                    var titleLink = art.querySelector('h3 a, a.article__header__focusable, a.link');
+                    if (!titleLink) continue;
+                    var title = titleLink.innerText.trim();
+                    var url = titleLink.href || '';
+                    if (!title || title.length < 3 || seen[url]) continue;
+                    seen[url] = true;
+                    var subtitle = art.querySelector('.article__header__text__subtitle');
+                    var location = '';
+                    var date = '';
+                    if (subtitle) {
+                        var subText = subtitle.innerText.trim();
+                        var lines = subText.split('\\n');
+                        if (lines.length > 0) location = lines[0].trim();
+                        for (var j = 0; j < lines.length; j++) {
+                            if (lines[j].includes('Posted')) {
+                                date = lines[j].replace('Posted', '').trim();
                             }
                         }
                     }
+                    results.push({title: title, url: url, location: location, date: date});
                 }
 
-                // Strategy 2: Direct job links
+                // Strategy 2: SuccessFactors table rows (classic)
                 if (results.length === 0) {
-                    var jobLinks = document.querySelectorAll('a[href*="/job/"], a[href*="/job-"], a[href*="/jobs/"], a[href*="/jb/"], a[href*="/position/"], a[href*="/vacancy/"], a[href*="/career/"], a[href*="/opening/"], a[href*="/requisition/"]');
-                    for (var i = 0; i < jobLinks.length; i++) {
-                        var el = jobLinks[i];
-                        var title = (el.innerText || '').trim().split('\\n')[0].trim();
-                        var url = el.href || '';
-                        if (!title || title.length < 3 || title.length > 200) continue;
-                        if (url.includes('login') || url.includes('sign-in') || url.includes('javascript:')) continue;
-                        if (seen[url]) continue;
-                        seen[url] = true;
-                        var location = '';
-                        var parent = el.closest('li, div[class*="job"], article, tr, div[class*="result"]');
-                        if (parent) {
-                            var locEl = parent.querySelector('[class*="location"], [class*="Location"]');
-                            if (locEl && locEl !== el) location = locEl.innerText.trim();
-                        }
-                        results.push({title: title, url: url, location: location, date: ''});
-                    }
-                }
-
-                // Strategy 3: Table rows
-                if (results.length === 0) {
-                    var rows = document.querySelectorAll('table tbody tr, table tr.dataRow, table tr[class*="job"]');
+                    var rows = document.querySelectorAll('tr.data-row');
                     for (var i = 0; i < rows.length; i++) {
                         var row = rows[i];
-                        var link = row.querySelector('a[href]');
-                        if (!link) continue;
-                        var title = link.innerText.trim().split('\\n')[0];
-                        var href = link.href || '';
-                        if (!title || title.length < 3 || !href || seen[href]) continue;
-                        seen[href] = true;
-                        var locTd = row.querySelector('td:nth-child(2), [class*="location"]');
+                        var titleLink = row.querySelector('a.jobTitle-link, a[href*="/job/"]');
+                        if (!titleLink) continue;
+                        var title = titleLink.innerText.trim();
+                        var url = titleLink.href || '';
+                        if (!title || title.length < 3 || seen[url]) continue;
+                        seen[url] = true;
+                        var locTd = row.querySelector('td.colLocation, [class*="location"], [class*="Location"]');
                         var location = locTd ? locTd.innerText.trim() : '';
-                        results.push({title: title, url: href, location: location, date: ''});
+                        results.push({title: title, url: url, location: location, date: ''});
                     }
-                }
-
-                // Strategy 4: Generic fallback
-                if (results.length === 0) {
-                    document.querySelectorAll('a[href]').forEach(function(link) {
-                        var href = link.href || '';
-                        var text = (link.innerText || '').trim();
-                        if (text.length > 5 && text.length < 200 && href.length > 10) {
-                            if ((href.includes('/job') || href.includes('/position') || href.includes('/career') || href.includes('/opening') || href.includes('/vacancy')) && !seen[href]) {
-                                if (!href.includes('login') && !href.includes('sign-in') && !href.includes('javascript:') && !href.includes('#')) {
-                                    seen[href] = true;
-                                    results.push({title: text.split('\\n')[0].trim(), url: href, location: '', date: ''});
-                                }
-                            }
-                        }
-                    });
                 }
 
                 return results;
@@ -272,23 +223,14 @@ class LenovoScraper:
             time.sleep(2)
 
             for sel_type, sel_val in [
+                (By.CSS_SELECTOR, 'a.paginationNextLink'),
+                (By.XPATH, '//a[contains(text(), "Next")]'),
                 (By.CSS_SELECTOR, 'a.pagination-show-next'),
                 (By.CSS_SELECTOR, 'a[title="Next"]'),
-                (By.CSS_SELECTOR, 'button[data-ph-at-id="load-more-jobs-button"]'),
-                (By.CSS_SELECTOR, 'a[data-ph-at-id="pagination-next-btn"]'),
+                (By.CSS_SELECTOR, 'a[aria-label="Next page"]'),
                 (By.CSS_SELECTOR, 'a[aria-label="Next"]'),
-                (By.CSS_SELECTOR, 'button[aria-label="Next"]'),
                 (By.CSS_SELECTOR, '.pagination .next a'),
                 (By.CSS_SELECTOR, 'a.next-page'),
-                (By.CSS_SELECTOR, 'a[rel="next"]'),
-                (By.CSS_SELECTOR, 'li.pagination-next a'),
-                (By.XPATH, '//a[contains(text(), "Next")]'),
-                (By.XPATH, '//button[contains(text(), "Next")]'),
-                (By.CSS_SELECTOR, '[class*="pagination"] a[class*="next"]'),
-                (By.CSS_SELECTOR, '[class*="pagination"] button[class*="next"]'),
-                (By.CSS_SELECTOR, 'button[class*="load-more"]'),
-                (By.XPATH, '//button[contains(text(), "Load more")]'),
-                (By.XPATH, '//button[contains(text(), "Show more")]'),
             ]:
                 try:
                     btn = driver.find_element(sel_type, sel_val)

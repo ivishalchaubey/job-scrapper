@@ -23,6 +23,8 @@ class BMWGroupScraper:
         self.company_name = 'BMW Group'
         self.url = 'https://www.bmwgroup.jobs/in/en/jobs.html'
         self.base_url = 'https://www.bmwgroup.jobs'
+        # BMW AEM jobfinder API endpoint - fetches HTML fragments with job data
+        self.api_path = '/in/en/jobs/_jcr_content/main/layoutcontainer_5337_1987237933/jobfinder30.jobfinder_table.content.html'
 
     def setup_driver(self):
         chrome_options = Options()
@@ -62,24 +64,38 @@ class BMWGroupScraper:
             driver = self.setup_driver()
             logger.info(f"Starting {self.company_name} scraping from {self.url}")
             driver.get(self.url)
-            time.sleep(15)
 
-            for _ in range(5):
-                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                time.sleep(2)
-            driver.execute_script("window.scrollTo(0, 0);")
-            time.sleep(2)
+            # Wait for the page to load enough for XHR to work
+            time.sleep(8)
+
+            # BMW uses AEM jobfinder API that returns HTML fragments
+            # Fetch jobs via XHR with India location filter
+            # blockCount controls how many jobs per page (max ~50)
+            jobs_per_page = 50
 
             for page in range(max_pages):
-                page_jobs = self._extract_jobs(driver)
+                row_index = page * jobs_per_page
+                api_url = f"{self.api_path}?filterSearch=location_IN&rowIndex={row_index}&blockCount={jobs_per_page}"
+
+                page_jobs = self._extract_jobs_from_api(driver, api_url)
+
                 if not page_jobs:
-                    break
+                    # If India filter returns 0, try without filter for first page only
+                    if page == 0:
+                        logger.info("No India jobs with filter, trying without location filter")
+                        api_url_no_filter = f"{self.api_path}?rowIndex=0&blockCount={jobs_per_page}"
+                        page_jobs = self._extract_jobs_from_api(driver, api_url_no_filter)
+                        if page_jobs:
+                            logger.info(f"Found {len(page_jobs)} jobs without India filter (global results)")
+                    if not page_jobs:
+                        break
+
                 all_jobs.extend(page_jobs)
                 logger.info(f"Page {page + 1}: {len(page_jobs)} jobs (total: {len(all_jobs)})")
 
-                if not self._go_to_next_page(driver):
+                # If we got fewer than requested, we've reached the end
+                if len(page_jobs) < jobs_per_page:
                     break
-                time.sleep(5)
 
             logger.info(f"Total jobs scraped: {len(all_jobs)}")
         except Exception as e:
@@ -89,202 +105,120 @@ class BMWGroupScraper:
                 driver.quit()
         return all_jobs
 
-    def _extract_jobs(self, driver):
+    def _extract_jobs_from_api(self, driver, api_url):
+        """Fetch jobs from BMW AEM jobfinder API and parse the HTML response."""
         jobs = []
 
         try:
-            for _ in range(3):
-                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                time.sleep(2)
-            driver.execute_script("window.scrollTo(0, 0);")
-            time.sleep(1)
-
             js_jobs = driver.execute_script("""
+                var xhr = new XMLHttpRequest();
+                xhr.open('GET', arguments[0], false);
+                xhr.send();
+
+                if (xhr.status !== 200) return [];
+
+                var parser = new DOMParser();
+                var doc = parser.parseFromString(xhr.responseText, 'text/html');
+
                 var results = [];
-                var seen = {};
+                var wrappers = doc.querySelectorAll('.grp-jobfinder__wrapper[data-job-id]');
 
-                // Strategy 1: Phenom/NAS platform selectors
-                var cards = document.querySelectorAll('li[data-ph-at-id="job-listing"], div[data-ph-at-id="job-listing"]');
-                if (cards.length === 0) cards = document.querySelectorAll('a[data-ph-at-id="job-link"]');
-                if (cards.length === 0) cards = document.querySelectorAll('li[data-job-id]');
-                if (cards.length === 0) cards = document.querySelectorAll('[class*="job-card"], [class*="jobCard"], [class*="search-result"], [class*="searchResult"]');
-                if (cards.length === 0) cards = document.querySelectorAll('[class*="job-listing"], [class*="jobListing"], [class*="position-card"]');
-                if (cards.length === 0) cards = document.querySelectorAll('li[class*="job"], div[class*="job-item"], article[class*="job"]');
+                for (var i = 0; i < wrappers.length; i++) {
+                    var wrapper = wrappers[i];
+                    var jobId = wrapper.getAttribute('data-job-id') || '';
 
-                for (var i = 0; i < cards.length; i++) {
-                    var card = cards[i];
-                    var titleEl = card.querySelector('.job-title, [class*="job-title"], [class*="jobTitle"], a.job-result-title, h2, h3, h4, [class*="title"]');
-                    var locEl = card.querySelector('.job-location, .job-result-location, [class*="location"], [class*="Location"]');
-                    var linkEl = card.tagName === 'A' ? card : card.querySelector('a[href*="/job/"], a[href*="/jb/"], a[href*="/position/"], a[href*="/job-details/"], a');
+                    // The refno div has all the data attributes
+                    var refno = wrapper.querySelector('.grp-jobfinder-cell-refno');
+                    var title = refno ? (refno.getAttribute('data-job-title') || '') : '';
+                    var location = refno ? (refno.getAttribute('data-job-location') || '') : '';
+                    var entity = refno ? (refno.getAttribute('data-job-legal-entity') || '') : '';
+                    var field = refno ? (refno.getAttribute('data-job-field') || '') : '';
+                    var jobType = refno ? (refno.getAttribute('data-job-type') || '') : '';
+                    var postingDate = refno ? (refno.getAttribute('data-posting-date') || '') : '';
 
-                    var title = titleEl ? titleEl.innerText.trim().split('\\n')[0] : '';
-                    if (!title && linkEl) title = linkEl.innerText.trim().split('\\n')[0];
-                    var location = locEl ? locEl.innerText.trim() : '';
-                    var href = linkEl ? linkEl.href : '';
+                    // Get the job URL
+                    var linkEl = wrapper.querySelector('a.grp-jobfinder__link-jobdescription, a[href*="job-description"]');
+                    var href = linkEl ? linkEl.getAttribute('href') : '';
 
-                    if (title && title.length > 2 && title.length < 200 && href && !seen[href]) {
-                        if (!href.includes('login') && !href.includes('sign-in') && !href.includes('javascript:')) {
-                            seen[href] = true;
-                            var dateEl = card.querySelector('[class*="date"], [class*="Date"], .job-result-date');
-                            var date = dateEl ? dateEl.innerText.trim() : '';
-                            results.push({title: title, location: location, url: href, date: date});
-                        }
+                    if (title && title.length > 2) {
+                        results.push({
+                            jobId: jobId,
+                            title: title,
+                            location: location,
+                            entity: entity,
+                            field: field,
+                            jobType: jobType,
+                            postingDate: postingDate,
+                            url: href
+                        });
                     }
-                }
-
-                // Strategy 2: Direct job links
-                if (results.length === 0) {
-                    var jobLinks = document.querySelectorAll('a[href*="/job/"], a[href*="/job-"], a[href*="/jobs/"], a[href*="/jb/"], a[href*="/position/"], a[href*="/vacancy/"], a[href*="/career/"], a[href*="/opening/"], a[href*="/requisition/"]');
-                    for (var i = 0; i < jobLinks.length; i++) {
-                        var el = jobLinks[i];
-                        var title = (el.innerText || '').trim().split('\\n')[0].trim();
-                        var url = el.href || '';
-                        if (!title || title.length < 3 || title.length > 200) continue;
-                        if (url.includes('login') || url.includes('sign-in') || url.includes('javascript:')) continue;
-                        if (seen[url]) continue;
-                        seen[url] = true;
-                        var location = '';
-                        var parent = el.closest('li, div[class*="job"], article, tr, div[class*="result"]');
-                        if (parent) {
-                            var locEl = parent.querySelector('[class*="location"], [class*="Location"]');
-                            if (locEl && locEl !== el) location = locEl.innerText.trim();
-                        }
-                        results.push({title: title, url: url, location: location, date: ''});
-                    }
-                }
-
-                // Strategy 3: Table rows
-                if (results.length === 0) {
-                    var rows = document.querySelectorAll('table tbody tr, table tr.dataRow, table tr[class*="job"]');
-                    for (var i = 0; i < rows.length; i++) {
-                        var row = rows[i];
-                        var link = row.querySelector('a[href]');
-                        if (!link) continue;
-                        var title = link.innerText.trim().split('\\n')[0];
-                        var href = link.href || '';
-                        if (!title || title.length < 3 || !href || seen[href]) continue;
-                        seen[href] = true;
-                        var locTd = row.querySelector('td:nth-child(2), [class*="location"]');
-                        var location = locTd ? locTd.innerText.trim() : '';
-                        results.push({title: title, url: href, location: location, date: ''});
-                    }
-                }
-
-                // Strategy 4: Generic fallback
-                if (results.length === 0) {
-                    document.querySelectorAll('a[href]').forEach(function(link) {
-                        var href = link.href || '';
-                        var text = (link.innerText || '').trim();
-                        if (text.length > 5 && text.length < 200 && href.length > 10) {
-                            if ((href.includes('/job') || href.includes('/position') || href.includes('/career') || href.includes('/opening') || href.includes('/vacancy')) && !seen[href]) {
-                                if (!href.includes('login') && !href.includes('sign-in') && !href.includes('javascript:') && !href.includes('#')) {
-                                    seen[href] = true;
-                                    results.push({title: text.split('\\n')[0].trim(), url: href, location: '', date: ''});
-                                }
-                            }
-                        }
-                    });
                 }
 
                 return results;
-            """)
+            """, api_url)
 
             if js_jobs:
-                logger.info(f"JS extraction found {len(js_jobs)} jobs")
-                seen_urls = set()
+                logger.info(f"API extraction found {len(js_jobs)} jobs")
                 for jdata in js_jobs:
                     title = jdata.get('title', '').strip()
-                    url = jdata.get('url', '').strip()
                     location = jdata.get('location', '').strip()
-                    date = jdata.get('date', '').strip()
+                    job_id = jdata.get('jobId', '').strip()
+                    url = jdata.get('url', '').strip()
+                    field = jdata.get('field', '').strip()
+                    job_type = jdata.get('jobType', '').strip()
+                    posting_date = jdata.get('postingDate', '').strip()
 
                     if not title or len(title) < 3:
                         continue
-                    if url in seen_urls:
-                        continue
-                    if url:
-                        seen_urls.add(url)
+
                     if url and url.startswith('/'):
                         url = f"{self.base_url}{url}"
 
-                    job_id = hashlib.md5((url or title).encode()).hexdigest()[:12]
-                    if url and '/job/' in url:
-                        parts = url.split('/job/')[-1].split('/')
-                        if parts[0]:
-                            job_id = parts[0]
+                    # Format posting date from YYYYMMDD to YYYY-MM-DD
+                    formatted_date = ''
+                    if posting_date and len(posting_date) == 8:
+                        formatted_date = f"{posting_date[:4]}-{posting_date[4:6]}-{posting_date[6:8]}"
 
                     loc_data = self.parse_location(location)
                     jobs.append({
-                        'external_id': self.generate_external_id(job_id, self.company_name),
-                        'company_name': self.company_name, 'title': title,
-                        'apply_url': url or self.url, 'location': location,
-                        'department': '', 'employment_type': '', 'description': '',
-                        'posted_date': date, 'city': loc_data.get('city', ''),
+                        'external_id': self.generate_external_id(job_id or title, self.company_name),
+                        'company_name': self.company_name,
+                        'title': title,
+                        'apply_url': url or self.url,
+                        'location': location,
+                        'department': field,
+                        'employment_type': job_type,
+                        'description': '',
+                        'posted_date': formatted_date,
+                        'city': loc_data.get('city', ''),
                         'state': loc_data.get('state', ''),
                         'country': loc_data.get('country', 'India'),
-                        'job_function': '', 'experience_level': '', 'salary_range': '',
-                        'remote_type': '', 'status': 'active'
+                        'job_function': field,
+                        'experience_level': '',
+                        'salary_range': '',
+                        'remote_type': '',
+                        'status': 'active'
                     })
 
-            if jobs:
-                logger.info(f"Successfully extracted {len(jobs)} jobs")
-            else:
-                logger.warning("No jobs found on this page")
-                try:
-                    body_text = driver.execute_script('return document.body ? document.body.innerText.substring(0, 500) : ""')
-                    logger.info(f"Page body preview: {body_text}")
-                except: pass
-
         except Exception as e:
-            logger.error(f"Error extracting jobs: {str(e)}")
+            logger.error(f"Error extracting jobs from API: {str(e)}")
 
         return jobs
 
-    def _go_to_next_page(self, driver):
-        try:
-            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(2)
-
-            for sel_type, sel_val in [
-                (By.CSS_SELECTOR, 'button[data-ph-at-id="load-more-jobs-button"]'),
-                (By.CSS_SELECTOR, 'a[data-ph-at-id="pagination-next-btn"]'),
-                (By.CSS_SELECTOR, 'a[aria-label="Next"]'),
-                (By.CSS_SELECTOR, 'button[aria-label="Next"]'),
-                (By.CSS_SELECTOR, '.pagination .next a'),
-                (By.CSS_SELECTOR, 'a.next-page'),
-                (By.CSS_SELECTOR, 'a[rel="next"]'),
-                (By.CSS_SELECTOR, 'li.pagination-next a'),
-                (By.XPATH, '//a[contains(text(), "Next")]'),
-                (By.XPATH, '//button[contains(text(), "Next")]'),
-                (By.CSS_SELECTOR, '[class*="pagination"] a[class*="next"]'),
-                (By.CSS_SELECTOR, '[class*="pagination"] button[class*="next"]'),
-                (By.CSS_SELECTOR, 'button[class*="load-more"]'),
-                (By.XPATH, '//button[contains(text(), "Load more")]'),
-                (By.XPATH, '//button[contains(text(), "Show more")]'),
-            ]:
-                try:
-                    btn = driver.find_element(sel_type, sel_val)
-                    if btn.is_displayed() and btn.is_enabled():
-                        driver.execute_script("arguments[0].click();", btn)
-                        logger.info("Navigated to next page")
-                        return True
-                except:
-                    continue
-            return False
-        except:
-            return False
-
     def parse_location(self, location_str):
         result = {'city': '', 'state': '', 'country': 'India'}
-        if not location_str: return result
+        if not location_str:
+            return result
         parts = [p.strip() for p in location_str.split(',')]
-        if len(parts) >= 1: result['city'] = parts[0]
+        if len(parts) >= 1:
+            result['city'] = parts[0]
         if len(parts) >= 3:
             result['state'] = parts[1]
             result['country'] = parts[2]
         elif len(parts) == 2:
             result['country'] = parts[1]
-        if 'India' in location_str: result['country'] = 'India'
+        if 'India' in location_str:
+            result['country'] = 'India'
         return result
 
 

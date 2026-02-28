@@ -61,18 +61,15 @@ class BookMyShowScraper:
             logger.info(f"Starting {self.company_name} scraping from {self.url}")
             driver.get(self.url)
 
-            # Wait for Trakstar page to fully render
-            time.sleep(12)
-
-            # Wait for the openings list container
-            wait = WebDriverWait(driver, 5)
+            # Smart wait for Trakstar page to render (replaces blind sleep(12))
             try:
-                wait.until(EC.presence_of_element_located((
-                    By.CSS_SELECTOR, "div.js-openings-list"
-                )))
+                WebDriverWait(driver, 15).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, "div.js-openings-list"))
+                )
                 logger.info("Found openings list container")
             except:
-                logger.warning("Timeout waiting for div.js-openings-list, will try selectors anyway")
+                logger.warning("Timeout waiting for div.js-openings-list, falling back to short sleep")
+                time.sleep(5)
 
             jobs = self._scrape_page(driver)
             all_jobs.extend(jobs)
@@ -91,10 +88,11 @@ class BookMyShowScraper:
         scraped_ids = set()
 
         try:
-            # Scroll down to ensure all cards are loaded
-            for _ in range(3):
-                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                time.sleep(1)
+            # Single quick scroll to trigger lazy loading (replaces 3x scroll)
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            time.sleep(0.5)
+            driver.execute_script("window.scrollTo(0, 0);")
+            time.sleep(0.3)
 
             # Trakstar platform selectors in priority order
             job_elements = []
@@ -355,7 +353,13 @@ class BookMyShowScraper:
             driver.execute_script("window.open('');")
             driver.switch_to.window(driver.window_handles[-1])
             driver.get(job_url)
-            time.sleep(3)
+            # Smart wait for job detail content (replaces blind sleep(3))
+            try:
+                WebDriverWait(driver, 5).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, ".job-description, [class*='description'], [class*='detail'], main"))
+                )
+            except:
+                time.sleep(2)
 
             for sel in [".job-description", "[class*='description']", "[class*='detail']", "main"]:
                 try:

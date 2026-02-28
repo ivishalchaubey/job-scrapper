@@ -22,7 +22,7 @@ class CumminsScraper:
         self.url = 'https://careers.cummins.com/search-jobs/India'
     
     def setup_driver(self):
-        """Set up Chrome driver with options"""
+        """Set up Chrome driver with anti-detection options"""
         chrome_options = Options()
         if HEADLESS_MODE:
             chrome_options.add_argument('--headless=new')
@@ -30,33 +30,27 @@ class CumminsScraper:
         chrome_options.add_argument('--disable-dev-shm-usage')
         chrome_options.add_argument('--disable-gpu')
         chrome_options.add_argument('--window-size=1920,1080')
-        chrome_options.add_argument('--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36')
+        chrome_options.add_argument('--user-agent=AppleWebKit/537.36')
         chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-        chrome_options.add_experimental_option('excludeSwitches', ['enable-logging'])
-        
+        chrome_options.add_experimental_option('useAutomationExtension', False)
+        chrome_options.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
+
         try:
-            # Install and get the correct chromedriver path
-            driver_path = CHROMEDRIVER_PATH
-            logger.info(f"ChromeDriver installed at: {driver_path}")
-            
-            # Fix for macOS ARM - ensure we use the actual chromedriver binary
-            if 'chromedriver-mac-arm64' in driver_path and not driver_path.endswith('chromedriver'):
-                import os
-                driver_dir = os.path.dirname(driver_path)
-                actual_driver = os.path.join(driver_dir, 'chromedriver')
-                if os.path.exists(actual_driver):
-                    driver_path = actual_driver
-                    logger.info(f"Using corrected path: {driver_path}")
-            
-            service = Service(driver_path)
-            driver = webdriver.Chrome(service=service, options=chrome_options)
-            return driver
+            import os
+            if os.path.exists(CHROMEDRIVER_PATH):
+                service = Service(CHROMEDRIVER_PATH)
+                driver = webdriver.Chrome(service=service, options=chrome_options)
+            else:
+                driver = webdriver.Chrome(options=chrome_options)
         except Exception as e:
-            logger.error(f"ChromeDriver setup failed: {str(e)}")
-            # Fallback: try without service specification
-            logger.info("Attempting fallback driver setup...")
+            logger.warning(f"Primary driver setup failed: {str(e)}, trying fallback")
             driver = webdriver.Chrome(options=chrome_options)
-            return driver
+
+        driver.execute_cdp_cmd('Network.setUserAgentOverride', {
+            "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+        })
+        driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+        return driver
     
     def generate_external_id(self, job_id, company):
         """Generate stable external ID"""
@@ -67,68 +61,81 @@ class CumminsScraper:
         """Scrape jobs from Cummins careers page with pagination support"""
         jobs = []
         driver = None
-        
+
         try:
             logger.info(f"Starting scrape for {self.company_name}")
             driver = self.setup_driver()
             driver.get(self.url)
-            
-            # Wait for page to load
-            wait = WebDriverWait(driver, SCRAPE_TIMEOUT)
-            time.sleep(5)  # Wait for dynamic content
-            
+            time.sleep(10)
+
+            current_url = driver.current_url
+            logger.info(f"Landed on: {current_url}")
+
+            # Detect redirect away from NAS to corporate site
+            if 'search-jobs' not in current_url:
+                logger.info("Detected redirect away from NAS, navigating to cummins.jobs with India filter")
+                driver.get('https://cummins.jobs/india/jobs/')
+                time.sleep(10)
+                logger.info(f"Redirected to: {driver.current_url}")
+
+            # Scroll to load content
+            for _ in range(3):
+                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                time.sleep(2)
+            driver.execute_script("window.scrollTo(0, 0);")
+            time.sleep(2)
+
             current_page = 1
-            
+
             while current_page <= max_pages:
                 logger.info(f"Scraping page {current_page} of {max_pages}")
-                
-                # Scrape current page
-                page_jobs = self._scrape_page(driver, wait)
+
+                page_jobs = self._scrape_page(driver)
                 jobs.extend(page_jobs)
-                
+
                 logger.info(f"Scraped {len(page_jobs)} jobs from page {current_page}")
-                
-                # Try to navigate to next page
+
                 if current_page < max_pages:
                     if not self._go_to_next_page(driver, current_page):
                         logger.info("No more pages available")
                         break
-                    time.sleep(3)  # Wait for next page to load
-                
+                    time.sleep(3)
+
                 current_page += 1
-            
+
             logger.info(f"Successfully scraped {len(jobs)} total jobs from {self.company_name}")
-            
+
         except Exception as e:
             logger.error(f"Error scraping {self.company_name}: {str(e)}")
             raise
-        
+
         finally:
             if driver:
                 driver.quit()
-        
+
         return jobs
-    
+
     def _go_to_next_page(self, driver, current_page):
         """Navigate to the next page"""
         try:
             next_page_num = current_page + 1
-            
-            # Scroll to pagination area
+
             driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
             time.sleep(1)
-            
-            # Try to find and click next page button
+
             next_page_selectors = [
-                (By.XPATH, f'//button[text()="{next_page_num}"]'),
+                # NAS/Radancy pagination
                 (By.XPATH, f'//a[text()="{next_page_num}"]'),
-                (By.CSS_SELECTOR, f'button[aria-label="Go to page {next_page_num}"]'),
-                (By.XPATH, '//button[@aria-label="Go to next page"]'),
-                (By.XPATH, '//button[contains(@class, "next")]'),
-                (By.CSS_SELECTOR, 'button.pagination-next'),
+                (By.CSS_SELECTOR, f'a[aria-label="Page {next_page_num}"]'),
+                (By.XPATH, '//a[@aria-label="Next page"]'),
+                (By.CSS_SELECTOR, 'a.pagination-next'),
+                # Generic pagination
+                (By.CSS_SELECTOR, 'a.next-page, a[rel="next"]'),
                 (By.XPATH, '//a[contains(text(), "Next")]'),
+                (By.XPATH, '//button[contains(text(), "Next")]'),
+                (By.CSS_SELECTOR, '.pagination .next a'),
             ]
-            
+
             for selector_type, selector_value in next_page_selectors:
                 try:
                     next_button = driver.find_element(selector_type, selector_value)
@@ -139,83 +146,95 @@ class CumminsScraper:
                     return True
                 except:
                     continue
-            
+
             logger.warning("Could not find next page button")
             return False
-                
+
         except Exception as e:
             logger.error(f"Error navigating to next page: {str(e)}")
             return False
-    
-    def _scrape_page(self, driver, wait):
-        """Scrape jobs from current page"""
+
+    def _scrape_page(self, driver):
+        """Scrape jobs - tries NAS/Radancy first, then generic fallback"""
         jobs = []
-        time.sleep(2)  # Wait for page content
-        
-        # Try multiple selectors for job listings
-        job_cards = []
-        selectors = [
-            (By.CSS_SELECTOR, 'div.job-listing'),
-            (By.CSS_SELECTOR, 'div[class*="job"]'),
-            (By.XPATH, '//div[contains(@class, "result")]'),
-            (By.CSS_SELECTOR, 'li.job-item'),
-            (By.TAG_NAME, 'article'),
-        ]
-        
-        for selector_type, selector_value in selectors:
-            try:
-                wait.until(EC.presence_of_element_located((selector_type, selector_value)))
-                job_cards = driver.find_elements(selector_type, selector_value)
-                if job_cards and len(job_cards) > 0:
-                    logger.info(f"Found {len(job_cards)} job cards using selector: {selector_value}")
-                    break
-            except:
-                continue
-        
-        if not job_cards:
-            logger.warning("No job cards found with standard selectors")
+        time.sleep(2)
+
+        # Strategy 1: NAS/Radancy JS extraction
+        js_jobs = driver.execute_script("""
+            var results = [];
+            var seen = {};
+            var container = document.querySelector('#search-results-list');
+            if (container) {
+                var items = container.querySelectorAll('li, div.list-item');
+                for (var i = 0; i < items.length; i++) {
+                    var item = items[i];
+                    var link = item.querySelector('a[href]');
+                    if (!link) continue;
+                    var title = link.innerText.trim().split('\\n')[0];
+                    var url = link.href;
+                    if (!title || title.length < 3 || seen[url]) continue;
+                    seen[url] = true;
+                    var locEl = item.querySelector('.job-location, [class*="location"]');
+                    var location = locEl ? locEl.innerText.trim() : '';
+                    results.push({title: title, url: url, location: location});
+                }
+            }
+            return results;
+        """)
+
+        if js_jobs:
+            logger.info(f"NAS/Radancy extraction found {len(js_jobs)} jobs")
+        else:
+            # Strategy 2: Generic job link extraction (for cummins.jobs or similar)
+            # Only match /job/ (singular) to avoid category links like /jobs/
+            logger.info("Trying generic job link extraction")
+            js_jobs = driver.execute_script("""
+                var results = [];
+                var seen = {};
+                var links = document.querySelectorAll('a[href]');
+                for (var i = 0; i < links.length; i++) {
+                    var a = links[i];
+                    var h = a.href;
+                    // Match /job/ but not /jobs/ (category links)
+                    if (h.indexOf('/job/') === -1) continue;
+                    var t = (a.innerText || '').trim().split('\\n')[0];
+                    if (t.length > 3 && t.length < 200 && !seen[h]) {
+                        if (h.indexOf('login') > -1 || h.indexOf('sign-in') > -1) continue;
+                        seen[h] = true;
+                        var parent = a.closest('li, tr, div[class*="job"], article');
+                        var location = '';
+                        if (parent) {
+                            var locEl = parent.querySelector('[class*="location"], .job-location');
+                            if (locEl) location = locEl.innerText.trim();
+                        }
+                        results.push({title: t, url: h, location: location});
+                    }
+                }
+                return results;
+            """)
+            if js_jobs:
+                logger.info(f"Generic extraction found {len(js_jobs)} jobs")
+
+        if not js_jobs:
+            logger.warning("No jobs found on page")
             return jobs
-        
-        # Extract from job cards
-        for idx, card in enumerate(job_cards):
+
+        for jdata in js_jobs:
             try:
-                card_text = card.text
-                if not card_text or len(card_text) < 10:
+                title = jdata.get('title', '').strip()
+                url = jdata.get('url', '').strip()
+                location = jdata.get('location', '').strip()
+
+                if not title or len(title) < 3 or not url:
                     continue
-                
-                # Get job title
-                job_title = ""
-                job_link = ""
-                try:
-                    title_link = card.find_element(By.TAG_NAME, 'a')
-                    job_title = title_link.text.strip()
-                    job_link = title_link.get_attribute('href')
-                except:
-                    job_title = card_text.split('\n')[0].strip()
-                
-                if not job_title or len(job_title) < 3:
-                    continue
-                
-                # Extract Job ID
-                job_id = f"cummins_{idx}"
-                if job_link:
-                    job_id = job_link.split('/')[-1].split('?')[0] or job_id
-                
-                # Extract location
-                location = ""
-                city = ""
-                state = ""
-                lines = card_text.split('\n')
-                for line in lines:
-                    if 'India' in line or any(city_name in line for city_name in ['Pune', 'Delhi', 'Bangalore', 'Hyderabad', 'Chennai']):
-                        location = line.strip()
-                        city, state, _ = self.parse_location(location)
-                        break
-                
+
+                job_id = hashlib.md5(url.encode()).hexdigest()[:12]
+                city, state, _ = self.parse_location(location)
+
                 job_data = {
                     'external_id': self.generate_external_id(job_id, self.company_name),
                     'company_name': self.company_name,
-                    'title': job_title,
+                    'title': title,
                     'description': '',
                     'location': location,
                     'city': city,
@@ -223,7 +242,7 @@ class CumminsScraper:
                     'country': 'India',
                     'employment_type': '',
                     'department': '',
-                    'apply_url': job_link if job_link else self.url,
+                    'apply_url': url,
                     'posted_date': '',
                     'job_function': '',
                     'experience_level': '',
@@ -231,18 +250,17 @@ class CumminsScraper:
                     'remote_type': '',
                     'status': 'active'
                 }
-                
-                # Fetch full details if enabled
-                if FETCH_FULL_JOB_DETAILS and job_link:
-                    full_details = self._fetch_job_details(driver, job_link)
+
+                if FETCH_FULL_JOB_DETAILS and url:
+                    full_details = self._fetch_job_details(driver, url)
                     job_data.update(full_details)
-                
+
                 jobs.append(job_data)
-                
+
             except Exception as e:
-                logger.error(f"Error extracting job {idx}: {str(e)}")
+                logger.error(f"Error extracting job: {str(e)}")
                 continue
-        
+
         return jobs
     
     def _fetch_job_details(self, driver, job_url):

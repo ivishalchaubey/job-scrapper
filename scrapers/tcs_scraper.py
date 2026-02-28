@@ -89,7 +89,16 @@ class TCSScraper:
                 try:
                     logger.info(f"Trying URL: {url}")
                     driver.get(url)
-                    time.sleep(15)
+                    # Smart wait: use WebDriverWait for job elements instead of blind sleep
+                    try:
+                        WebDriverWait(driver, 15).until(
+                            EC.presence_of_element_located((By.CSS_SELECTOR,
+                                "div[class*='job'], div[class*='result'], div[class*='listing'], "
+                                "a[href*='job'], table, [class*='opening'], [ng-repeat]"
+                            ))
+                        )
+                    except:
+                        time.sleep(5)  # Fallback if no elements found yet
 
                     current_url = driver.current_url
                     title = driver.title
@@ -111,16 +120,11 @@ class TCSScraper:
                 logger.error("Could not load any TCS URL")
                 return all_jobs
 
-            # TCS uses Angular SPA - wait for dynamic content
-            logger.info("Waiting for Angular SPA to render...")
-            time.sleep(12)
-
-            # Scroll to trigger lazy loading
-            for _ in range(5):
-                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                time.sleep(2)
+            # Quick scroll to trigger lazy loading (content already loaded via WebDriverWait)
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            time.sleep(1)
             driver.execute_script("window.scrollTo(0, 0);")
-            time.sleep(2)
+            time.sleep(0.5)
 
             # Check if we need to navigate to job search
             current_url = driver.current_url
@@ -145,7 +149,7 @@ class TCSScraper:
                                 if 'job' in text or 'search' in text or 'career' in text:
                                     driver.execute_script("arguments[0].click();", elem)
                                     logger.info(f"Clicked job nav: {elem.text}")
-                                    time.sleep(8)
+                                    time.sleep(3)
                                     break
                         except:
                             continue
@@ -175,7 +179,7 @@ class TCSScraper:
                 if current_page < max_pages:
                     if not self._go_to_next_page(driver, current_page):
                         break
-                    time.sleep(3)
+                    # No extra sleep needed - _go_to_next_page already handles waiting
                 current_page += 1
 
             logger.info(f"Total jobs scraped: {len(all_jobs)}")
@@ -192,7 +196,16 @@ class TCSScraper:
     def _go_to_next_page(self, driver, current_page):
         try:
             driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(2)
+            time.sleep(0.5)
+
+            # Capture first card text BEFORE click for change detection
+            old_first = driver.execute_script("""
+                var cards = document.querySelectorAll(
+                    'div[class*="job"], div[class*="result"], a[href*="job"], [ng-repeat], div[class*="listing"]'
+                );
+                return cards.length > 0 ? cards[0].innerText.substring(0, 50) : '';
+            """)
+
             next_selectors = [
                 (By.CSS_SELECTOR, 'a[aria-label="Next"]'),
                 (By.CSS_SELECTOR, 'button[aria-label="Next"]'),
@@ -207,10 +220,22 @@ class TCSScraper:
                 try:
                     btn = driver.find_element(selector_type, selector_value)
                     driver.execute_script("arguments[0].scrollIntoView();", btn)
-                    time.sleep(1)
+                    time.sleep(0.3)
                     driver.execute_script("arguments[0].click();", btn)
                     logger.info(f"Navigated to page {current_page + 1}")
-                    time.sleep(3)
+
+                    # Poll for content change instead of blind sleep (max 5s)
+                    for _ in range(25):
+                        time.sleep(0.2)
+                        new_first = driver.execute_script("""
+                            var cards = document.querySelectorAll(
+                                'div[class*="job"], div[class*="result"], a[href*="job"], [ng-repeat], div[class*="listing"]'
+                            );
+                            return cards.length > 0 ? cards[0].innerText.substring(0, 50) : '';
+                        """)
+                        if new_first and new_first != old_first:
+                            break
+                    time.sleep(0.5)  # Brief settle after change detected
                     return True
                 except:
                     continue
@@ -227,11 +252,11 @@ class TCSScraper:
             logger.info(f"Current URL: {driver.current_url}")
             logger.info(f"Page title: {driver.title}")
 
-            # Scroll to trigger lazy loading
+            # Quick scroll to trigger lazy loading
             driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(3)
+            time.sleep(0.5)
             driver.execute_script("window.scrollTo(0, 0);")
-            time.sleep(2)
+            time.sleep(0.3)
 
             # STRATEGY 1: JavaScript-first extraction (most reliable for SPAs)
             logger.info("Trying JavaScript-based extraction...")

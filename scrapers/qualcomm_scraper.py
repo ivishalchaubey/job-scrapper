@@ -5,10 +5,10 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 import hashlib
+import json
 import time
 import os
 import stat
-from datetime import datetime
 from pathlib import Path
 
 try:
@@ -18,7 +18,7 @@ except ImportError:
 
 
 from core.logging import setup_logger
-from config.scraper import SCRAPE_TIMEOUT, HEADLESS_MODE, FETCH_FULL_JOB_DETAILS, MAX_PAGES_TO_SCRAPE
+from config.scraper import HEADLESS_MODE, MAX_PAGES_TO_SCRAPE
 
 logger = setup_logger('qualcomm_scraper')
 
@@ -30,7 +30,7 @@ class QualcommScraper:
         self.url = 'https://qualcomm.wd5.myworkdayjobs.com/External?locationCountry=bc33aa3152ec42d4995f4791a106ed09'
         self.api_url = 'https://qualcomm.wd5.myworkdayjobs.com/wday/cxs/qualcomm/External/jobs'
         self.base_job_url = 'https://qualcomm.wd5.myworkdayjobs.com/External'
-    
+
     def setup_driver(self):
         """Set up Chrome driver with options"""
         chrome_options = Options()
@@ -72,147 +72,146 @@ class QualcommScraper:
         driver.execute_cdp_cmd('Network.setUserAgentOverride', {"userAgent": 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'})
         driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
         return driver
-    
+
     def generate_external_id(self, job_id, company):
         """Generate stable external ID"""
         unique_string = f"{company}_{job_id}"
         return hashlib.md5(unique_string.encode()).hexdigest()
-    
+
     def scrape(self, max_pages=MAX_PAGES_TO_SCRAPE):
-        """Scrape jobs from Qualcomm Workday careers page - API first, Selenium fallback"""
-        all_jobs = []
+        """Scrape jobs from Qualcomm Workday careers page.
 
-        # Primary method: Workday API via requests (direct)
-        if requests is not None:
+        Uses a single Selenium session for both approaches:
+        1. Primary: In-browser fetch() to call Workday API (bypasses Cloudflare)
+        2. Fallback: DOM scraping from the already-loaded page
+        """
+        driver = None
+        try:
+            driver = self.setup_driver()
+            logger.info(f"Loading {self.url} to establish browser session")
+
             try:
-                api_jobs = self._scrape_via_api(max_pages)
-                if api_jobs:
-                    logger.info(f"API method returned {len(api_jobs)} jobs")
-                    return api_jobs
-                else:
-                    logger.warning("Direct API returned 0 jobs, trying Selenium-assisted API")
+                driver.get(self.url)
             except Exception as e:
-                logger.warning(f"Direct API failed: {str(e)}, trying Selenium-assisted API")
+                error_msg = str(e).lower()
+                if any(kw in error_msg for kw in ['dns', 'name or service not known',
+                        'err_name_not_resolved', 'neterror', 'unreachable', 'connectionrefused']):
+                    logger.error(f"DNS/Network error loading {self.url}: {str(e)}")
+                    return []
+                logger.warning(f"Page load issue (continuing): {str(e)}")
 
-            # Secondary method: Use Selenium to get cookies, then hit API
+            # Check if the page loaded successfully or hit an error
+            page_title = driver.title or ''
+            if 'error' in page_title.lower() or 'unavailable' in page_title.lower() or 'maintenance' in page_title.lower():
+                body_text = ''
+                try:
+                    body_text = driver.find_element(By.TAG_NAME, 'body').text[:200]
+                except Exception:
+                    pass
+                logger.error(f"Workday site error: title='{page_title}', body='{body_text}'")
+                logger.error("Qualcomm Workday site appears to be down. Cannot scrape.")
+                return []
+
+            # Wait for Workday to fully render (Cloudflare challenge + SPA load)
+            page_loaded = False
             try:
-                api_jobs = self._scrape_via_selenium_api(max_pages)
-                if api_jobs:
-                    logger.info(f"Selenium-assisted API returned {len(api_jobs)} jobs")
-                    return api_jobs
-                else:
-                    logger.warning("Selenium-assisted API returned 0 jobs, falling back to pure Selenium")
-            except Exception as e:
-                logger.warning(f"Selenium-assisted API failed: {str(e)}, falling back to pure Selenium")
-        else:
-            logger.warning("requests library not available, using Selenium only")
+                WebDriverWait(driver, 20).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, 'li[data-automation-id="listItem"]'))
+                )
+                logger.info("Workday job listings loaded")
+                page_loaded = True
+            except Exception:
+                logger.warning("Timeout waiting for job listings, trying API anyway")
+                time.sleep(5)
 
-        # Fallback: Selenium-based scraping
-        return self._scrape_via_selenium(max_pages)
+            # Primary: Try in-browser API fetch
+            api_jobs = self._try_browser_api(driver, max_pages)
+            if api_jobs:
+                logger.info(f"Browser API method returned {len(api_jobs)} jobs")
+                return api_jobs
+            else:
+                logger.warning("Browser API returned 0 jobs, trying Selenium DOM scraping")
 
-    def _scrape_via_api(self, max_pages=MAX_PAGES_TO_SCRAPE):
-        """Scrape Qualcomm jobs using Workday API directly.
-        Try multiple payload formats since Qualcomm's Workday returns 422 on some payloads."""
+            # Fallback: DOM scraping using the same driver
+            if page_loaded:
+                dom_jobs = self._scrape_dom(driver, max_pages)
+                if dom_jobs:
+                    logger.info(f"Selenium DOM scraping returned {len(dom_jobs)} jobs")
+                    return dom_jobs
+            else:
+                logger.warning("Skipping DOM scraping - page didn't load properly")
+
+            logger.warning("All scraping methods returned 0 jobs")
+            return []
+
+        except Exception as e:
+            logger.error(f"Scrape failed: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return []
+        finally:
+            if driver:
+                driver.quit()
+                logger.info("Browser closed")
+
+    def _try_browser_api(self, driver, max_pages=MAX_PAGES_TO_SCRAPE):
+        """Try to scrape via in-browser fetch() API calls."""
         all_jobs = []
         limit = 20
         max_results = max_pages * limit
 
-        headers = {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-            'Referer': self.url,
-            'Origin': 'https://qualcomm.wd5.myworkdayjobs.com',
-        }
-
-        # Try multiple payload formats - Qualcomm Workday is picky about payload structure
+        # Try multiple payload formats via in-browser fetch
         payload_formats = [
-            # Format 1: Empty appliedFacets + searchText "India" (proven for Samsung/Nvidia)
-            {
-                "appliedFacets": {},
-                "limit": limit,
-                "offset": 0,
-                "searchText": "India"
-            },
-            # Format 2: locationCountry facet (original)
-            {
-                "appliedFacets": {
-                    "locationCountry": ["bc33aa3152ec42d4995f4791a106ed09"]
-                },
-                "limit": limit,
-                "offset": 0,
-                "searchText": ""
-            },
-            # Format 3: Completely empty appliedFacets with empty search
-            {
-                "appliedFacets": {},
-                "limit": limit,
-                "offset": 0,
-                "searchText": ""
-            },
-            # Format 4: Location facet with different key name
-            {
-                "appliedFacets": {
-                    "Location_Country": ["bc33aa3152ec42d4995f4791a106ed09"]
-                },
-                "limit": limit,
-                "offset": 0,
-                "searchText": ""
-            },
-            # Format 5: locations facet (another variant)
-            {
-                "appliedFacets": {
-                    "locations": ["bc33aa3152ec42d4995f4791a106ed09"]
-                },
-                "limit": limit,
-                "offset": 0,
-                "searchText": ""
-            },
+            {"appliedFacets": {}, "limit": limit, "offset": 0, "searchText": ""},
+            {"appliedFacets": {"locationCountry": ["bc33aa3152ec42d4995f4791a106ed09"]}, "limit": limit, "offset": 0, "searchText": ""},
+            {"appliedFacets": {}, "limit": limit, "offset": 0, "searchText": "India"},
         ]
 
-        # Try each payload format
         working_payload = None
         for idx, payload in enumerate(payload_formats):
+            logger.info(f"Trying in-browser API payload format {idx + 1}")
             try:
-                logger.info(f"Trying API payload format {idx + 1}: searchText='{payload.get('searchText', '')}', facets={list(payload.get('appliedFacets', {}).keys())}")
-                response = requests.post(self.api_url, json=payload, headers=headers, timeout=30)
+                result = self._browser_fetch(driver, payload)
+                status = result.get('status', 0)
+                body = result.get('body', '')
 
-                if response.status_code == 200:
-                    data = response.json()
+                if status == 200 and body:
+                    data = json.loads(body)
                     total = data.get('total', 0)
                     postings = data.get('jobPostings', [])
-                    logger.info(f"Format {idx + 1} succeeded: {len(postings)} postings, total={total}")
+                    logger.info(f"Format {idx + 1}: status=200, total={total}, postings={len(postings)}")
 
                     if postings:
                         working_payload = payload.copy()
                         all_jobs = self._process_api_postings(postings)
                         break
                     elif total == 0:
-                        logger.info(f"Format {idx + 1} returned 0 total, trying next format")
                         continue
                 else:
-                    logger.warning(f"Format {idx + 1} returned status {response.status_code}")
+                    logger.warning(f"Format {idx + 1}: status={status}")
                     continue
             except Exception as e:
-                logger.warning(f"Format {idx + 1} failed: {str(e)}")
+                logger.warning(f"Format {idx + 1} in-browser fetch failed: {str(e)}")
                 continue
 
         if not working_payload:
-            logger.warning("No API payload format worked")
+            logger.warning("No in-browser API payload format worked")
             return all_jobs
 
-        # If we found a working format, paginate through all results
+        # Paginate through remaining results
         if all_jobs and working_payload:
             offset = limit
             while offset < max_results:
                 working_payload['offset'] = offset
                 try:
-                    logger.info(f"Fetching API page offset={offset}")
-                    response = requests.post(self.api_url, json=working_payload, headers=headers, timeout=30)
-                    if response.status_code != 200:
+                    logger.info(f"In-browser API: fetching offset={offset}")
+                    result = self._browser_fetch(driver, working_payload)
+
+                    if result.get('status') != 200:
+                        logger.warning(f"API pagination returned status {result.get('status')}")
                         break
 
-                    data = response.json()
+                    data = json.loads(result.get('body', '{}'))
                     total = data.get('total', 0)
                     postings = data.get('jobPostings', [])
 
@@ -221,7 +220,7 @@ class QualcommScraper:
 
                     new_jobs = self._process_api_postings(postings)
                     all_jobs.extend(new_jobs)
-                    logger.info(f"Page offset={offset}: got {len(new_jobs)} jobs (total so far: {len(all_jobs)})")
+                    logger.info(f"Offset={offset}: got {len(new_jobs)} jobs (total so far: {len(all_jobs)})")
 
                     offset += limit
                     if offset >= total:
@@ -231,8 +230,38 @@ class QualcommScraper:
                     logger.error(f"API pagination failed at offset {offset}: {str(e)}")
                     break
 
-        logger.info(f"Total jobs from API: {len(all_jobs)}")
+        logger.info(f"Total jobs from browser API: {len(all_jobs)}")
         return all_jobs
+
+    def _browser_fetch(self, driver, payload):
+        """Execute a fetch() POST request from within the browser context.
+        This inherits all browser cookies/session, bypassing Cloudflare and
+        Workday's session validation that causes 422 errors with plain requests."""
+        driver.set_script_timeout(30)
+        result = driver.execute_async_script("""
+            var payload = arguments[0];
+            var apiUrl = arguments[1];
+            var callback = arguments[arguments.length - 1];
+            fetch(apiUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify(payload)
+            })
+            .then(function(r) {
+                return r.text().then(function(t) {
+                    return {status: r.status, body: t};
+                });
+            })
+            .then(function(result) { callback(result); })
+            .catch(function(err) { callback({status: 0, error: err.toString()}); });
+        """, payload, self.api_url)
+
+        if result.get('error'):
+            raise Exception(f"Browser fetch error: {result['error']}")
+        return result
 
     def _process_api_postings(self, postings):
         """Process Workday API postings into job data format."""
@@ -300,239 +329,38 @@ class QualcommScraper:
 
         return jobs
 
-    def _scrape_via_selenium_api(self, max_pages=MAX_PAGES_TO_SCRAPE):
-        """Use Selenium to get Cloudflare cookies, then use requests for API calls."""
-        driver = None
+    def _scrape_dom(self, driver, max_pages=MAX_PAGES_TO_SCRAPE):
+        """Fallback: scrape Qualcomm jobs using Selenium DOM scraping.
+        Reuses the already-loaded driver from the main scrape() method."""
         all_jobs = []
 
         try:
-            logger.info("Using Selenium to obtain Cloudflare cookies for API access")
-            driver = self.setup_driver()
-    
-            # Visit the main page to get cookies through Cloudflare
-            try:
-                driver.get(self.url)
-            except Exception:
-                pass  # Page may timeout but we still get cookies
-
-            time.sleep(8)  # Wait for Cloudflare challenge
-
-            # Extract cookies from Selenium
-            selenium_cookies = driver.get_cookies()
-            cookie_dict = {c['name']: c['value'] for c in selenium_cookies}
-            logger.info(f"Got {len(cookie_dict)} cookies from Selenium: {list(cookie_dict.keys())}")
-
-            # Also try to get the CSRF token from the page
-            csrf_token = None
-            try:
-                csrf_token = driver.execute_script(
-                    "return document.querySelector('meta[name=\"csrf-token\"]')?.content || "
-                    "window.csrfToken || null"
-                )
-            except Exception:
-                pass
-
-            driver.quit()
-            driver = None
-
-            # Now use requests with the Selenium cookies
-            session = requests.Session()
-            for name, value in cookie_dict.items():
-                session.cookies.set(name, value)
-
-            headers = {
-                'Content-Type': 'application/json',
-                'Accept': 'application/json',
-                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-                'Referer': self.url,
-                'Origin': 'https://qualcomm.wd5.myworkdayjobs.com',
-            }
-            if csrf_token:
-                headers['X-CALYPSO-CSRF-TOKEN'] = csrf_token
-
-            limit = 20
-            max_results = max_pages * limit
-            offset = 0
-
-            # Try multiple payload formats with cookies
-            payload_formats = [
-                {"appliedFacets": {}, "limit": limit, "offset": 0, "searchText": "India"},
-                {"appliedFacets": {"locationCountry": ["bc33aa3152ec42d4995f4791a106ed09"]}, "limit": limit, "offset": 0, "searchText": ""},
-                {"appliedFacets": {}, "limit": limit, "offset": 0, "searchText": ""},
-            ]
-
-            working_payload = None
-            for pf in payload_formats:
-                try:
-                    test_resp = session.post(self.api_url, json=pf, headers=headers, timeout=30)
-                    if test_resp.status_code == 200:
-                        test_data = test_resp.json()
-                        if test_data.get('jobPostings'):
-                            working_payload = pf.copy()
-                            logger.info(f"Selenium-assisted API found working payload: searchText='{pf.get('searchText', '')}'")
-                            break
-                except:
-                    continue
-
-            if not working_payload:
-                logger.warning("No payload format worked with Selenium cookies")
-                return all_jobs
-
-            while offset < max_results:
-                working_payload['offset'] = offset
-
-                logger.info(f"Selenium-assisted API: fetching offset={offset}")
-                response = session.post(self.api_url, json=working_payload, headers=headers, timeout=30)
-
-                if response.status_code != 200:
-                    logger.warning(f"Selenium-assisted API returned {response.status_code}")
-                    break
-
-                data = response.json()
-                total = data.get('total', 0)
-                postings = data.get('jobPostings', [])
-
-                if not postings:
-                    break
-
-                logger.info(f"Got {len(postings)} postings (total: {total})")
-
-                for posting in postings:
-                    try:
-                        title = posting.get('title', '')
-                        if not title:
-                            continue
-
-                        external_path = posting.get('externalPath', '')
-                        apply_url = f"{self.base_job_url}{external_path}" if external_path else self.url
-                        location = posting.get('locationsText', '')
-                        posted_date = posting.get('postedOn', '')
-
-                        job_id = ''
-                        if external_path:
-                            parts = external_path.strip('/').split('/')
-                            if parts:
-                                job_id = parts[-1]
-                        if not job_id:
-                            job_id = f"qualcomm_{hashlib.md5(title.encode()).hexdigest()[:12]}"
-
-                        bullet_fields = posting.get('bulletFields', [])
-                        remote_type = ''
-                        employment_type = ''
-                        for field in bullet_fields:
-                            if isinstance(field, str):
-                                if 'On-site' in field or 'Remote' in field or 'Hybrid' in field:
-                                    remote_type = field
-                                elif 'Full' in field or 'Part' in field or 'Contract' in field:
-                                    employment_type = field
-
-                        city, state, country = self.parse_location(location)
-
-                        all_jobs.append({
-                            'external_id': self.generate_external_id(job_id, self.company_name),
-                            'company_name': self.company_name,
-                            'title': title,
-                            'description': '',
-                            'location': location,
-                            'city': city,
-                            'state': state,
-                            'country': country,
-                            'employment_type': employment_type,
-                            'department': '',
-                            'apply_url': apply_url,
-                            'posted_date': posted_date,
-                            'job_function': '',
-                            'experience_level': '',
-                            'salary_range': '',
-                            'remote_type': remote_type,
-                            'status': 'active'
-                        })
-                    except Exception as e:
-                        logger.error(f"Error processing posting: {str(e)}")
-                        continue
-
-                offset += limit
-                if offset >= total:
-                    break
-
-        except Exception as e:
-            logger.error(f"Selenium-assisted API failed: {str(e)}")
-            import traceback
-            logger.error(traceback.format_exc())
-        finally:
-            if driver:
-                driver.quit()
-
-        logger.info(f"Selenium-assisted API total: {len(all_jobs)}")
-        return all_jobs
-
-    def _scrape_via_selenium(self, max_pages=MAX_PAGES_TO_SCRAPE):
-        """Fallback: scrape Qualcomm jobs using Selenium."""
-        jobs = []
-        driver = None
-
-        try:
-            logger.info(f"Starting Selenium scrape for {self.company_name}")
-            driver = self.setup_driver()
-    
-            try:
-                driver.get(self.url)
-            except Exception as e:
-                error_msg = str(e).lower()
-                if 'dns' in error_msg or 'name or service not known' in error_msg or \
-                   'err_name_not_resolved' in error_msg or 'neterror' in error_msg or \
-                   'unreachable' in error_msg or 'connectionrefused' in error_msg:
-                    logger.error(f"DNS/Network error loading {self.url}: {str(e)}")
-                    logger.error("The Workday URL may be incorrect or the site may be down.")
-                    return jobs
-                raise
-
-            # Wait for Workday job listings to load
-            time.sleep(12)  # Workday takes longer to load
-
-            # Scroll to trigger lazy loading
-            for _ in range(3):
-                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                time.sleep(2)
-            driver.execute_script("window.scrollTo(0, 0);")
-            time.sleep(2)
-
             current_page = 1
 
             while current_page <= max_pages:
-                logger.info(f"Scraping page {current_page} of {max_pages}")
+                logger.info(f"DOM scraping page {current_page}")
 
                 # Scrape current page
                 page_jobs = self._scrape_page(driver)
-                jobs.extend(page_jobs)
-
-                logger.info(f"Scraped {len(page_jobs)} jobs from page {current_page}")
+                all_jobs.extend(page_jobs)
+                logger.info(f"Page {current_page}: found {len(page_jobs)} jobs")
 
                 # Try to navigate to next page
                 if current_page < max_pages:
                     if not self._go_to_next_page(driver, current_page):
                         logger.info("No more pages available")
                         break
-                    time.sleep(5)  # Wait for Workday to load next page
+                    # _go_to_next_page already handles waiting
 
                 current_page += 1
 
-            logger.info(f"Successfully scraped {len(jobs)} total jobs via Selenium from {self.company_name}")
+            logger.info(f"Total jobs scraped via DOM: {len(all_jobs)}")
 
         except Exception as e:
-            error_msg = str(e).lower()
-            if 'dns' in error_msg or 'name or service not known' in error_msg or \
-               'err_name_not_resolved' in error_msg or 'neterror' in error_msg:
-                logger.error(f"DNS/Network error for {self.company_name}: {str(e)}")
-            else:
-                logger.error(f"Error scraping {self.company_name}: {str(e)}")
+            logger.error(f"Error during DOM scraping: {str(e)}")
 
-        finally:
-            if driver:
-                driver.quit()
+        return all_jobs
 
-        return jobs
-    
     def _go_to_next_page(self, driver, current_page):
         """Navigate to next page in Workday"""
         try:
@@ -540,7 +368,13 @@ class QualcommScraper:
 
             # Scroll to pagination
             driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(2)
+            time.sleep(0.5)
+
+            # Capture current state for change detection
+            old_first = driver.execute_script("""
+                var card = document.querySelector('li[data-automation-id="listItem"]');
+                return card ? card.innerText.substring(0, 50) : '';
+            """)
 
             # Workday pagination selectors
             next_selectors = [
@@ -555,9 +389,20 @@ class QualcommScraper:
                 try:
                     next_button = driver.find_element(selector_type, selector_value)
                     driver.execute_script("arguments[0].scrollIntoView();", next_button)
-                    time.sleep(1)
+                    time.sleep(0.3)
                     driver.execute_script("arguments[0].click();", next_button)
                     logger.info(f"Navigated to page {next_page_num}")
+
+                    # Poll for content change
+                    for _ in range(25):
+                        time.sleep(0.2)
+                        new_first = driver.execute_script("""
+                            var card = document.querySelector('li[data-automation-id="listItem"]');
+                            return card ? card.innerText.substring(0, 50) : '';
+                        """)
+                        if new_first and new_first != old_first:
+                            break
+                    time.sleep(0.5)
                     return True
                 except:
                     continue
@@ -568,174 +413,24 @@ class QualcommScraper:
         except Exception as e:
             logger.error(f"Error navigating to next page: {str(e)}")
             return False
-    
+
     def _scrape_page(self, driver):
-        """Scrape jobs from current Workday page using JS-first + Selenium fallback"""
+        """Scrape jobs from current Workday page"""
         jobs = []
-        wait = WebDriverWait(driver, 5)
-        time.sleep(3)
+        wait = WebDriverWait(driver, 10)  # Short timeout since page is already loaded
 
-        # STRATEGY 1: JavaScript-first extraction for Workday
-        # Workday's DOM uses specific data-automation-id attributes
-        try:
-            js_jobs = driver.execute_script("""
-                var results = [];
-                var seen = {};
+        # Quick scroll for lazy loading
+        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+        time.sleep(0.5)
+        driver.execute_script("window.scrollTo(0, 0);")
+        time.sleep(0.3)
 
-                // Workday specific selectors
-                // List items with data-automation-id
-                var listItems = document.querySelectorAll('li[data-automation-id="listItem"]');
-                if (listItems.length === 0) {
-                    // Fallback: search results list
-                    var searchList = document.querySelector('ul[aria-label="Search Results"]');
-                    if (searchList) listItems = searchList.querySelectorAll('li');
-                }
-                if (listItems.length === 0) {
-                    // Broader: any li in the main content area
-                    listItems = document.querySelectorAll('section[data-automation-id="jobResults"] li, div[data-automation-id="jobResults"] li');
-                }
-
-                if (listItems.length > 0) {
-                    for (var i = 0; i < listItems.length; i++) {
-                        var li = listItems[i];
-                        var text = (li.innerText || '').trim();
-                        if (text.length < 10) continue;
-
-                        // Find the job title link
-                        var titleLink = li.querySelector('a[data-automation-id="jobTitle"]') ||
-                                       li.querySelector('a[href*="/job/"]') ||
-                                       li.querySelector('a');
-                        if (!titleLink) continue;
-
-                        var title = (titleLink.getAttribute('aria-label') || titleLink.innerText || '').trim();
-                        var url = titleLink.href || '';
-                        if (!title || title.length < 3) continue;
-                        title = title.split('\n')[0].trim();
-
-                        var key = title + '|' + url;
-                        if (seen[key]) continue;
-                        seen[key] = true;
-
-                        // Extract metadata from text lines
-                        var lines = text.split('\n');
-                        var location = '';
-                        var remoteType = '';
-                        var postedDate = '';
-                        var jobId = '';
-
-                        for (var j = 0; j < lines.length; j++) {
-                            var line = lines[j].trim();
-                            if (!line) continue;
-
-                            // Job ID (REQ pattern)
-                            if (line.match(/^REQ/) && line.length < 15) {
-                                jobId = line;
-                            }
-                            // Location (city, state format or contains India)
-                            else if (line.includes(',') && line.length < 100 &&
-                                     (line.includes('India') || line.match(/Hyderabad|Bangalore|Chennai|Mumbai|Delhi|Noida|Pune|Gurgaon|Gurugram/i))) {
-                                location = line;
-                            }
-                            // Remote type
-                            else if (line.match(/^(On-site|Remote|Hybrid)$/i)) {
-                                remoteType = line;
-                            }
-                            // Posted date
-                            else if (line.includes('Posted') || line.includes('ago')) {
-                                postedDate = line.replace('Posted', '').trim();
-                            }
-                        }
-
-                        results.push({
-                            title: title,
-                            url: url,
-                            location: location,
-                            remoteType: remoteType,
-                            postedDate: postedDate,
-                            jobId: jobId
-                        });
-                    }
-                }
-
-                // Fallback: links with /job/ pattern
-                if (results.length === 0) {
-                    document.querySelectorAll('a[href*="/job/"]').forEach(function(link) {
-                        var text = (link.innerText || link.getAttribute('aria-label') || '').trim();
-                        var href = link.href || '';
-                        if (text.length < 3 || text.length > 200) return;
-                        var title = text.split('\n')[0].trim();
-                        var key = title + '|' + href;
-                        if (seen[key]) return;
-                        seen[key] = true;
-                        results.push({title: title, url: href, location: '', remoteType: '', postedDate: '', jobId: ''});
-                    });
-                }
-
-                return results;
-            """)
-
-            if js_jobs:
-                logger.info(f"JS extraction found {len(js_jobs)} Workday jobs")
-                seen_ids = set()
-                for jl in js_jobs:
-                    title = jl.get('title', '').strip()
-                    url = jl.get('url', '').strip()
-                    if not title:
-                        continue
-
-                    # Extract job ID
-                    job_id = jl.get('jobId', '')
-                    if not job_id and url and '/job/' in url:
-                        job_id = url.split('/job/')[-1].split('/')[0].split('?')[0]
-                    if not job_id:
-                        job_id = f"qualcomm_{hashlib.md5(title.encode()).hexdigest()[:12]}"
-
-                    ext_id = self.generate_external_id(job_id, self.company_name)
-                    if ext_id in seen_ids:
-                        continue
-                    seen_ids.add(ext_id)
-
-                    location = jl.get('location', '')
-                    city, state, country = self.parse_location(location)
-
-                    job_data = {
-                        'external_id': ext_id,
-                        'company_name': self.company_name,
-                        'title': title,
-                        'description': '',
-                        'location': location,
-                        'city': city,
-                        'state': state,
-                        'country': country,
-                        'employment_type': '',
-                        'department': '',
-                        'apply_url': url if url else self.url,
-                        'posted_date': jl.get('postedDate', ''),
-                        'job_function': '',
-                        'experience_level': '',
-                        'salary_range': '',
-                        'remote_type': jl.get('remoteType', ''),
-                        'status': 'active'
-                    }
-                    jobs.append(job_data)
-                    logger.info(f"Extracted: {title} | {location}")
-
-                if jobs:
-                    return jobs
-
-        except Exception as e:
-            logger.error(f"JS extraction error: {str(e)}")
-
-        # STRATEGY 2: Selenium selector-based extraction
         # Workday job listing selectors
         workday_selectors = [
             (By.CSS_SELECTOR, 'li[data-automation-id="listItem"]'),
             (By.CSS_SELECTOR, 'li.css-1q2dra3'),
             (By.CSS_SELECTOR, 'ul li[class*="job"]'),
             (By.XPATH, '//ul[@aria-label="Search Results"]/li'),
-            (By.CSS_SELECTOR, 'a[href*="/job"]'),
-            (By.CSS_SELECTOR, 'div[class*="job-card"]'),
-            (By.CSS_SELECTOR, 'li[class*="job"]'),
         ]
 
         job_cards = []
@@ -750,92 +445,7 @@ class QualcommScraper:
                 continue
 
         if not job_cards:
-            # Link-based fallback for Workday
-            logger.warning("No job cards found, trying link-based fallback")
-            try:
-                all_links = driver.find_elements(By.TAG_NAME, 'a')
-                seen_urls = set()
-                for link in all_links:
-                    try:
-                        href = link.get_attribute('href') or ''
-                        text = link.text.strip()
-                        if not text or len(text) < 3 or href in seen_urls:
-                            continue
-                        if '/job/' in href or '/External/' in href:
-                            seen_urls.add(href)
-                            job_id = href.split('/')[-1].split('?')[0] or f"qualcomm_{len(jobs)}"
-                            job_data = {
-                                'external_id': self.generate_external_id(job_id, self.company_name),
-                                'company_name': self.company_name,
-                                'title': text,
-                                'description': '',
-                                'location': '',
-                                'city': '',
-                                'state': '',
-                                'country': 'India',
-                                'employment_type': '',
-                                'department': '',
-                                'apply_url': href,
-                                'posted_date': '',
-                                'job_function': '',
-                                'experience_level': '',
-                                'salary_range': '',
-                                'remote_type': '',
-                                'status': 'active'
-                            }
-                            jobs.append(job_data)
-                            logger.info(f"Fallback found job: {text}")
-                    except:
-                        continue
-            except:
-                pass
-
-        # JS-based link extraction fallback
-        if not jobs:
-            logger.info("Trying JS-based link extraction fallback")
-            try:
-                js_links = driver.execute_script("""
-                    var results = [];
-                    document.querySelectorAll('a[href]').forEach(function(link) {
-                        var text = (link.innerText || '').trim();
-                        var href = link.href || '';
-                        if (text.length > 3 && text.length < 200 && href.length > 10) {
-                            var lhref = href.toLowerCase();
-                            if (lhref.includes('/job') || lhref.includes('/position') || lhref.includes('/career') ||
-                                lhref.includes('/opening') || lhref.includes('/detail') || lhref.includes('/vacancy') ||
-                                lhref.includes('/role') || lhref.includes('/requisition') || lhref.includes('/apply')) {
-                                results.push({title: text.split('\\n')[0].trim(), url: href});
-                            }
-                        }
-                    });
-                    return results;
-                """)
-                if js_links:
-                    seen = set()
-                    exclude = ['home', 'about', 'contact', 'login', 'sign', 'privacy', 'terms', 'cookie', 'blog', 'faq']
-                    for link_data in js_links:
-                        title = link_data.get('title', '')
-                        url = link_data.get('url', '')
-                        if not title or not url or len(title) < 3 or title in seen:
-                            continue
-                        if any(w in title.lower() for w in exclude):
-                            continue
-                        seen.add(title)
-                        job_id = hashlib.md5(url.encode()).hexdigest()[:12]
-                        jobs.append({
-                            'external_id': self.generate_external_id(job_id, self.company_name),
-                            'company_name': self.company_name,
-                            'title': title,
-                            'description': '', 'location': '', 'city': '', 'state': '',
-                            'country': 'India', 'employment_type': '', 'department': '',
-                            'apply_url': url, 'posted_date': '', 'job_function': '',
-                            'experience_level': '', 'salary_range': '', 'remote_type': '', 'status': 'active'
-                        })
-                    if jobs:
-                        logger.info(f"JS fallback found {len(jobs)} jobs")
-            except Exception as e:
-                logger.error(f"JS fallback error: {str(e)}")
-
+            logger.warning("No job cards found using standard selectors")
             return jobs
 
         for idx, card in enumerate(job_cards):
@@ -853,23 +463,22 @@ class QualcommScraper:
                     job_title = title_link.get_attribute('aria-label') or title_link.text.strip()
                     job_link = title_link.get_attribute('href')
                 except:
-                    # Fallback to first line
                     job_title = card_text.split('\n')[0].strip()
 
                 if not job_title or len(job_title) < 3:
                     continue
 
-                # Extract Job ID (like REQ... or from URL)
+                # Extract Job ID
                 job_id = ""
                 lines = card_text.split('\n')
                 for line in lines:
                     line_stripped = line.strip()
-                    if line_stripped.startswith('REQ') and len(line_stripped) < 15:
+                    if (line_stripped.startswith('REQ') or line_stripped.startswith('R')) and \
+                       len(line_stripped) < 15 and line_stripped[1:].replace('-', '').isdigit():
                         job_id = line_stripped
                         break
 
                 if not job_id:
-                    # Try to extract from URL
                     if job_link and '/job/' in job_link:
                         job_id = job_link.split('/job/')[-1].split('/')[0]
                     else:
@@ -925,11 +534,6 @@ class QualcommScraper:
                     'status': 'active'
                 }
 
-                # Fetch full details if enabled
-                if FETCH_FULL_JOB_DETAILS and job_link and job_link != self.url:
-                    full_details = self._fetch_job_details(driver, job_link)
-                    job_data.update(full_details)
-
                 jobs.append(job_data)
                 logger.info(f"Successfully added job: {job_title}")
 
@@ -938,71 +542,14 @@ class QualcommScraper:
                 continue
 
         return jobs
-    
-    def _fetch_job_details(self, driver, job_url):
-        """Fetch full job details by visiting the job page"""
-        details = {}
-        
-        try:
-            # Open job in new tab
-            original_window = driver.current_window_handle
-            driver.execute_script("window.open('');")
-            driver.switch_to.window(driver.window_handles[-1])
-            
-            driver.get(job_url)
-            time.sleep(4)
-            
-            # Extract job description
-            try:
-                desc_selectors = [
-                    (By.CSS_SELECTOR, 'div[data-automation-id="jobPostingDescription"]'),
-                    (By.XPATH, '//div[contains(@class, "jobDescription")]'),
-                    (By.XPATH, '//h2[contains(text(), "Description")]/following-sibling::div'),
-                ]
-                
-                for selector_type, selector_value in desc_selectors:
-                    try:
-                        desc_elem = driver.find_element(selector_type, selector_value)
-                        if desc_elem and desc_elem.text.strip():
-                            details['description'] = desc_elem.text.strip()[:2000]
-                            logger.debug(f"Extracted description using selector: {selector_value}")
-                            break
-                    except:
-                        continue
-            except Exception as e:
-                logger.debug(f"Error extracting description: {str(e)}")
-            
-            # Extract employment type
-            try:
-                emp_type_elem = driver.find_element(By.CSS_SELECTOR, 'dd[data-automation-id="timeType"]')
-                details['employment_type'] = emp_type_elem.text.strip()
-            except:
-                pass
-            
-            # Close tab and return to search results
-            driver.close()
-            driver.switch_to.window(original_window)
-            time.sleep(1)
-            
-        except Exception as e:
-            logger.error(f"Error fetching job details: {str(e)}")
-            # Make sure we return to original window
-            try:
-                if len(driver.window_handles) > 1:
-                    driver.close()
-                    driver.switch_to.window(driver.window_handles[0])
-            except:
-                pass
-        
-        return details
-    
+
     def parse_location(self, location_str):
         """Parse location string into city, state, country"""
         if not location_str:
             return '', '', 'India'
-        
+
         parts = [p.strip() for p in location_str.split(',')]
         city = parts[0] if len(parts) > 0 else ''
         state = parts[1] if len(parts) > 1 else ''
-        
+
         return city, state, 'India'

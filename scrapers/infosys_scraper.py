@@ -75,24 +75,22 @@ class InfosysScraper:
             wait = WebDriverWait(driver, 10)
             short_wait = WebDriverWait(driver, 5)
 
-            # Angular SPA - wait for dynamic content to load
-            time.sleep(15)
-
-            # Scroll down 5 times to trigger lazy loading
-            for _ in range(5):
-                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                time.sleep(2)
-            driver.execute_script("window.scrollTo(0, 0);")
-            time.sleep(2)
-
+            # Smart wait for Angular content instead of blind sleep
             try:
-                wait.until(EC.presence_of_element_located((
+                WebDriverWait(driver, 15).until(EC.presence_of_element_located((
                     By.CSS_SELECTOR,
                     "mat-card.mat-mdc-card, div.jobContainer, div.job-titleTxt"
                 )))
                 logger.info("Job listings loaded")
             except Exception as e:
                 logger.warning(f"Timeout waiting for job listings: {str(e)}")
+                time.sleep(5)
+
+            # Quick scroll for lazy loading
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            time.sleep(1)
+            driver.execute_script("window.scrollTo(0, 0);")
+            time.sleep(0.5)
 
             current_page = 1
             while current_page <= max_pages:
@@ -104,7 +102,7 @@ class InfosysScraper:
                 if current_page < max_pages:
                     if not self._go_to_next_page(driver, current_page):
                         break
-                    time.sleep(3)
+                    # No extra sleep — _go_to_next_page already handles waiting
                 current_page += 1
 
             logger.info(f"Total jobs scraped: {len(all_jobs)}")
@@ -122,7 +120,13 @@ class InfosysScraper:
         """Navigate to next page"""
         try:
             driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(2)
+            time.sleep(0.5)
+
+            # Capture current state for change detection
+            old_first = driver.execute_script("""
+                var card = document.querySelector('mat-card.mat-mdc-card, div.jobContainer');
+                return card ? card.innerText.substring(0, 50) : '';
+            """)
 
             next_selectors = [
                 (By.CSS_SELECTOR, 'a[aria-label="Next"]'),
@@ -144,10 +148,20 @@ class InfosysScraper:
                     if not next_button.is_enabled():
                         continue
                     driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", next_button)
-                    time.sleep(1)
+                    time.sleep(0.3)
                     driver.execute_script("arguments[0].click();", next_button)
                     logger.info(f"Navigated to page {current_page + 1}")
-                    time.sleep(5)  # Wait for Angular to re-render
+
+                    # Poll for content change instead of blind sleep
+                    for _ in range(25):
+                        time.sleep(0.2)
+                        new_first = driver.execute_script("""
+                            var card = document.querySelector('mat-card.mat-mdc-card, div.jobContainer');
+                            return card ? card.innerText.substring(0, 50) : '';
+                        """)
+                        if new_first and new_first != old_first:
+                            break
+                    time.sleep(0.5)
                     return True
                 except:
                     continue
@@ -165,9 +179,9 @@ class InfosysScraper:
 
         try:
             driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(2)
+            time.sleep(0.5)
             driver.execute_script("window.scrollTo(0, 0);")
-            time.sleep(1)
+            time.sleep(0.3)
 
             # Infosys career page uses Angular Material cards
             # Actual DOM: mat-card.mat-mdc-card contains job-titleTxt, job-locationTxt, etc.

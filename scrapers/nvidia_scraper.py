@@ -216,8 +216,8 @@ class NvidiaScraper:
 
             driver.get(self.url)
             wait = WebDriverWait(driver, SCRAPE_TIMEOUT)
-            time.sleep(12)
 
+            # Smart wait for job listings instead of blind sleep(12)
             try:
                 wait.until(EC.presence_of_element_located((
                     By.CSS_SELECTOR, 'li[data-automation-id="listItem"]'
@@ -225,6 +225,7 @@ class NvidiaScraper:
                 logger.info("Job listings loaded")
             except Exception as e:
                 logger.warning(f"Timeout waiting for job listings: {str(e)}")
+                time.sleep(5)  # Fallback only if selector not found
 
             current_page = 1
             while current_page <= max_pages:
@@ -236,7 +237,7 @@ class NvidiaScraper:
                 if current_page < max_pages:
                     if not self._go_to_next_page(driver, current_page):
                         break
-                    time.sleep(5)
+                    # No extra sleep — _go_to_next_page already handles waiting
                 current_page += 1
 
             logger.info(f"Total jobs scraped via Selenium: {len(all_jobs)}")
@@ -255,7 +256,13 @@ class NvidiaScraper:
             next_page_num = current_page + 1
 
             driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(2)
+            time.sleep(0.5)
+
+            # Capture first card text BEFORE click for change detection
+            old_first = driver.execute_script("""
+                var card = document.querySelector('li[data-automation-id="listItem"]');
+                return card ? card.innerText.substring(0, 50) : '';
+            """)
 
             next_selectors = [
                 (By.XPATH, f'//button[@aria-label="{next_page_num}"]'),
@@ -269,9 +276,20 @@ class NvidiaScraper:
                 try:
                     next_button = driver.find_element(selector_type, selector_value)
                     driver.execute_script("arguments[0].scrollIntoView();", next_button)
-                    time.sleep(1)
+                    time.sleep(0.3)
                     driver.execute_script("arguments[0].click();", next_button)
                     logger.info(f"Navigated to page {next_page_num}")
+
+                    # Poll for page change instead of blind sleep(5)
+                    for _ in range(25):
+                        time.sleep(0.2)
+                        new_first = driver.execute_script("""
+                            var card = document.querySelector('li[data-automation-id="listItem"]');
+                            return card ? card.innerText.substring(0, 50) : '';
+                        """)
+                        if new_first and new_first != old_first:
+                            break
+                    time.sleep(0.5)  # Brief settle after change detected
                     return True
                 except:
                     continue
@@ -285,7 +303,11 @@ class NvidiaScraper:
     def _scrape_page(self, driver, wait):
         """Scrape jobs from current Workday page"""
         jobs = []
-        time.sleep(3)
+        # Quick scroll to trigger lazy loading instead of blind sleep(3)
+        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+        time.sleep(0.5)
+        driver.execute_script("window.scrollTo(0, 0);")
+        time.sleep(0.3)
 
         workday_selectors = [
             (By.CSS_SELECTOR, 'li[data-automation-id="listItem"]'),

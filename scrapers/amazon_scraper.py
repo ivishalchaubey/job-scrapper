@@ -32,7 +32,8 @@ class AmazonScraper:
         chrome_options.add_argument('--window-size=1920,1080')
         chrome_options.add_argument('--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36')
         chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-        chrome_options.add_experimental_option('excludeSwitches', ['enable-logging'])
+        chrome_options.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
+        chrome_options.add_experimental_option('useAutomationExtension', False)
         
         try:
             # Install and get the correct chromedriver path
@@ -50,6 +51,10 @@ class AmazonScraper:
             
             service = Service(driver_path)
             driver = webdriver.Chrome(service=service, options=chrome_options)
+            driver.execute_cdp_cmd('Network.setUserAgentOverride', {
+                "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            })
+            driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
             return driver
         except Exception as e:
             logger.error(f"ChromeDriver setup failed: {str(e)}")
@@ -75,21 +80,21 @@ class AmazonScraper:
             driver = self.setup_driver()
             driver.get(self.url)
             
-            # Wait for page to load
+            # Wait for page to load — smart wait instead of blind sleep
             wait = WebDriverWait(driver, SCRAPE_TIMEOUT)
             logger.info("Waiting for initial page load...")
-            time.sleep(8)  # Wait longer for dynamic content to load
-            
-            # Wait for job results to appear
             try:
-                wait.until(EC.presence_of_element_located((By.TAG_NAME, 'a')))
+                wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, 'a[href*="/jobs/"]')))
                 logger.info("Page content loaded")
             except:
-                logger.warning("Timeout waiting for page content")
-            
-            # Scroll to trigger any lazy loading
-            driver.execute_script("window.scrollTo(0, document.body.scrollHeight/2);")
-            time.sleep(3)
+                logger.warning("Timeout waiting for page content, using fallback wait")
+                time.sleep(5)
+
+            # Quick scroll to trigger lazy loading
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            time.sleep(1)
+            driver.execute_script("window.scrollTo(0, 0);")
+            time.sleep(0.5)
             
             current_page = 1
             consecutive_empty_pages = 0
@@ -129,11 +134,7 @@ class AmazonScraper:
                     if not self._go_to_next_page(driver, current_page):
                         logger.info("No more jobs available to load")
                         break
-                    time.sleep(5)  # Wait for new jobs to load
-                    
-                    # Scroll to top to see newly loaded jobs
-                    driver.execute_script("window.scrollTo(0, 0);")
-                    time.sleep(2)
+                    # No extra sleep needed — _go_to_next_page already waits
                 
                 current_page += 1
             
@@ -156,11 +157,9 @@ class AmazonScraper:
             # Amazon uses a "Load more jobs" button instead of traditional pagination
             logger.info(f"Looking for 'Load more jobs' button to load page {current_page + 1}")
             
-            # Scroll to bottom gradually to trigger any lazy loading
-            driver.execute_script("window.scrollTo(0, document.body.scrollHeight/2);")
-            time.sleep(1)
+            # Quick scroll to bottom to find the button
             driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(3)
+            time.sleep(1)
             
             # Get all buttons on the page
             all_buttons = driver.find_elements(By.TAG_NAME, 'button')
@@ -229,23 +228,26 @@ class AmazonScraper:
             
             # Scroll button into view
             driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", load_more_button)
-            time.sleep(1)
-            
+            time.sleep(0.5)
+
+            # Capture current job count for change detection
+            old_count = len(driver.find_elements(By.CSS_SELECTOR, 'a[href*="/jobs/"]'))
+
             # Click the button
             try:
                 load_more_button.click()
                 logger.info("Clicked 'Load more jobs' button")
             except:
-                # Fallback: use JavaScript click
                 driver.execute_script("arguments[0].click();", load_more_button)
                 logger.info("Clicked 'Load more jobs' button using JavaScript")
-            
-            # Wait for new jobs to load
-            time.sleep(4)
-            
-            # Scroll to load any lazy-loaded content
-            driver.execute_script("window.scrollTo(0, document.body.scrollHeight/2);")
-            time.sleep(2)
+
+            # Poll until new jobs appear (max 6s, usually <2s)
+            for _ in range(30):
+                time.sleep(0.2)
+                new_count = len(driver.find_elements(By.CSS_SELECTOR, 'a[href*="/jobs/"]'))
+                if new_count > old_count:
+                    break
+            time.sleep(0.5)
             
             logger.info(f"Successfully loaded more jobs for page {current_page + 1}")
             return True
@@ -267,19 +269,24 @@ class AmazonScraper:
             new_url = base_url + params
             
             logger.info(f"Trying URL pagination with offset {new_offset}: {new_url}")
-            
+
             # Store current job count to verify new jobs loaded
             current_url = driver.current_url
             driver.get(new_url)
-            
-            # Wait for page to load
-            time.sleep(5)
-            
-            # Scroll to trigger lazy loading
-            driver.execute_script("window.scrollTo(0, document.body.scrollHeight/2);")
-            time.sleep(2)
+
+            # Smart wait for job links instead of blind sleep
+            try:
+                WebDriverWait(driver, 10).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, 'a[href*="/jobs/"]'))
+                )
+            except:
+                time.sleep(3)
+
+            # Quick scroll to trigger lazy loading
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            time.sleep(0.5)
             driver.execute_script("window.scrollTo(0, 0);")
-            time.sleep(2)
+            time.sleep(0.3)
             
             # Verify URL changed or we're on a different page
             new_current_url = driver.current_url
@@ -299,17 +306,11 @@ class AmazonScraper:
         """Scrape jobs from current page"""
         jobs = []
         
-        # Scroll to load all content
-        driver.execute_script("window.scrollTo(0, document.body.scrollHeight/3);")
-        time.sleep(2)
-        driver.execute_script("window.scrollTo(0, document.body.scrollHeight*2/3);")
-        time.sleep(2)
+        # Quick scroll to load lazy content
         driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-        time.sleep(3)
-        
-        # Scroll back to top to see all jobs
+        time.sleep(0.5)
         driver.execute_script("window.scrollTo(0, 0);")
-        time.sleep(2)
+        time.sleep(0.3)
         
         # Amazon's job search results contain "Read more" links with job IDs
         # Pattern: "Read more about the job <Title>, job Id <ID>"

@@ -176,14 +176,21 @@ class PepsiCoScraper:
             logger.info(f"Starting {self.company_name} Selenium scraping from {self.url}")
             driver.get(self.url)
             wait = WebDriverWait(driver, SCRAPE_TIMEOUT)
-            time.sleep(10)
 
+            # Smart wait for Phenom job cards instead of blind sleep
             try:
                 wait.until(EC.presence_of_element_located((
-                    By.CSS_SELECTOR, "[class*='job'], a[href*='/job/'], [class*='search-result']"
+                    By.CSS_SELECTOR, '[data-ph-at-id="jobs-list-item"]'
                 )))
             except:
-                logger.warning("Timeout waiting for listings")
+                # Fallback: try generic selectors
+                try:
+                    WebDriverWait(driver, 10).until(EC.presence_of_element_located((
+                        By.CSS_SELECTOR, "[class*='job'], a[href*='/job/'], [class*='search-result']"
+                    )))
+                except:
+                    logger.warning("Timeout waiting for listings")
+                    time.sleep(5)
 
             current_page = 1
             while current_page <= max_pages:
@@ -194,7 +201,7 @@ class PepsiCoScraper:
                 if current_page < max_pages:
                     if not self._go_to_next_page(driver):
                         break
-                    time.sleep(3)
+                    # No extra sleep — _go_to_next_page already waits for page change
                 current_page += 1
 
             logger.info(f"Total jobs scraped: {len(all_jobs)}")
@@ -209,16 +216,40 @@ class PepsiCoScraper:
     def _go_to_next_page(self, driver):
         try:
             driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(2)
+            time.sleep(0.5)
+
+            # Capture current first job text for change detection
+            old_first = driver.execute_script("""
+                var card = document.querySelector('[data-ph-at-id="jobs-list-item"]');
+                return card ? card.innerText.substring(0, 50) : '';
+            """)
+
+            # Phenom-specific selectors first, then generic fallbacks
             for sel_type, sel_val in [
+                (By.CSS_SELECTOR, 'a[data-ph-at-id="pagination-next-link"]'),
+                (By.CSS_SELECTOR, 'a.next-btn'),
+                (By.CSS_SELECTOR, 'button[data-ph-at-id="load-more-jobs-button"]'),
                 (By.CSS_SELECTOR, 'a[aria-label="Next"]'),
-                (By.XPATH, '//a[contains(text(), "Next")]'),
                 (By.CSS_SELECTOR, 'button[aria-label="Next"]'),
+                (By.XPATH, '//a[contains(text(), "Next")]'),
                 (By.CSS_SELECTOR, '.pagination .next a'),
             ]:
                 try:
                     btn = driver.find_element(sel_type, sel_val)
+                    if not btn.is_displayed():
+                        continue
                     driver.execute_script("arguments[0].click();", btn)
+
+                    # Poll for page change instead of blind sleep (max 4s)
+                    for _ in range(20):
+                        time.sleep(0.2)
+                        new_first = driver.execute_script("""
+                            var card = document.querySelector('[data-ph-at-id="jobs-list-item"]');
+                            return card ? card.innerText.substring(0, 50) : '';
+                        """)
+                        if new_first and new_first != old_first:
+                            break
+                    time.sleep(0.5)  # Brief settle after change detected
                     return True
                 except:
                     continue
@@ -231,15 +262,15 @@ class PepsiCoScraper:
         scraped_ids = set()
 
         try:
-            # Scroll multiple times to trigger lazy loading
-            for _scroll_i in range(3):
-                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                time.sleep(2)
+            # Single quick scroll to trigger lazy loading
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            time.sleep(0.5)
             driver.execute_script("window.scrollTo(0, 0);")
-            time.sleep(2)
+            time.sleep(0.3)
 
             job_elements = []
             selectors = [
+                '[data-ph-at-id="jobs-list-item"]',  # Phenom platform (primary)
                 "a[href*='/job/']",
                 "[class*='job-card']",
                 "[class*='job-listing']",

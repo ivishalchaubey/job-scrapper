@@ -60,115 +60,43 @@ class VolvoScraper:
 
         try:
             driver = self.setup_driver()
-            short_wait = WebDriverWait(driver, 5)
             logger.info(f"Starting {self.company_name} scraping from {self.url}")
             driver.get(self.url)
-            time.sleep(15)
+
+            # Wait for the job table to load
+            try:
+                WebDriverWait(driver, 15).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, 'a[href*="/job/"]'))
+                )
+            except:
+                time.sleep(5)
 
             # Accept cookies if present
             try:
-                cookie_btns = driver.find_elements(By.CSS_SELECTOR,
-                    'button[id*="cookie"], button[class*="cookie"], button[id*="accept"], button[class*="accept"], button[id*="consent"]')
-                for btn in cookie_btns:
-                    if btn.is_displayed():
-                        driver.execute_script("arguments[0].click();", btn)
-                        logger.info("Accepted cookies")
-                        time.sleep(2)
-                        break
-            except:
-                pass
-
-            # Also try JS cookie acceptance
-            driver.execute_script("""
-                var btns = document.querySelectorAll('button, a');
-                for (var i = 0; i < btns.length; i++) {
-                    var txt = (btns[i].innerText || '').toLowerCase();
-                    if (txt.includes('accept') && (txt.includes('cookie') || txt.includes('all'))) {
-                        btns[i].click();
-                        break;
-                    }
-                }
-            """)
-            time.sleep(2)
-
-            # Try to search for India jobs on Volvo portal
-            search_attempted = False
-
-            # Strategy 1: Look for search input and type "India"
-            search_selectors = [
-                'input[type="search"]', 'input[type="text"]', 'input[placeholder*="search" i]',
-                'input[placeholder*="Search" i]', 'input[placeholder*="job" i]', 'input[name*="search" i]',
-                'input[name*="keyword" i]', 'input[id*="search" i]', 'input[class*="search" i]',
-                'input[aria-label*="search" i]', 'input[aria-label*="Search" i]'
-            ]
-
-            for sel in search_selectors:
-                try:
-                    search_input = driver.find_element(By.CSS_SELECTOR, sel)
-                    if search_input.is_displayed():
-                        search_input.clear()
-                        search_input.send_keys('India')
-                        logger.info(f"Typed 'India' into search input: {sel}")
-                        time.sleep(1)
-
-                        # Try to submit/click search
-                        try:
-                            search_input.send_keys(u'\ue007')  # Enter key
-                        except:
-                            pass
-
-                        # Also try clicking a search button
-                        try:
-                            search_btn = driver.find_element(By.CSS_SELECTOR,
-                                'button[type="submit"], button[class*="search"], button[aria-label*="search" i]')
-                            if search_btn.is_displayed():
-                                driver.execute_script("arguments[0].click();", search_btn)
-                        except:
-                            pass
-
-                        search_attempted = True
-                        time.sleep(8)
-                        break
-                except:
-                    continue
-
-            # Strategy 2: Try to find country/location filter and select India
-            if not search_attempted:
                 driver.execute_script("""
-                    var selects = document.querySelectorAll('select');
-                    for (var i = 0; i < selects.length; i++) {
-                        var opts = selects[i].querySelectorAll('option');
-                        for (var j = 0; j < opts.length; j++) {
-                            if (opts[j].text.toLowerCase().includes('india')) {
-                                selects[i].value = opts[j].value;
-                                selects[i].dispatchEvent(new Event('change', {bubbles: true}));
-                                break;
-                            }
-                        }
-                    }
-                """)
-                time.sleep(5)
-
-            # Strategy 3: Try clicking location/country links
-            if not search_attempted:
-                driver.execute_script("""
-                    var links = document.querySelectorAll('a, button, span, div');
-                    for (var i = 0; i < links.length; i++) {
-                        var txt = (links[i].innerText || '').trim().toLowerCase();
-                        if (txt === 'india' || txt === 'india jobs' || txt.includes('india')) {
-                            links[i].click();
+                    var btns = document.querySelectorAll('button');
+                    for (var i = 0; i < btns.length; i++) {
+                        var txt = (btns[i].innerText || '').toLowerCase();
+                        if (txt.includes('accept') && (txt.includes('cookie') || txt.includes('all'))) {
+                            btns[i].click();
                             break;
                         }
                     }
                 """)
-                time.sleep(5)
+                time.sleep(1)
+            except:
+                pass
 
-            # Scroll to load lazy content
-            for scroll_i in range(5):
-                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                time.sleep(2)
+            # Scroll to load content
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            time.sleep(1)
             driver.execute_script("window.scrollTo(0, 0);")
-            time.sleep(2)
+            time.sleep(0.5)
+
+            # Volvo lists all jobs on one page in a table format
+            # The table has columns: Job Title, Category, Organization, Location, Type, Date
+            # Each row has an <a href="/job/..."> link
+            # Pagination is handled via URL params on the SuccessFactors platform
 
             for page in range(max_pages):
                 page_jobs = self._extract_jobs(driver)
@@ -177,9 +105,9 @@ class VolvoScraper:
                 all_jobs.extend(page_jobs)
                 logger.info(f"Page {page + 1}: {len(page_jobs)} jobs (total: {len(all_jobs)})")
 
-                if not self._go_to_next_page(driver):
-                    break
-                time.sleep(5)
+                if page < max_pages - 1:
+                    if not self._go_to_next_page(driver):
+                        break
 
             logger.info(f"Total jobs scraped: {len(all_jobs)}")
         except Exception as e:
@@ -193,146 +121,70 @@ class VolvoScraper:
         jobs = []
 
         try:
-            # Scroll to ensure content is loaded
-            for _ in range(3):
-                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                time.sleep(2)
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            time.sleep(0.5)
             driver.execute_script("window.scrollTo(0, 0);")
-            time.sleep(1)
+            time.sleep(0.3)
 
             js_jobs = driver.execute_script("""
                 var results = [];
                 var seen = {};
 
-                // Strategy 1: Job links with /job/ in href (Volvo pattern)
-                var jobLinks = document.querySelectorAll('a[href*="/job/"], a[href*="/jobs/"], a[href*="jobId"], a[href*="job-"], a[href*="/position/"]');
-                for (var i = 0; i < jobLinks.length; i++) {
-                    var el = jobLinks[i];
-                    var href = el.href || '';
+                // Volvo uses <a class="job--table--row"> with <span> child elements:
+                //   span.job--table--title = Title
+                //   span.job--table--department = Category
+                //   span.job--table--facility = Organization
+                //   span.job--table--multilocation = Location
+                //   span.job--table--shifttype = Position type
+                //   span.job--table--created = Date
+                // The <a> also has a title attribute with the clean job title
+                var jobRows = document.querySelectorAll('a.job--table--row[href*="/job/"]');
+                if (jobRows.length === 0) jobRows = document.querySelectorAll('a[href*="/job/"]');
+
+                for (var i = 0; i < jobRows.length; i++) {
+                    var link = jobRows[i];
+                    var href = link.href || '';
                     if (!href || seen[href]) continue;
-                    var title = (el.innerText || el.textContent || '').trim().split('\\n')[0].trim();
+
+                    // Get title from title attribute (cleanest) or from span
+                    var title = link.getAttribute('title') || '';
+                    if (!title) {
+                        var titleSpan = link.querySelector('[class*="job--table--title"]');
+                        if (titleSpan) title = titleSpan.innerText.trim();
+                    }
+                    if (!title) title = link.innerText.trim().split('\\t')[0].split('\\n')[0].trim();
                     if (!title || title.length < 3 || title.length > 200) continue;
 
-                    // Skip navigation/menu links
-                    if (title.toLowerCase() === 'jobs' || title.toLowerCase() === 'careers' ||
-                        title.toLowerCase() === 'search' || title.toLowerCase() === 'home') continue;
+                    // Skip navigation links
+                    if (title.toLowerCase() === 'jobs' || title.toLowerCase() === 'careers') continue;
 
                     seen[href] = true;
 
-                    var parent = el.closest('div[class*="job"], li[class*="job"], article, tr, div[class*="card"], div[class*="result"], div[class*="listing"], div[class*="item"]');
-                    var location = '';
-                    var dept = '';
-                    var date = '';
+                    // Extract structured data from span elements
+                    var deptSpan = link.querySelector('[class*="job--table--department"]');
+                    var department = deptSpan ? deptSpan.innerText.trim() : '';
 
-                    if (parent) {
-                        var locEl = parent.querySelector('[class*="location"], [class*="Location"], [data-field*="location"], span[class*="loc"]');
-                        if (locEl && locEl !== el) location = locEl.innerText.trim();
+                    var locSpan = link.querySelector('[class*="job--table--multiloc"], [class*="job--table--location"]');
+                    var location = locSpan ? locSpan.innerText.trim() : '';
 
-                        var deptEl = parent.querySelector('[class*="department"], [class*="Department"], [class*="category"], [class*="Category"]');
-                        if (deptEl && deptEl !== el) dept = deptEl.innerText.trim();
+                    var typeSpan = link.querySelector('[class*="job--table--shifttype"]');
+                    var jobType = typeSpan ? typeSpan.innerText.trim() : '';
 
-                        var dateEl = parent.querySelector('[class*="date"], [class*="Date"], [class*="posted"], time');
-                        if (dateEl && dateEl !== el) date = dateEl.innerText.trim();
+                    var dateSpan = link.querySelector('[class*="job--table--created"]');
+                    var date = dateSpan ? dateSpan.innerText.trim() : '';
 
-                        // If no location found from class, try data attributes
-                        if (!location) {
-                            var allSpans = parent.querySelectorAll('span, div, p');
-                            for (var s = 0; s < allSpans.length; s++) {
-                                var spanText = allSpans[s].innerText.trim();
-                                if (spanText.includes('India') || spanText.includes('Bangalore') ||
-                                    spanText.includes('Mumbai') || spanText.includes('Pune') ||
-                                    spanText.includes('Chennai') || spanText.includes('Delhi') ||
-                                    spanText.includes('Hyderabad')) {
-                                    location = spanText;
-                                    break;
-                                }
-                            }
-                        }
-                    }
+                    var orgSpan = link.querySelector('[class*="job--table--facility"]');
+                    var organization = orgSpan ? orgSpan.innerText.trim() : '';
 
-                    results.push({title: title, url: href, location: location, date: date, department: dept});
-                }
-
-                // Strategy 2: Div/article-based job cards
-                if (results.length === 0) {
-                    var cards = document.querySelectorAll('div[class*="job-card"], div[class*="jobCard"], div[class*="job-listing"],  div[class*="jobListing"], article[class*="job"], li[class*="job"], div[class*="search-result"], div[class*="searchResult"]');
-                    for (var i = 0; i < cards.length; i++) {
-                        var card = cards[i];
-                        var linkEl = card.querySelector('a[href]');
-                        if (!linkEl) continue;
-                        var title = linkEl.innerText.trim().split('\\n')[0].trim();
-                        var href = linkEl.href || '';
-                        if (!title || title.length < 3 || title.length > 200) continue;
-                        if (href && seen[href]) continue;
-                        if (href) seen[href] = true;
-
-                        var locEl = card.querySelector('[class*="location"], [class*="Location"]');
-                        var location = locEl ? locEl.innerText.trim() : '';
-                        var deptEl = card.querySelector('[class*="department"], [class*="category"]');
-                        var dept = deptEl ? deptEl.innerText.trim() : '';
-
-                        results.push({title: title, url: href || '', location: location, date: '', department: dept});
-                    }
-                }
-
-                // Strategy 3: Generic list items with links
-                if (results.length === 0) {
-                    var items = document.querySelectorAll('ul li a[href], ol li a[href]');
-                    for (var i = 0; i < items.length; i++) {
-                        var el = items[i];
-                        var href = el.href || '';
-                        if (!href || seen[href]) continue;
-                        // Only consider links that look like job URLs
-                        if (!href.includes('job') && !href.includes('position') && !href.includes('career') && !href.includes('opening') && !href.includes('req')) continue;
-                        var title = el.innerText.trim().split('\\n')[0].trim();
-                        if (!title || title.length < 3 || title.length > 200) continue;
-                        seen[href] = true;
-
-                        var parent = el.closest('li');
-                        var location = '';
-                        if (parent) {
-                            var locEl = parent.querySelector('[class*="location"]');
-                            if (locEl) location = locEl.innerText.trim();
-                        }
-                        results.push({title: title, url: href, location: location, date: '', department: ''});
-                    }
-                }
-
-                // Strategy 4: Table rows
-                if (results.length === 0) {
-                    var rows = document.querySelectorAll('table tbody tr');
-                    for (var i = 0; i < rows.length; i++) {
-                        var row = rows[i];
-                        if (row.querySelector('th')) continue;
-                        var link = row.querySelector('a[href]');
-                        if (!link) continue;
-                        var title = link.innerText.trim().split('\\n')[0];
-                        var href = link.href || '';
-                        if (!title || title.length < 3 || title.length > 200 || !href || seen[href]) continue;
-                        if (href.includes('javascript:') || href.includes('#') || href.includes('login')) continue;
-                        seen[href] = true;
-                        var tds = row.querySelectorAll('td');
-                        var location = tds.length >= 2 ? tds[1].innerText.trim() : '';
-                        var dept = tds.length >= 3 ? tds[2].innerText.trim() : '';
-                        results.push({title: title, url: href, location: location, date: '', department: dept});
-                    }
-                }
-
-                // Strategy 5: Any remaining links that look like job postings
-                if (results.length === 0) {
-                    var allLinks = document.querySelectorAll('a[href]');
-                    for (var i = 0; i < allLinks.length; i++) {
-                        var el = allLinks[i];
-                        var href = el.href || '';
-                        if (!href || seen[href]) continue;
-                        if (!href.includes('job') && !href.includes('position') && !href.includes('req') && !href.includes('opening')) continue;
-                        if (href.includes('javascript:') || href.includes('#') || href.includes('login') || href.includes('signup')) continue;
-                        var title = el.innerText.trim().split('\\n')[0].trim();
-                        if (!title || title.length < 3 || title.length > 200) continue;
-                        if (title.toLowerCase() === 'jobs' || title.toLowerCase() === 'careers') continue;
-                        seen[href] = true;
-                        results.push({title: title, url: href, location: '', date: '', department: ''});
-                    }
+                    results.push({
+                        title: title,
+                        url: href,
+                        location: location,
+                        department: department,
+                        organization: organization,
+                        jobType: jobType,
+                        date: date
+                    });
                 }
 
                 return results;
@@ -345,8 +197,9 @@ class VolvoScraper:
                     title = jdata.get('title', '').strip()
                     url = jdata.get('url', '').strip()
                     location = jdata.get('location', '').strip()
-                    date = jdata.get('date', '').strip()
                     department = jdata.get('department', '').strip()
+                    job_type = jdata.get('jobType', '').strip()
+                    date = jdata.get('date', '').strip()
 
                     if not title or len(title) < 3:
                         continue
@@ -357,41 +210,38 @@ class VolvoScraper:
                     if url and url.startswith('/'):
                         url = f"{self.base_url}{url}"
 
+                    # Extract job ID from URL like /job/City-Title-12345/
                     job_id = hashlib.md5((url or title).encode()).hexdigest()[:12]
-                    if url and '/job/' in url:
+                    if '/job/' in url:
                         parts = url.split('/job/')[-1].split('/')
                         if parts[0]:
                             job_id = parts[0]
-                    elif url and 'jobId=' in url:
-                        import re
-                        id_match = re.search(r'jobId=(\w+)', url)
-                        if id_match:
-                            job_id = id_match.group(1)
 
                     loc_data = self.parse_location(location)
                     jobs.append({
                         'external_id': self.generate_external_id(job_id, self.company_name),
-                        'company_name': self.company_name, 'title': title,
-                        'apply_url': url or self.url, 'location': location,
-                        'department': department, 'employment_type': '', 'description': '',
-                        'posted_date': date, 'city': loc_data.get('city', ''),
+                        'company_name': self.company_name,
+                        'title': title,
+                        'apply_url': url or self.url,
+                        'location': location,
+                        'department': department,
+                        'employment_type': job_type,
+                        'description': '',
+                        'posted_date': date,
+                        'city': loc_data.get('city', ''),
                         'state': loc_data.get('state', ''),
                         'country': loc_data.get('country', 'India'),
-                        'job_function': '', 'experience_level': '', 'salary_range': '',
-                        'remote_type': '', 'status': 'active'
+                        'job_function': '',
+                        'experience_level': '',
+                        'salary_range': '',
+                        'remote_type': '',
+                        'status': 'active'
                     })
 
             if jobs:
                 logger.info(f"Successfully extracted {len(jobs)} jobs")
             else:
                 logger.warning("No jobs found on this page")
-                try:
-                    body_text = driver.execute_script('return document.body ? document.body.innerText.substring(0, 500) : ""')
-                    logger.info(f"Page body preview: {body_text}")
-                    page_url = driver.current_url
-                    logger.info(f"Current URL: {page_url}")
-                except:
-                    pass
 
         except Exception as e:
             logger.error(f"Error extracting jobs: {str(e)}")
@@ -401,57 +251,38 @@ class VolvoScraper:
     def _go_to_next_page(self, driver):
         try:
             driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(2)
+            time.sleep(0.5)
 
-            next_selectors = [
+            old_first = driver.execute_script("""
+                var link = document.querySelector('a[href*="/job/"]');
+                return link ? link.innerText.substring(0, 50) : '';
+            """)
+
+            for sel_type, sel_val in [
                 (By.CSS_SELECTOR, 'a[aria-label="Next"]'),
-                (By.CSS_SELECTOR, 'button[aria-label="Next"]'),
                 (By.CSS_SELECTOR, 'a[aria-label="Next page"]'),
-                (By.CSS_SELECTOR, 'button[aria-label="Next page"]'),
-                (By.CSS_SELECTOR, 'a.next-page'),
+                (By.CSS_SELECTOR, 'a.pagination-next'),
                 (By.CSS_SELECTOR, 'a[rel="next"]'),
-                (By.CSS_SELECTOR, 'li.pagination-next a'),
-                (By.CSS_SELECTOR, '.pagination .next a'),
-                (By.CSS_SELECTOR, 'a[class*="next"]'),
-                (By.CSS_SELECTOR, 'button[class*="next"]'),
                 (By.XPATH, '//a[contains(text(), "Next")]'),
                 (By.XPATH, '//button[contains(text(), "Next")]'),
-                (By.XPATH, '//a[contains(text(), ">")]'),
-                (By.XPATH, '//a[contains(@class, "next")]'),
-                (By.XPATH, '//button[contains(@class, "next")]'),
-                (By.CSS_SELECTOR, 'a[title="Next"]'),
-                (By.CSS_SELECTOR, 'button[title="Next"]'),
-            ]
-
-            for sel_type, sel_val in next_selectors:
+            ]:
                 try:
                     btn = driver.find_element(sel_type, sel_val)
                     if btn.is_displayed() and btn.is_enabled():
                         driver.execute_script("arguments[0].click();", btn)
-                        logger.info("Navigated to next page")
+                        # Poll for page change
+                        for _ in range(20):
+                            time.sleep(0.2)
+                            new_first = driver.execute_script("""
+                                var link = document.querySelector('a[href*="/job/"]');
+                                return link ? link.innerText.substring(0, 50) : '';
+                            """)
+                            if new_first and new_first != old_first:
+                                break
+                        time.sleep(0.5)
                         return True
                 except:
                     continue
-
-            # Try JS fallback for pagination
-            clicked = driver.execute_script("""
-                var els = document.querySelectorAll('a, button');
-                for (var i = 0; i < els.length; i++) {
-                    var txt = (els[i].innerText || '').trim().toLowerCase();
-                    var label = (els[i].getAttribute('aria-label') || '').toLowerCase();
-                    if (txt === 'next' || txt === '>' || txt === '>>' || label.includes('next')) {
-                        if (els[i].offsetParent !== null) {
-                            els[i].click();
-                            return true;
-                        }
-                    }
-                }
-                return false;
-            """)
-            if clicked:
-                logger.info("Navigated to next page via JS fallback")
-                return True
-
             return False
         except:
             return False
