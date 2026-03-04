@@ -419,6 +419,34 @@ from scrapers.kenvue_scraper import KenvueScraper
 from scrapers.athenahealth_scraper import AthenaScraper
 from scrapers.bms_scraper import BMSScraper
 
+# Batch 10 - Greenhouse scrapers (24)
+from scrapers.five9_scraper import Five9Scraper
+from scrapers.tekion_scraper import TekionScraper
+from scrapers.celonis_scraper import CelonisScraper
+from scrapers.cloudsek_scraper import CloudSEKScraper
+from scrapers.zuora_scraper import ZuoraScraper
+from scrapers.solarwinds_scraper import SolarWindsScraper
+from scrapers.aviatrix_scraper import AviatrixScraper
+from scrapers.fivetran_scraper import FivetranScraper
+from scrapers.onetrust_scraper import OneTrustScraper
+from scrapers.commvault_scraper import CommvaultScraper
+from scrapers.zoominfo_scraper import ZoomInfoScraper
+from scrapers.moveworks_scraper import MoveworksScraper
+from scrapers.vonage_scraper import VonageScraper
+from scrapers.cision_scraper import CisionScraper
+from scrapers.flexport_scraper import FlexportScraper
+from scrapers.oportun_scraper import OportunScraper
+from scrapers.cockroachlabs_scraper import CockroachLabsScraper
+from scrapers.gitlab_scraper import GitLabScraper
+from scrapers.deepmind_scraper import DeepMindScraper
+from scrapers.fastly_scraper import FastlyScraper
+from scrapers.karat_scraper import KaratScraper
+from scrapers.appdirect_scraper import AppDirectScraper
+from scrapers.logicmonitor_scraper import LogicMonitorScraper
+from scrapers.singlestore_scraper import SingleStoreScraper
+# Batch 10 - Lever scraper (1)
+from scrapers.clari_scraper import ClariScraper
+
 
 # Map of company names to their scraper classes
 SCRAPER_MAP = {
@@ -866,6 +894,35 @@ SCRAPER_MAP = {
     'bristol-myers squibb': BMSScraper,
     'bristol myers squibb': BMSScraper,
     'bms': BMSScraper,
+    # Batch 10 - Greenhouse scrapers (24)
+    'five9': Five9Scraper,
+    'tekion': TekionScraper,
+    'celonis': CelonisScraper,
+    'cloudsek': CloudSEKScraper,
+    'zuora': ZuoraScraper,
+    'solarwinds': SolarWindsScraper,
+    'aviatrix': AviatrixScraper,
+    'fivetran': FivetranScraper,
+    'onetrust': OneTrustScraper,
+    'commvault': CommvaultScraper,
+    'zoominfo': ZoomInfoScraper,
+    'moveworks': MoveworksScraper,
+    'vonage': VonageScraper,
+    'cision': CisionScraper,
+    'flexport': FlexportScraper,
+    'oportun': OportunScraper,
+    'cockroach labs': CockroachLabsScraper,
+    'cockroachlabs': CockroachLabsScraper,
+    'gitlab': GitLabScraper,
+    'deepmind': DeepMindScraper,
+    'fastly': FastlyScraper,
+    'karat': KaratScraper,
+    'appdirect': AppDirectScraper,
+    'logicmonitor': LogicMonitorScraper,
+    'logic monitor': LogicMonitorScraper,
+    'singlestore': SingleStoreScraper,
+    # Batch 10 - Lever scraper (1)
+    'clari': ClariScraper,
 }
 
 ALL_COMPANY_CHOICES = [
@@ -970,4 +1027,11 @@ ALL_COMPANY_CHOICES = [
     'Spotify', 'Binance', 'CRED',
     # Batch 9 - Workday (5)
     'Stryker', 'Amgen', 'Kenvue', 'Athenahealth', 'Bristol-Myers Squibb',
+    # Batch 10 - Greenhouse (24)
+    'Five9', 'Tekion', 'Celonis', 'CloudSEK', 'Zuora', 'SolarWinds',
+    'Aviatrix', 'Fivetran', 'OneTrust', 'Commvault', 'ZoomInfo', 'Moveworks',
+    'Vonage', 'Cision', 'Flexport', 'Oportun', 'Cockroach Labs', 'GitLab',
+    'DeepMind', 'Fastly', 'Karat', 'AppDirect', 'LogicMonitor', 'SingleStore',
+    # Batch 10 - Lever (1)
+    'Clari',
 ]
