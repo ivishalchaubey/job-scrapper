@@ -388,6 +388,37 @@ from scrapers.truecaller_scraper import TruecallerScraper
 # Batch 8 - Lever scraper (1)
 from scrapers.dream11_scraper import Dream11Scraper
 
+# Batch 9 - Greenhouse scrapers (17)
+from scrapers.airbnb_scraper import AirbnbScraper
+from scrapers.agoda_scraper import AgodaScraper
+from scrapers.capco_scraper import CapcoScraper
+from scrapers.groww_scraper import GrowwScraper
+from scrapers.postman_scraper import PostmanScraper
+from scrapers.druva_scraper import DruvaScraper
+from scrapers.databricks_scraper import DatabricksScraper
+from scrapers.okta_scraper import OktaScraper
+from scrapers.zscaler_scraper import ZscalerScraper
+from scrapers.stripe_scraper import StripeScraper
+from scrapers.rubrik_scraper import RubrikScraper
+from scrapers.mongodb_scraper import MongoDBScraper
+from scrapers.toast_scraper import ToastScraper
+from scrapers.sumologic_scraper import SumoLogicScraper
+from scrapers.elastic_scraper import ElasticScraper
+from scrapers.twilio_scraper import TwilioScraper
+from scrapers.datadog_scraper import DatadogScraper
+
+# Batch 9 - Lever scrapers (3)
+from scrapers.spotify_scraper import SpotifyScraper
+from scrapers.binance_scraper import BinanceScraper
+from scrapers.cred_scraper import CREDScraper
+
+# Batch 9 - Workday scrapers (5)
+from scrapers.stryker_scraper import StrykerScraper
+from scrapers.amgen_scraper import AmgenScraper
+from scrapers.kenvue_scraper import KenvueScraper
+from scrapers.athenahealth_scraper import AthenaScraper
+from scrapers.bms_scraper import BMSScraper
+
 
 # Map of company names to their scraper classes
 SCRAPER_MAP = {
@@ -803,6 +834,38 @@ SCRAPER_MAP = {
     # Batch 8 - Lever scraper (1)
     'dream11': Dream11Scraper,
     'dream sports': Dream11Scraper,
+    # Batch 9 - Greenhouse scrapers (17)
+    'airbnb': AirbnbScraper,
+    'agoda': AgodaScraper,
+    'capco': CapcoScraper,
+    'groww': GrowwScraper,
+    'postman': PostmanScraper,
+    'druva': DruvaScraper,
+    'databricks': DatabricksScraper,
+    'okta': OktaScraper,
+    'zscaler': ZscalerScraper,
+    'stripe': StripeScraper,
+    'rubrik': RubrikScraper,
+    'mongodb': MongoDBScraper,
+    'toast': ToastScraper,
+    'sumo logic': SumoLogicScraper,
+    'sumologic': SumoLogicScraper,
+    'elastic': ElasticScraper,
+    'twilio': TwilioScraper,
+    'datadog': DatadogScraper,
+    # Batch 9 - Lever scrapers (3)
+    'spotify': SpotifyScraper,
+    'binance': BinanceScraper,
+    'cred': CREDScraper,
+    # Batch 9 - Workday scrapers (5)
+    'stryker': StrykerScraper,
+    'stryker corporation': StrykerScraper,
+    'amgen': AmgenScraper,
+    'kenvue': KenvueScraper,
+    'athenahealth': AthenaScraper,
+    'bristol-myers squibb': BMSScraper,
+    'bristol myers squibb': BMSScraper,
+    'bms': BMSScraper,
 }
 
 ALL_COMPANY_CHOICES = [
@@ -899,4 +962,12 @@ ALL_COMPANY_CHOICES = [
     'Coursera', 'GoDaddy', 'Anthropic', 'Truecaller',
     # Batch 8 - Lever (1)
     'Dream11',
+    # Batch 9 - Greenhouse (17)
+    'Airbnb', 'Agoda', 'Capco', 'Groww', 'Postman', 'Druva',
+    'Databricks', 'Okta', 'Zscaler', 'Stripe', 'Rubrik', 'MongoDB',
+    'Toast', 'Sumo Logic', 'Elastic', 'Twilio', 'Datadog',
+    # Batch 9 - Lever (3)
+    'Spotify', 'Binance', 'CRED',
+    # Batch 9 - Workday (5)
+    'Stryker', 'Amgen', 'Kenvue', 'Athenahealth', 'Bristol-Myers Squibb',
 ]
