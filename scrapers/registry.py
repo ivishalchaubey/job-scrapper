@@ -316,6 +316,41 @@ from scrapers.marriott_scraper import MarriottScraper
 from scrapers.bosch_scraper import BoschScraper
 from scrapers.synchrony_scraper import SynchronyScraper
 
+# Batch 7 - Workday API scrapers (16)
+from scrapers.broadridge_scraper import BroadridgeScraper
+from scrapers.carelon_scraper import CarelonScraper
+from scrapers.motorolasolutions_scraper import MotorolaSolutionsScraper
+from scrapers.prudential_scraper import PrudentialScraper
+from scrapers.firstamerican_scraper import FirstAmericanScraper
+from scrapers.fractal_scraper import FractalScraper
+from scrapers.threeem_scraper import ThreeEmScraper
+from scrapers.autodesk_scraper import AutodeskScraper
+from scrapers.invesco_scraper import InvescoScraper
+from scrapers.rockwellautomation_scraper import RockwellAutomationScraper
+from scrapers.amadeus_scraper import AmadeusScraper
+from scrapers.franklintempleton_scraper import FranklinTempletonScraper
+from scrapers.guardian_scraper import GuardianScraper
+from scrapers.bloomenergy_scraper import BloomEnergyScraper
+from scrapers.broadcom_scraper import BroadcomScraper
+from scrapers.ryan_scraper import RyanScraper
+
+# Batch 7 - DarwinBox scrapers (3)
+from scrapers.ausmallfinance_scraper import AUSmallFinanceScraper
+from scrapers.airtel_scraper import AirtelScraper
+from scrapers.ashokleyland_scraper import AshokLeylandScraper
+
+# Batch 7 - SmartRecruiters scrapers (2)
+from scrapers.experian_scraper import ExperianScraper
+from scrapers.freshworks_scraper import FreshworksScraper
+
+# Batch 7 - Oracle HCM scraper (1)
+from scrapers.apollohospitals_scraper import ApolloHospitalsScraper
+
+# Batch 7 - Other platform scrapers (3)
+from scrapers.biocon_scraper import BioconScraper
+from scrapers.gepworldwide_scraper import GEPWorldwideScraper
+from scrapers.genpact_scraper import GenpactScraper
+
 
 # Map of company names to their scraper classes
 SCRAPER_MAP = {
@@ -661,6 +696,39 @@ SCRAPER_MAP = {
     'marriott': MarriottScraper,
     'bosch': BoschScraper,
     'synchrony': SynchronyScraper,
+    # Batch 7 - Workday API scrapers (16)
+    'broadridge': BroadridgeScraper,
+    'broadridge financial solutions': BroadridgeScraper,
+    'carelon': CarelonScraper,
+    'carelon global solutions': CarelonScraper,
+    'motorola solutions': MotorolaSolutionsScraper,
+    'prudential': PrudentialScraper,
+    'prudential financial': PrudentialScraper,
+    'first american': FirstAmericanScraper,
+    'fractal': FractalScraper,
+    '3m': ThreeEmScraper,
+    'autodesk': AutodeskScraper,
+    'invesco': InvescoScraper,
+    'rockwell automation': RockwellAutomationScraper,
+    'amadeus': AmadeusScraper,
+    'franklin templeton': FranklinTempletonScraper,
+    'guardian': GuardianScraper,
+    'bloom energy': BloomEnergyScraper,
+    'broadcom': BroadcomScraper,
+    'ryan': RyanScraper,
+    # Batch 7 - DarwinBox scrapers (3)
+    'au small finance bank': AUSmallFinanceScraper,
+    'airtel': AirtelScraper,
+    'ashok leyland': AshokLeylandScraper,
+    # Batch 7 - SmartRecruiters scrapers (2)
+    'experian': ExperianScraper,
+    'freshworks': FreshworksScraper,
+    # Batch 7 - Oracle HCM scraper (1)
+    'apollo hospitals': ApolloHospitalsScraper,
+    # Batch 7 - Other platform scrapers (3)
+    'biocon': BioconScraper,
+    'gep worldwide': GEPWorldwideScraper,
+    'genpact': GenpactScraper,
 }
 
 ALL_COMPANY_CHOICES = [
@@ -733,4 +801,16 @@ ALL_COMPANY_CHOICES = [
     'Target', 'Titan', 'GE Aerospace', 'ABB', 'Allianz', 'Warner Bros',
     'Philips', 'NTT', 'Trane Technologies', 'United Airlines',
     'Wells Fargo', 'AstraZeneca', 'SAP', 'Barclays', 'Hilton', 'Marriott', 'Bosch', 'Synchrony',
+    # Batch 7 - Workday API scrapers (16)
+    'Broadridge', 'Carelon Global Solutions', 'Motorola Solutions', 'Prudential Financial',
+    'First American', 'Fractal', '3M', 'Autodesk', 'Invesco', 'Rockwell Automation',
+    'Amadeus', 'Franklin Templeton', 'Guardian', 'Bloom Energy', 'Broadcom', 'Ryan',
+    # Batch 7 - DarwinBox scrapers (3)
+    'AU Small Finance Bank', 'Airtel', 'Ashok Leyland',
+    # Batch 7 - SmartRecruiters scrapers (2)
+    'Experian', 'Freshworks',
+    # Batch 7 - Oracle HCM (1)
+    'Apollo Hospitals',
+    # Batch 7 - Other platform scrapers (3)
+    'Biocon', 'GEP Worldwide', 'Genpact',
 ]

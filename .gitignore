@@ -46,7 +46,7 @@ chromedriver.exe
 # Environment variables
 .env
 
-company-list.xlsx
+# company-list.xlsx
 
 # Runtime/generated files
 scraper_progress_log.json
