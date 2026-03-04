@@ -1,0 +1,22 @@
+[Unit]
+Description=Job Scraper Django Application (Gunicorn)
+After=network.target mongod.service
+Wants=mongod.service
+
+[Service]
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/job-scrapper
+Environment="PATH=/home/ubuntu/job-scrapper/venv/bin:/usr/bin:/bin"
+Environment="DJANGO_ENV=production"
+Environment="DJANGO_SETTINGS_MODULE=config.settings"
+EnvironmentFile=/home/ubuntu/job-scrapper/.env
+ExecStart=/home/ubuntu/job-scrapper/venv/bin/gunicorn config.wsgi:application -c /home/ubuntu/job-scrapper/deploy/gunicorn_config.py
+ExecReload=/bin/kill -s HUP $MAINPID
+Restart=on-failure
+RestartSec=5
+KillMode=mixed
+TimeoutStopSec=10
+
+[Install]
+WantedBy=multi-user.target
