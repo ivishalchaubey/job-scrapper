@@ -351,6 +351,43 @@ from scrapers.biocon_scraper import BioconScraper
 from scrapers.gepworldwide_scraper import GEPWorldwideScraper
 from scrapers.genpact_scraper import GenpactScraper
 
+# Batch 8 - Workday scrapers (3)
+from scrapers.workday_inc_scraper import WorkdayIncScraper
+from scrapers.otis_scraper import OtisScraper
+from scrapers.geappliances_scraper import GEAppliancesScraper
+
+# Batch 8 - DarwinBox v2 scrapers (5)
+from scrapers.bharatpe_scraper import BharatPeScraper
+from scrapers.jsw_scraper import JSWScraper
+from scrapers.unacademy_scraper import UnacademyScraper
+from scrapers.zeenews_scraper import ZeeNewsScraper
+from scrapers.indiafirstlife_scraper import IndiaFirstLifeScraper
+
+# Batch 8 - DarwinBox v1 scraper (1)
+from scrapers.pharmeasy_scraper import PharmEasyScraper
+
+# Batch 8 - Oracle HCM scrapers (5)
+from scrapers.dpworld_scraper import DPWorldScraper
+from scrapers.startek_scraper import StartekScraper
+from scrapers.chubb_scraper import ChubbScraper
+from scrapers.essar_scraper import EssarScraper
+from scrapers.arcelormittal_scraper import ArcelorMittalScraper
+
+# Batch 8 - Greenhouse scrapers (10)
+from scrapers.udacity_scraper import UdacityScraper
+from scrapers.groupon_scraper import GrouponScraper
+from scrapers.coinbase_scraper import CoinbaseScraper
+from scrapers.duolingo_scraper import DuolingoScraper
+from scrapers.figma_scraper import FigmaScraper
+from scrapers.inmobi_scraper import InMobiScraper
+from scrapers.coursera_scraper import CourseraScraper
+from scrapers.godaddy_scraper import GoDaddyScraper
+from scrapers.anthropic_scraper import AnthropicScraper
+from scrapers.truecaller_scraper import TruecallerScraper
+
+# Batch 8 - Lever scraper (1)
+from scrapers.dream11_scraper import Dream11Scraper
+
 
 # Map of company names to their scraper classes
 SCRAPER_MAP = {
@@ -729,6 +766,43 @@ SCRAPER_MAP = {
     'biocon': BioconScraper,
     'gep worldwide': GEPWorldwideScraper,
     'genpact': GenpactScraper,
+    # Batch 8 - Workday scrapers (3)
+    'workday': WorkdayIncScraper,
+    'workday inc': WorkdayIncScraper,
+    'otis': OtisScraper,
+    'otis worldwide': OtisScraper,
+    'ge appliances': GEAppliancesScraper,
+    # Batch 8 - DarwinBox v2 scrapers (6)
+    'bharatpe': BharatPeScraper,
+    'jsw': JSWScraper,
+    'jsw group': JSWScraper,
+    'unacademy': UnacademyScraper,
+    'zee news': ZeeNewsScraper,
+    'indiafirst life insurance': IndiaFirstLifeScraper,
+    'indiafirst life': IndiaFirstLifeScraper,
+    # Batch 8 - DarwinBox v1 scraper (1)
+    'pharmeasy': PharmEasyScraper,
+    # Batch 8 - Oracle HCM scrapers (5)
+    'dp world': DPWorldScraper,
+    'startek': StartekScraper,
+    'chubb': ChubbScraper,
+    'essar': EssarScraper,
+    'essar group': EssarScraper,
+    'arcelormittal': ArcelorMittalScraper,
+    # Batch 8 - Greenhouse scrapers (10)
+    'udacity': UdacityScraper,
+    'groupon': GrouponScraper,
+    'coinbase': CoinbaseScraper,
+    'duolingo': DuolingoScraper,
+    'figma': FigmaScraper,
+    'inmobi': InMobiScraper,
+    'coursera': CourseraScraper,
+    'godaddy': GoDaddyScraper,
+    'anthropic': AnthropicScraper,
+    'truecaller': TruecallerScraper,
+    # Batch 8 - Lever scraper (1)
+    'dream11': Dream11Scraper,
+    'dream sports': Dream11Scraper,
 }
 
 ALL_COMPANY_CHOICES = [
@@ -813,4 +887,16 @@ ALL_COMPANY_CHOICES = [
     'Apollo Hospitals',
     # Batch 7 - Other platform scrapers (3)
     'Biocon', 'GEP Worldwide', 'Genpact',
+    # Batch 8 - Workday (3)
+    'Workday', 'Otis Worldwide', 'GE Appliances',
+    # Batch 8 - DarwinBox (6)
+    'BharatPe', 'JSW Group', 'Unacademy', 'Zee News', 'IndiaFirst Life Insurance',
+    'PharmEasy',
+    # Batch 8 - Oracle HCM (5)
+    'DP World', 'Startek', 'Chubb', 'Essar Group', 'ArcelorMittal',
+    # Batch 8 - Greenhouse (10)
+    'Udacity', 'Groupon', 'Coinbase', 'Duolingo', 'Figma', 'InMobi',
+    'Coursera', 'GoDaddy', 'Anthropic', 'Truecaller',
+    # Batch 8 - Lever (1)
+    'Dream11',
 ]
