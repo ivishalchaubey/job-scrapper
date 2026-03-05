@@ -370,7 +370,7 @@ from scrapers.pharmeasy_scraper import PharmEasyScraper
 from scrapers.dpworld_scraper import DPWorldScraper
 from scrapers.startek_scraper import StartekScraper
 from scrapers.chubb_scraper import ChubbScraper
-from scrapers.essar_scraper import EssarScraper
+from scrapers.essar_scraper import EssarGroupScraper
 from scrapers.arcelormittal_scraper import ArcelorMittalScraper
 
 # Batch 8 - Greenhouse scrapers (10)
@@ -525,6 +525,15 @@ from scrapers.axon_scraper import AxonScraper
 from scrapers.udemy_scraper import UdemyScraper
 # Batch 13 - Lever scraper (1)
 from scrapers.linkedin_lever_scraper import LinkedInLeverScraper
+
+# Batch 14 - Workday (2)
+from scrapers.leidos_scraper import LeidosScraper
+from scrapers.gehealthcare_scraper import GEHealthCareScraper
+# Batch 14 - Greenhouse (1)
+from scrapers.kkr_scraper import KKRScraper
+# Batch 14 - SmartRecruiters (2)
+from scrapers.accor_scraper import AccorScraper
+from scrapers.hm_scraper import HMScraper
 
 
 # Map of company names to their scraper classes
@@ -924,8 +933,8 @@ SCRAPER_MAP = {
     'dp world': DPWorldScraper,
     'startek': StartekScraper,
     'chubb': ChubbScraper,
-    'essar': EssarScraper,
-    'essar group': EssarScraper,
+    'essar': EssarGroupScraper,
+    'essar group': EssarGroupScraper,
     'arcelormittal': ArcelorMittalScraper,
     # Batch 8 - Greenhouse scrapers (10)
     'udacity': UdacityScraper,
@@ -1090,6 +1099,17 @@ SCRAPER_MAP = {
     'udemy': UdemyScraper,
     # Batch 13 - Lever scraper (1)
     'linkedin': LinkedInLeverScraper,
+    # Batch 14 - Workday (2)
+    'leidos': LeidosScraper,
+    'ge healthcare': GEHealthCareScraper,
+    'gehealthcare': GEHealthCareScraper,
+    # Batch 14 - Greenhouse (1)
+    'kkr': KKRScraper,
+    'kkr & co': KKRScraper,
+    'kkr & co.': KKRScraper,
+    # Batch 14 - SmartRecruiters (2)
+    'accor': AccorScraper,
+    'h&m': HMScraper,
 }
 
 ALL_COMPANY_CHOICES = [
@@ -1223,4 +1243,10 @@ ALL_COMPANY_CHOICES = [
     'WPP', 'Encora', 'FlixBus', 'Instabase', 'Axon', 'Udemy',
     # Batch 13 - Lever (1)
     'LinkedIn',
+    # Batch 14 - Workday (2)
+    'Leidos', 'GE HealthCare',
+    # Batch 14 - Greenhouse (1)
+    'KKR',
+    # Batch 14 - SmartRecruiters (2)
+    'Accor', 'H&M',
 ]
