@@ -543,6 +543,25 @@ from scrapers.deel_scraper import DeelScraper
 from scrapers.confluent_scraper import ConfluentScraper
 from scrapers.anyscale_scraper import AnyscaleScraper
 
+# Batch 16 - DarwinBox v2 (12)
+from scrapers.emcure_scraper import EmcureScraper
+from scrapers.rapido_scraper import RapidoScraper
+from scrapers.mgmotors_scraper import MGMotorsScraper
+from scrapers.supremeindustries_scraper import SupremeIndustriesScraper
+from scrapers.lenskart_scraper import LenskartScraper
+from scrapers.cars24_scraper import CARS24Scraper
+from scrapers.nobroker_scraper import NoBrokerScraper
+from scrapers.pinelabs_scraper import PineLabsScraper
+from scrapers.mobikwik_scraper import MobiKwikScraper
+from scrapers.sharechat_scraper import ShareChatScraper
+from scrapers.urbancompany_scraper import UrbanCompanyScraper
+from scrapers.gupshup_scraper import GupshupScraper
+# Batch 16 - DarwinBox v1 (2)
+from scrapers.epson_scraper import EpsonScraper
+from scrapers.bonngroup_scraper import BonnGroupScraper
+# Batch 16 - Custom API (1)
+from scrapers.makemytrip_scraper import MakeMyTripScraper
+
 
 # Map of company names to their scraper classes
 SCRAPER_MAP = {
@@ -1125,6 +1144,28 @@ SCRAPER_MAP = {
     'deel': DeelScraper,
     'confluent': ConfluentScraper,
     'anyscale': AnyscaleScraper,
+    # Batch 16 - DarwinBox v2 (12)
+    'emcure': EmcureScraper,
+    'emcure pharmaceuticals': EmcureScraper,
+    'rapido': RapidoScraper,
+    'mg motors': MGMotorsScraper,
+    'supreme industries': SupremeIndustriesScraper,
+    'lenskart': LenskartScraper,
+    'cars24': CARS24Scraper,
+    'nobroker': NoBrokerScraper,
+    'pine labs': PineLabsScraper,
+    'pinelabs': PineLabsScraper,
+    'mobikwik': MobiKwikScraper,
+    'sharechat': ShareChatScraper,
+    'urban company': UrbanCompanyScraper,
+    'urbancompany': UrbanCompanyScraper,
+    'gupshup': GupshupScraper,
+    # Batch 16 - DarwinBox v1 (2)
+    'epson': EpsonScraper,
+    'bonn group': BonnGroupScraper,
+    'bonn group of industries': BonnGroupScraper,
+    # Batch 16 - Custom API (1)
+    'makemytrip': MakeMyTripScraper,
 }
 
 ALL_COMPANY_CHOICES = [
@@ -1266,4 +1307,12 @@ ALL_COMPANY_CHOICES = [
     'Accor', 'H&M',
     # Batch 15 - Ashby (6)
     'Notion', 'OpenAI', 'Snowflake', 'Deel', 'Confluent', 'Anyscale',
+    # Batch 16 - DarwinBox v2 (12)
+    'Emcure Pharmaceuticals', 'Rapido', 'MG Motors', 'Supreme Industries',
+    'Lenskart', 'CARS24', 'NoBroker', 'Pine Labs', 'MobiKwik',
+    'ShareChat', 'Urban Company', 'Gupshup',
+    # Batch 16 - DarwinBox v1 (2)
+    'Epson', 'Bonn Group',
+    # Batch 16 - Custom API (1)
+    'MakeMyTrip',
 ]
