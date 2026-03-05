@@ -474,6 +474,31 @@ from scrapers.mastercard_scraper import MastercardScraper
 from scrapers.medtronic_scraper import MedtronicScraper
 from scrapers.paypal_workday_scraper import PayPalWorkdayScraper
 from scrapers.zoom_scraper import ZoomScraper
+# Batch 12 - Greenhouse scrapers (21)
+from scrapers.highradius_scraper import HighRadiusScraper
+from scrapers.anaplan_scraper import AnaplanScraper
+from scrapers.kaseya_scraper import KaseyaScraper
+from scrapers.quince_scraper import QuinceScraper
+from scrapers.chargepoint_scraper import ChargePointScraper
+from scrapers.appian_scraper import AppianScraper
+from scrapers.plume_scraper import PlumeScraper
+from scrapers.sixsense_scraper import SixSenseScraper
+from scrapers.abnormalsecurity_scraper import AbnormalSecurityScraper
+from scrapers.dialpad_scraper import DialpadScraper
+from scrapers.falconx_scraper import FalconXScraper
+from scrapers.suki_scraper import SukiScraper
+from scrapers.mindbody_scraper import MindbodyScraper
+from scrapers.justanswer_scraper import JustAnswerScraper
+from scrapers.ivalua_scraper import IvaluaScraper
+from scrapers.cresta_scraper import CrestaScraper
+from scrapers.blueshift_scraper import BlueshiftScraper
+from scrapers.coupang_scraper import CoupangScraper
+from scrapers.biofourmis_scraper import BiofourmisScraper
+from scrapers.minio_scraper import MinIOScraper
+from scrapers.knowbe4_scraper import KnowBe4Scraper
+# Batch 12 - Lever scrapers (2)
+from scrapers.everbridge_scraper import EverbridgeScraper
+from scrapers.greenlight_scraper import GreenlightScraper
 
 
 # Map of company names to their scraper classes
@@ -980,6 +1005,33 @@ SCRAPER_MAP = {
     'paypal': PayPalWorkdayScraper,
     'zoom': ZoomScraper,
     'zoom video': ZoomScraper,
+    # Batch 12 - Greenhouse scrapers (21)
+    'highradius': HighRadiusScraper,
+    'anaplan': AnaplanScraper,
+    'kaseya': KaseyaScraper,
+    'quince': QuinceScraper,
+    'chargepoint': ChargePointScraper,
+    'appian': AppianScraper,
+    'plume': PlumeScraper,
+    '6sense': SixSenseScraper,
+    'sixsense': SixSenseScraper,
+    'abnormal security': AbnormalSecurityScraper,
+    'abnormalsecurity': AbnormalSecurityScraper,
+    'dialpad': DialpadScraper,
+    'falconx': FalconXScraper,
+    'suki': SukiScraper,
+    'mindbody': MindbodyScraper,
+    'justanswer': JustAnswerScraper,
+    'ivalua': IvaluaScraper,
+    'cresta': CrestaScraper,
+    'blueshift': BlueshiftScraper,
+    'coupang': CoupangScraper,
+    'biofourmis': BiofourmisScraper,
+    'minio': MinIOScraper,
+    'knowbe4': KnowBe4Scraper,
+    # Batch 12 - Lever scrapers (2)
+    'everbridge': EverbridgeScraper,
+    'greenlight': GreenlightScraper,
 }
 
 ALL_COMPANY_CHOICES = [
@@ -1098,4 +1150,11 @@ ALL_COMPANY_CHOICES = [
     'Backblaze', 'Catchpoint', 'Sendbird',
     # Batch 11 - Workday (4)
     'Mastercard', 'Medtronic', 'PayPal', 'Zoom',
+    # Batch 12 - Greenhouse (21)
+    'HighRadius', 'Anaplan', 'Kaseya', 'Quince', 'ChargePoint', 'Appian',
+    'Plume', '6sense', 'Abnormal Security', 'Dialpad', 'FalconX', 'Suki',
+    'Mindbody', 'JustAnswer', 'Ivalua', 'Cresta', 'Blueshift', 'Coupang',
+    'Biofourmis', 'MinIO', 'KnowBe4',
+    # Batch 12 - Lever (2)
+    'Everbridge', 'Greenlight',
 ]
