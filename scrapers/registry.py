@@ -499,6 +499,32 @@ from scrapers.knowbe4_scraper import KnowBe4Scraper
 # Batch 12 - Lever scrapers (2)
 from scrapers.everbridge_scraper import EverbridgeScraper
 from scrapers.greenlight_scraper import GreenlightScraper
+# Batch 13 - Workday scrapers (16)
+from scrapers.collinsaerospace_scraper import CollinsAerospaceScraper
+from scrapers.gevernova_scraper import GEVernovaScraper
+from scrapers.capitalone_scraper import CapitalOneScraper
+from scrapers.maersk_scraper import MaerskScraper
+from scrapers.expediagroup_scraper import ExpediaGroupScraper
+from scrapers.chevron_scraper import ChevronScraper
+from scrapers.ebay_scraper import EbayScraper
+from scrapers.dow_scraper import DowScraper
+from scrapers.hpe_scraper import HPEScraper
+from scrapers.allstate_scraper import AllstateScraper
+from scrapers.aptiv_scraper import AptivScraper
+from scrapers.caterpillar_scraper import CaterpillarScraper
+from scrapers.blueyonder_scraper import BlueYonderScraper
+from scrapers.gartner_scraper import GartnerScraper
+from scrapers.blackrock_scraper import BlackRockScraper
+from scrapers.bectondickinson_scraper import BectonDickinsonScraper
+# Batch 13 - Greenhouse scrapers (6)
+from scrapers.wpp_scraper import WPPScraper
+from scrapers.encora_scraper import EncoraScraper
+from scrapers.flixbus_scraper import FlixBusScraper
+from scrapers.instabase_scraper import InstabaseScraper
+from scrapers.axon_scraper import AxonScraper
+from scrapers.udemy_scraper import UdemyScraper
+# Batch 13 - Lever scraper (1)
+from scrapers.linkedin_lever_scraper import LinkedInLeverScraper
 
 
 # Map of company names to their scraper classes
@@ -1032,6 +1058,38 @@ SCRAPER_MAP = {
     # Batch 12 - Lever scrapers (2)
     'everbridge': EverbridgeScraper,
     'greenlight': GreenlightScraper,
+    # Batch 13 - Workday scrapers (16)
+    'collins aerospace': CollinsAerospaceScraper,
+    'rtx': CollinsAerospaceScraper,
+    'ge vernova': GEVernovaScraper,
+    'capital one': CapitalOneScraper,
+    'maersk': MaerskScraper,
+    'expedia group': ExpediaGroupScraper,
+    'expedia': ExpediaGroupScraper,
+    'chevron': ChevronScraper,
+    'ebay': EbayScraper,
+    'dow': DowScraper,
+    'dow inc': DowScraper,
+    'hewlett packard enterprise': HPEScraper,
+    'hpe': HPEScraper,
+    'allstate': AllstateScraper,
+    'aptiv': AptivScraper,
+    'caterpillar': CaterpillarScraper,
+    'blue yonder': BlueYonderScraper,
+    'gartner': GartnerScraper,
+    'blackrock': BlackRockScraper,
+    'becton dickinson': BectonDickinsonScraper,
+    'bd': BectonDickinsonScraper,
+    # Batch 13 - Greenhouse scrapers (6)
+    'wpp': WPPScraper,
+    'encora': EncoraScraper,
+    'flixbus': FlixBusScraper,
+    'flix': FlixBusScraper,
+    'instabase': InstabaseScraper,
+    'axon': AxonScraper,
+    'udemy': UdemyScraper,
+    # Batch 13 - Lever scraper (1)
+    'linkedin': LinkedInLeverScraper,
 }
 
 ALL_COMPANY_CHOICES = [
@@ -1157,4 +1215,12 @@ ALL_COMPANY_CHOICES = [
     'Biofourmis', 'MinIO', 'KnowBe4',
     # Batch 12 - Lever (2)
     'Everbridge', 'Greenlight',
+    # Batch 13 - Workday (16)
+    'Collins Aerospace', 'GE Vernova', 'Capital One', 'Maersk', 'Expedia Group',
+    'Chevron', 'eBay', 'Dow', 'Hewlett Packard Enterprise', 'Allstate',
+    'Aptiv', 'Caterpillar', 'Blue Yonder', 'Gartner', 'BlackRock', 'Becton Dickinson',
+    # Batch 13 - Greenhouse (6)
+    'WPP', 'Encora', 'FlixBus', 'Instabase', 'Axon', 'Udemy',
+    # Batch 13 - Lever (1)
+    'LinkedIn',
 ]
