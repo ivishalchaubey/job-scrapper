@@ -447,6 +447,34 @@ from scrapers.singlestore_scraper import SingleStoreScraper
 # Batch 10 - Lever scraper (1)
 from scrapers.clari_scraper import ClariScraper
 
+# Batch 11 - Greenhouse scrapers (21)
+from scrapers.netskope_scraper import NetskopeScraper
+from scrapers.fictiv_scraper import FictivScraper
+from scrapers.zenoti_scraper import ZenotiScraper
+from scrapers.devrev_scraper import DevRevScraper
+from scrapers.hackerrank_scraper import HackerRankScraper
+from scrapers.smartbear_scraper import SmartBearScraper
+from scrapers.bitgo_scraper import BitGoScraper
+from scrapers.newrelic_scraper import NewRelicScraper
+from scrapers.bloomreach_scraper import BloomreachScraper
+from scrapers.turing_scraper import TuringScraper
+from scrapers.britive_scraper import BritiveScraper
+from scrapers.zocdoc_scraper import ZocdocScraper
+from scrapers.narvar_scraper import NarvarScraper
+from scrapers.workato_scraper import WorkatoScraper
+from scrapers.project44_scraper import Project44Scraper
+from scrapers.yugabyte_scraper import YugabyteScraper
+from scrapers.thoughtworks_scraper import ThoughtworksScraper
+from scrapers.starburst_scraper import StarburstScraper
+from scrapers.backblaze_scraper import BackblazeScraper
+from scrapers.catchpoint_scraper import CatchpointScraper
+from scrapers.sendbird_scraper import SendbirdScraper
+# Batch 11 - Workday API scrapers (4)
+from scrapers.mastercard_scraper import MastercardScraper
+from scrapers.medtronic_scraper import MedtronicScraper
+from scrapers.paypal_workday_scraper import PayPalWorkdayScraper
+from scrapers.zoom_scraper import ZoomScraper
+
 
 # Map of company names to their scraper classes
 SCRAPER_MAP = {
@@ -923,6 +951,35 @@ SCRAPER_MAP = {
     'singlestore': SingleStoreScraper,
     # Batch 10 - Lever scraper (1)
     'clari': ClariScraper,
+    # Batch 11 - Greenhouse scrapers (21)
+    'netskope': NetskopeScraper,
+    'fictiv': FictivScraper,
+    'zenoti': ZenotiScraper,
+    'devrev': DevRevScraper,
+    'hackerrank': HackerRankScraper,
+    'smartbear': SmartBearScraper,
+    'bitgo': BitGoScraper,
+    'new relic': NewRelicScraper,
+    'newrelic': NewRelicScraper,
+    'bloomreach': BloomreachScraper,
+    'turing': TuringScraper,
+    'britive': BritiveScraper,
+    'zocdoc': ZocdocScraper,
+    'narvar': NarvarScraper,
+    'workato': WorkatoScraper,
+    'project44': Project44Scraper,
+    'yugabyte': YugabyteScraper,
+    'thoughtworks': ThoughtworksScraper,
+    'starburst': StarburstScraper,
+    'backblaze': BackblazeScraper,
+    'catchpoint': CatchpointScraper,
+    'sendbird': SendbirdScraper,
+    # Batch 11 - Workday API scrapers (4)
+    'mastercard': MastercardScraper,
+    'medtronic': MedtronicScraper,
+    'paypal': PayPalWorkdayScraper,
+    'zoom': ZoomScraper,
+    'zoom video': ZoomScraper,
 }
 
 ALL_COMPANY_CHOICES = [
@@ -1034,4 +1091,11 @@ ALL_COMPANY_CHOICES = [
     'DeepMind', 'Fastly', 'Karat', 'AppDirect', 'LogicMonitor', 'SingleStore',
     # Batch 10 - Lever (1)
     'Clari',
+    # Batch 11 - Greenhouse (21)
+    'Netskope', 'Fictiv', 'Zenoti', 'DevRev', 'HackerRank', 'SmartBear',
+    'BitGo', 'New Relic', 'Bloomreach', 'Turing', 'Britive', 'Zocdoc',
+    'Narvar', 'Workato', 'Project44', 'Yugabyte', 'Thoughtworks', 'Starburst',
+    'Backblaze', 'Catchpoint', 'Sendbird',
+    # Batch 11 - Workday (4)
+    'Mastercard', 'Medtronic', 'PayPal', 'Zoom',
 ]
