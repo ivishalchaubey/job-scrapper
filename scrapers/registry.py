@@ -535,6 +535,14 @@ from scrapers.kkr_scraper import KKRScraper
 from scrapers.accor_scraper import AccorScraper
 from scrapers.hm_scraper import HMScraper
 
+# Batch 15 - Ashby (6)
+from scrapers.notion_scraper import NotionScraper
+from scrapers.openai_scraper import OpenAIScraper
+from scrapers.snowflake_scraper import SnowflakeScraper
+from scrapers.deel_scraper import DeelScraper
+from scrapers.confluent_scraper import ConfluentScraper
+from scrapers.anyscale_scraper import AnyscaleScraper
+
 
 # Map of company names to their scraper classes
 SCRAPER_MAP = {
@@ -1110,6 +1118,13 @@ SCRAPER_MAP = {
     # Batch 14 - SmartRecruiters (2)
     'accor': AccorScraper,
     'h&m': HMScraper,
+    # Batch 15 - Ashby (6)
+    'notion': NotionScraper,
+    'openai': OpenAIScraper,
+    'snowflake': SnowflakeScraper,
+    'deel': DeelScraper,
+    'confluent': ConfluentScraper,
+    'anyscale': AnyscaleScraper,
 }
 
 ALL_COMPANY_CHOICES = [
@@ -1249,4 +1264,6 @@ ALL_COMPANY_CHOICES = [
     'KKR',
     # Batch 14 - SmartRecruiters (2)
     'Accor', 'H&M',
+    # Batch 15 - Ashby (6)
+    'Notion', 'OpenAI', 'Snowflake', 'Deel', 'Confluent', 'Anyscale',
 ]
