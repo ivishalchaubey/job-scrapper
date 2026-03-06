@@ -619,6 +619,62 @@ from scrapers.epam_scraper import EPAMScraper
 from scrapers.gallagher_scraper import GallagherScraper
 from scrapers.innovaccer_scraper import InnovaccerScraper
 
+# Batch 19 - Requests-based scrapers (10)
+from scrapers.fynd_scraper import FyndScraper
+from scrapers.societegenerale_scraper import SocieteGeneraleScraper
+from scrapers.wtw_scraper import WTWScraper
+from scrapers.wework_scraper import WeWorkScraper
+from scrapers.odoo_scraper import OdooScraper
+from scrapers.rpggroup_scraper import RPGGroupScraper
+from scrapers.ametek_scraper import AmetekScraper
+from scrapers.adidas_scraper import AdidasScraper
+from scrapers.axtria_scraper import AxtriaScraper
+from scrapers.cargill_scraper import CargillScraper
+# Batch 19 - Selenium SPA scrapers (8)
+from scrapers.mcdonalds_scraper import McDonaldsScraper
+from scrapers.npci_scraper import NPCIScraper
+from scrapers.questdiagnostics_scraper import QuestDiagnosticsScraper
+from scrapers.ralphlauren_scraper import RalphLaurenScraper
+from scrapers.rippling_scraper import RipplingScraper
+from scrapers.seveneleven_scraper import SevenElevenScraper
+from scrapers.ultratechcement_scraper import UltraTechCementScraper
+from scrapers.synopsys_scraper import SynopsysScraper
+# Batch 19 - Complex Selenium scrapers (7)
+from scrapers.tatatechnologies_scraper import TataTechnologiesScraper
+from scrapers.welspun_scraper import WelspunScraper
+from scrapers.zeeentertainment_scraper import ZeeEntertainmentScraper
+from scrapers.amdocs_scraper import AmdocsScraper
+from scrapers.zeiss_scraper import ZeissScraper
+from scrapers.cvent_scraper import CventScraper
+from scrapers.zebratechnologies_scraper import ZebraTechnologiesScraper
+
+# Batch 20 - Requests-based scrapers (15)
+from scrapers.ferrero_scraper import FerreroScraper
+from scrapers.essilor_scraper import EssilorScraper
+from scrapers.carlsberg_scraper import CarlsbergScraper
+from scrapers.seagate_scraper import SeagateScraper
+from scrapers.grab_scraper import GrabScraper
+from scrapers.agility_scraper import AgilityScraper
+from scrapers.bloomberg_scraper import BloombergScraper
+from scrapers.skyscanner_scraper import SkyscannerScraper
+from scrapers.gigamon_scraper import GigamonScraper
+from scrapers.bostonanalytics_scraper import BostonAnalyticsScraper
+from scrapers.britishairways_scraper import BritishAirwaysScraper
+from scrapers.encorecapital_scraper import EncoreCapitalScraper
+from scrapers.zerodha_scraper import ZerodhaScraper
+from scrapers.shopify_scraper import ShopifyScraper
+from scrapers.tcil_scraper import TCILScraper
+# Batch 20 - Selenium SPA scrapers (9)
+from scrapers.fujitsu_scraper import FujitsuScraper
+from scrapers.generali_scraper import GeneraliScraper
+from scrapers.fourseasons_scraper import FourSeasonsScraper
+from scrapers.espn_scraper import ESPNScraper
+from scrapers.gigabyte_scraper import GigabyteScraper
+from scrapers.grantthorn_scraper import GrantThorntonScraper
+from scrapers.canon_scraper import CanonScraper
+from scrapers.elevate_scraper import ElevateScraper
+from scrapers.vedantu_scraper import VedantuScraper
+
 
 # Map of company names to their scraper classes
 SCRAPER_MAP = {
@@ -1305,6 +1361,80 @@ SCRAPER_MAP = {
     'gallagher': GallagherScraper,
     'arthur j gallagher': GallagherScraper,
     'innovaccer': InnovaccerScraper,
+    # Batch 19 - Requests-based scrapers (10)
+    'fynd': FyndScraper,
+    'societe generale': SocieteGeneraleScraper,
+    'societegenerale': SocieteGeneraleScraper,
+    'wtw': WTWScraper,
+    'willis towers watson': WTWScraper,
+    'wework': WeWorkScraper,
+    'wework india': WeWorkScraper,
+    'odoo': OdooScraper,
+    'rpg group': RPGGroupScraper,
+    'rpggroup': RPGGroupScraper,
+    'ametek': AmetekScraper,
+    'adidas': AdidasScraper,
+    'axtria': AxtriaScraper,
+    'cargill': CargillScraper,
+    # Batch 19 - Selenium SPA scrapers (8)
+    'mcdonalds': McDonaldsScraper,
+    "mcdonald's india": McDonaldsScraper,
+    'npci': NPCIScraper,
+    'quest diagnostics': QuestDiagnosticsScraper,
+    'ralph lauren': RalphLaurenScraper,
+    'rippling': RipplingScraper,
+    'seven eleven': SevenElevenScraper,
+    '7-eleven': SevenElevenScraper,
+    'ultratech cement': UltraTechCementScraper,
+    'synopsys': SynopsysScraper,
+    # Batch 19 - Complex Selenium scrapers (7)
+    'tata technologies': TataTechnologiesScraper,
+    'welspun': WelspunScraper,
+    'zee entertainment': ZeeEntertainmentScraper,
+    'amdocs': AmdocsScraper,
+    'zeiss': ZeissScraper,
+    'cvent': CventScraper,
+    'zebra technologies': ZebraTechnologiesScraper,
+    # Batch 20 - Requests-based scrapers (15)
+    'ferrero': FerreroScraper,
+    'essilor': EssilorScraper,
+    'essilorluxottica': EssilorScraper,
+    'carlsberg': CarlsbergScraper,
+    'carlsberg group': CarlsbergScraper,
+    'seagate': SeagateScraper,
+    'seagate technology': SeagateScraper,
+    'grab': GrabScraper,
+    'grab taxi': GrabScraper,
+    'grabtaxi': GrabScraper,
+    'agility': AgilityScraper,
+    'bloomberg': BloombergScraper,
+    'skyscanner': SkyscannerScraper,
+    'gigamon': GigamonScraper,
+    'boston analytics': BostonAnalyticsScraper,
+    'bostonanalytics': BostonAnalyticsScraper,
+    'british airways': BritishAirwaysScraper,
+    'britishairways': BritishAirwaysScraper,
+    'encore capital': EncoreCapitalScraper,
+    'encore capital group': EncoreCapitalScraper,
+    'encorecapital': EncoreCapitalScraper,
+    'zerodha': ZerodhaScraper,
+    'shopify': ShopifyScraper,
+    'tcil': TCILScraper,
+    'transport corporation of india': TCILScraper,
+    # Batch 20 - Selenium SPA scrapers (9)
+    'fujitsu': FujitsuScraper,
+    'generali': GeneraliScraper,
+    'generali central insurance': GeneraliScraper,
+    'four seasons': FourSeasonsScraper,
+    'four seasons hotels and resorts': FourSeasonsScraper,
+    'fourseasons': FourSeasonsScraper,
+    'espn': ESPNScraper,
+    'gigabyte': GigabyteScraper,
+    'grant thornton': GrantThorntonScraper,
+    'grantthorn': GrantThorntonScraper,
+    'canon': CanonScraper,
+    'elevate': ElevateScraper,
+    'vedantu': VedantuScraper,
 }
 
 ALL_COMPANY_CHOICES = [
@@ -1475,4 +1605,21 @@ ALL_COMPANY_CHOICES = [
     # Batch 18 - Complex (7)
     'ADP', 'BNY', 'CBRE', 'Electronic Arts', 'EPAM Systems',
     'Gallagher', 'Innovaccer',
+    # Batch 19 - Requests-based scrapers (10)
+    'Fynd', 'Societe Generale', 'WTW', 'WeWork India', 'Odoo',
+    'RPG Group', 'Ametek', 'Adidas', 'Axtria', 'Cargill',
+    # Batch 19 - Selenium SPA (8)
+    "McDonald's India", 'NPCI', 'Quest Diagnostics', 'Ralph Lauren',
+    'Rippling', '7-Eleven GSC', 'UltraTech Cement', 'Synopsys',
+    # Batch 19 - Complex Selenium (7)
+    'Tata Technologies', 'Welspun', 'Zee Entertainment', 'Amdocs',
+    'Zeiss', 'Cvent', 'Zebra Technologies',
+    # Batch 20 - Requests-based scrapers (15)
+    'Ferrero', 'Essilor', 'Carlsberg Group', 'Seagate Technology',
+    'Grab', 'Agility', 'Bloomberg', 'Skyscanner',
+    'Gigamon', 'Boston Analytics', 'British Airways', 'Encore Capital Group',
+    'Zerodha', 'Shopify', 'Transport Corporation of India',
+    # Batch 20 - Selenium SPA scrapers (9)
+    'Fujitsu', 'Generali', 'Four Seasons Hotels And Resorts', 'ESPN',
+    'Gigabyte', 'Grant Thornton', 'Canon', 'Elevate', 'Vedantu',
 ]
