@@ -593,6 +593,32 @@ from scrapers.saudiaramco_scraper import SaudiAramcoScraper
 from scrapers.centuryply_scraper import CenturyPlyScraper
 from scrapers.tvscredit_scraper import TVSCreditScraper
 
+# Batch 18 - Requests-based scrapers (8)
+from scrapers.msctechnology_scraper import MSCTechnologyScraper
+from scrapers.htcglobal_scraper import HTCGlobalScraper
+from scrapers.cloudflare_scraper import CloudflareScraper
+from scrapers.deutschebahn_scraper import DeutscheBahnScraper
+from scrapers.easemytrip_scraper import EaseMyTripScraper
+from scrapers.haptik_scraper import HaptikScraper
+from scrapers.indegene_scraper import IndegeneScraper
+from scrapers.ingersollrand_scraper import IngersollRandScraper
+# Batch 18 - Selenium SPA scrapers (7)
+from scrapers.hashedin_scraper import HashedInScraper
+from scrapers.acko_scraper import AckoScraper
+from scrapers.aon_scraper import AonScraper
+from scrapers.atlassian_scraper import AtlassianScraper
+from scrapers.bluestar_scraper import BlueStarScraper
+from scrapers.deutschetelekom_scraper import DeutscheTelekomScraper
+from scrapers.eichermotors_scraper import EicherMotorsScraper
+# Batch 18 - Complex scrapers (7)
+from scrapers.adp_scraper import ADPScraper
+from scrapers.bny_scraper import BNYScraper
+from scrapers.cbre_scraper import CBREScraper
+from scrapers.ea_scraper import EAScraper
+from scrapers.epam_scraper import EPAMScraper
+from scrapers.gallagher_scraper import GallagherScraper
+from scrapers.innovaccer_scraper import InnovaccerScraper
+
 
 # Map of company names to their scraper classes
 SCRAPER_MAP = {
@@ -1247,6 +1273,38 @@ SCRAPER_MAP = {
     'century ply': CenturyPlyScraper,
     'tvs credit': TVSCreditScraper,
     'tvs credit services': TVSCreditScraper,
+    # Batch 18 - Requests-based (8)
+    'msc technology': MSCTechnologyScraper,
+    'htc global': HTCGlobalScraper,
+    'htc global services': HTCGlobalScraper,
+    'cloudflare': CloudflareScraper,
+    'deutsche bahn': DeutscheBahnScraper,
+    'easemytrip': EaseMyTripScraper,
+    'easy trip planners': EaseMyTripScraper,
+    'haptik': HaptikScraper,
+    'indegene': IndegeneScraper,
+    'ingersoll rand': IngersollRandScraper,
+    # Batch 18 - Selenium SPA (7)
+    'hashedin': HashedInScraper,
+    'hashedin by deloitte': HashedInScraper,
+    'acko': AckoScraper,
+    'aon': AonScraper,
+    'atlassian': AtlassianScraper,
+    'blue star': BlueStarScraper,
+    'deutsche telekom': DeutscheTelekomScraper,
+    'eicher motors': EicherMotorsScraper,
+    # Batch 18 - Complex (7)
+    'adp': ADPScraper,
+    'bny': BNYScraper,
+    'bny mellon': BNYScraper,
+    'cbre': CBREScraper,
+    'electronic arts': EAScraper,
+    'ea': EAScraper,
+    'epam': EPAMScraper,
+    'epam systems': EPAMScraper,
+    'gallagher': GallagherScraper,
+    'arthur j gallagher': GallagherScraper,
+    'innovaccer': InnovaccerScraper,
 }
 
 ALL_COMPANY_CHOICES = [
@@ -1408,4 +1466,13 @@ ALL_COMPANY_CHOICES = [
     # Batch 17 - Custom/Complex (9)
     'Finolex', 'IFB', 'AMNS India', 'Aye Finance', 'Shriram Finance',
     'Impetus Technologies', 'Saudi Aramco', 'Century Plyboards', 'TVS Credit',
+    # Batch 18 - Requests-based (8)
+    'MSC Technology', 'HTC Global Services', 'Cloudflare', 'Deutsche Bahn',
+    'EaseMyTrip', 'Haptik', 'Indegene', 'Ingersoll Rand',
+    # Batch 18 - Selenium SPA (7)
+    'HashedIn', 'Acko', 'Aon', 'Atlassian', 'Blue Star',
+    'Deutsche Telekom', 'Eicher Motors',
+    # Batch 18 - Complex (7)
+    'ADP', 'BNY', 'CBRE', 'Electronic Arts', 'EPAM Systems',
+    'Gallagher', 'Innovaccer',
 ]

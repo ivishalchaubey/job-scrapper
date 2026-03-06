@@ -6,20 +6,26 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 import hashlib
 import time
+import os
+
+try:
+    import requests
+except ImportError:
+    requests = None
 
 from core.logging import setup_logger
 from config.scraper import HEADLESS_MODE, MAX_PAGES_TO_SCRAPE
 
-logger = setup_logger('cars24_scraper')
+logger = setup_logger('atlassian_scraper')
 
 CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0.7559.133_fresh/chromedriver-mac-arm64/chromedriver'
 
 
-class CARS24Scraper:
+class AtlassianScraper:
     def __init__(self):
-        self.company_name = 'CARS24'
-        self.url = 'https://careers.cars24.com/'
-        self.base_url = 'https://careers.cars24.com'
+        self.company_name = 'Atlassian'
+        self.url = 'https://www.atlassian.com/company/careers/all-jobs?team=&location=India&search='
+        self.base_url = 'https://www.atlassian.com'
 
     def setup_driver(self):
         chrome_options = Options()
@@ -48,93 +54,172 @@ class CARS24Scraper:
         return hashlib.md5(unique_string.encode()).hexdigest()
 
     def scrape(self, max_pages=MAX_PAGES_TO_SCRAPE):
-        """Scrape CARS24 jobs from Next.js SPA."""
+        """Scrape Atlassian jobs from custom SPA. Try API first, then Selenium."""
+        all_jobs = []
+
+        # Strategy 1: Try the Atlassian careers API directly
+        if requests is not None:
+            try:
+                api_jobs = self._scrape_via_api()
+                if api_jobs:
+                    logger.info(f"API method returned {len(api_jobs)} jobs")
+                    return api_jobs
+                else:
+                    logger.warning("API method returned 0 jobs, falling back to Selenium")
+            except Exception as e:
+                logger.error(f"API method failed: {str(e)}, falling back to Selenium")
+
+        # Strategy 2: Selenium-based scraping
+        return self._scrape_via_selenium(max_pages)
+
+    def _scrape_via_api(self):
+        """Try to fetch jobs from Atlassian's internal API."""
+        jobs = []
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+            'Accept': 'application/json',
+            'Referer': 'https://www.atlassian.com/company/careers/all-jobs',
+        }
+
+        # Known Atlassian API endpoints
+        api_urls = [
+            'https://www.atlassian.com/endpoint/careers/listings?location=India',
+            'https://www.atlassian.com/api/careers/jobs?location=India',
+            'https://www.atlassian.com/company/careers/api/jobs?location=India',
+        ]
+
+        for api_url in api_urls:
+            try:
+                response = requests.get(api_url, headers=headers, timeout=15)
+                if response.status_code == 200:
+                    data = response.json()
+                    job_list = None
+                    if isinstance(data, list):
+                        job_list = data
+                    elif isinstance(data, dict):
+                        for key in ['jobs', 'positions', 'data', 'results', 'listings']:
+                            if key in data and isinstance(data[key], list):
+                                job_list = data[key]
+                                break
+
+                    if job_list and len(job_list) > 0:
+                        logger.info(f"Found {len(job_list)} jobs from API: {api_url}")
+                        for idx, item in enumerate(job_list):
+                            job = self._parse_api_job(item, idx)
+                            if job:
+                                jobs.append(job)
+                        if jobs:
+                            return jobs
+            except Exception as e:
+                logger.debug(f"API endpoint {api_url} failed: {str(e)}")
+                continue
+
+        return jobs
+
+    def _parse_api_job(self, item, idx):
+        """Parse a single job from API response."""
+        if not isinstance(item, dict):
+            return None
+
+        title = (item.get('title', '') or item.get('name', '') or
+                 item.get('job_title', '') or '').strip()
+        if not title or len(title) < 3:
+            return None
+
+        location = (item.get('location', '') or item.get('city', '') or '').strip()
+        if isinstance(location, list) and location:
+            location = ', '.join(location) if all(isinstance(l, str) for l in location) else str(location[0])
+
+        # Filter for India
+        loc_check = (str(location) + ' ' + str(item.get('country', ''))).lower()
+        india_cities = ['india', 'bangalore', 'bengaluru', 'mumbai', 'delhi', 'hyderabad',
+                        'chennai', 'pune', 'gurgaon', 'remote']
+        if location and not any(c in loc_check for c in india_cities):
+            return None
+
+        job_id = str(item.get('id', '') or item.get('jobId', '') or f"atlassian_api_{idx}")
+        apply_url = item.get('url', '') or item.get('apply_url', '') or item.get('link', '') or ''
+        if apply_url and apply_url.startswith('/'):
+            apply_url = f"{self.base_url}{apply_url}"
+        if not apply_url:
+            apply_url = self.url
+
+        department = str(item.get('department', '') or item.get('team', '') or item.get('category', '') or '')
+        employment_type = str(item.get('employment_type', '') or item.get('type', '') or '')
+
+        loc_data = self.parse_location(location)
+
+        return {
+            'external_id': self.generate_external_id(job_id, self.company_name),
+            'company_name': self.company_name,
+            'title': title,
+            'description': str(item.get('description', '') or '')[:3000],
+            'location': location or 'India',
+            'city': loc_data.get('city', ''),
+            'state': loc_data.get('state', ''),
+            'country': loc_data.get('country', 'India'),
+            'employment_type': employment_type,
+            'department': department,
+            'apply_url': apply_url,
+            'posted_date': str(item.get('posted_date', '') or item.get('date', '') or ''),
+            'job_function': '',
+            'experience_level': str(item.get('experience_level', '') or ''),
+            'salary_range': '',
+            'remote_type': str(item.get('remote_type', '') or item.get('workType', '') or ''),
+            'status': 'active'
+        }
+
+    def _scrape_via_selenium(self, max_pages):
+        """Selenium-based scraping for Atlassian custom SPA."""
         driver = None
         all_jobs = []
 
         try:
             driver = self.setup_driver()
-            logger.info(f"Starting {self.company_name} scraping from {self.url}")
+            logger.info(f"Starting {self.company_name} Selenium scraping from {self.url}")
             driver.get(self.url)
 
-            # Wait for job cards to appear in the grid
+            # Wait for job listings to render
             try:
                 WebDriverWait(driver, 20).until(
                     EC.presence_of_element_located((
                         By.CSS_SELECTOR,
-                        'div[class*="job"], div[class*="card"], div[class*="opening"], '
-                        'div[class*="position"], div[class*="listing"], div[class*="career"]'
+                        'div[class*="job"], a[class*="job"], table[class*="job"], '
+                        'div[class*="listing"], div[class*="career"], div[class*="opening"]'
                     ))
                 )
-                logger.info("Job cards detected on CARS24 page")
+                logger.info("Job listings detected")
             except Exception as e:
-                logger.warning(f"Timeout waiting for job cards: {str(e)}, using fallback wait")
+                logger.warning(f"Timeout waiting for job listings: {str(e)}, using fallback wait")
                 time.sleep(10)
 
-            # Additional wait for Next.js hydration and API calls
-            time.sleep(5)
-
-            # Scroll to trigger lazy loading
+            # Scroll to load all dynamic content
             for i in range(5):
                 driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
                 time.sleep(2)
             driver.execute_script("window.scrollTo(0, 0);")
             time.sleep(2)
 
-            # Try to extract from __NEXT_DATA__ first
-            next_data_jobs = driver.execute_script("""
-                try {
-                    var nextData = document.getElementById('__NEXT_DATA__');
-                    if (nextData) {
-                        var data = JSON.parse(nextData.textContent);
-                        var props = data.props || {};
-                        var pageProps = props.pageProps || {};
+            # Try to click "Show More" / "Load All" if present
+            for _ in range(10):
+                try:
+                    load_more = driver.find_element(
+                        By.XPATH,
+                        '//button[contains(text(), "Show more")] | '
+                        '//button[contains(text(), "Load more")] | '
+                        '//button[contains(text(), "View more")] | '
+                        '//a[contains(text(), "Show more")]'
+                    )
+                    if load_more.is_displayed() and load_more.is_enabled():
+                        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", load_more)
+                        time.sleep(0.5)
+                        driver.execute_script("arguments[0].click();", load_more)
+                        time.sleep(2)
+                    else:
+                        break
+                except Exception:
+                    break
 
-                        var possibleKeys = ['jobs', 'openings', 'positions', 'careers',
-                                            'allJobs', 'jobListings', 'jobList'];
-                        for (var i = 0; i < possibleKeys.length; i++) {
-                            var key = possibleKeys[i];
-                            if (pageProps[key] && Array.isArray(pageProps[key])) {
-                                return pageProps[key];
-                            }
-                        }
-
-                        // Deep search for job arrays
-                        function findJobsArray(obj, depth) {
-                            if (depth > 4 || !obj) return null;
-                            if (Array.isArray(obj) && obj.length > 0 && typeof obj[0] === 'object') {
-                                var first = obj[0];
-                                if (first.title || first.name || first.job_title || first.position ||
-                                    first.designation) {
-                                    return obj;
-                                }
-                            }
-                            if (typeof obj === 'object' && !Array.isArray(obj)) {
-                                var keys = Object.keys(obj);
-                                for (var j = 0; j < keys.length; j++) {
-                                    var result = findJobsArray(obj[keys[j]], depth + 1);
-                                    if (result) return result;
-                                }
-                            }
-                            return null;
-                        }
-                        return findJobsArray(pageProps, 0);
-                    }
-                } catch(e) {}
-                return null;
-            """)
-
-            if next_data_jobs and len(next_data_jobs) > 0:
-                logger.info(f"Found {len(next_data_jobs)} jobs from __NEXT_DATA__")
-                for idx, item in enumerate(next_data_jobs):
-                    job = self._parse_next_data_job(item, idx)
-                    if job:
-                        all_jobs.append(job)
-                if all_jobs:
-                    logger.info(f"Extracted {len(all_jobs)} jobs from __NEXT_DATA__")
-                    return all_jobs
-
-            # DOM-based extraction with pagination
             scraped_ids = set()
             current_page = 1
 
@@ -157,74 +242,15 @@ class CARS24Scraper:
             return all_jobs
 
         except Exception as e:
-            logger.error(f"Error during scraping: {str(e)}")
+            logger.error(f"Error during Selenium scraping: {str(e)}")
             return all_jobs
         finally:
             if driver:
                 driver.quit()
                 logger.info("Browser closed")
 
-    def _parse_next_data_job(self, item, idx):
-        """Parse a single job from __NEXT_DATA__."""
-        if not isinstance(item, dict):
-            return None
-
-        title = (item.get('title', '') or item.get('name', '') or
-                 item.get('job_title', '') or item.get('designation', '') or
-                 item.get('position', '') or '').strip()
-        if isinstance(title, dict):
-            title = title.get('rendered', '') or str(title)
-        if not title or len(title) < 3:
-            return None
-
-        location = (item.get('location', '') or item.get('city', '') or
-                     item.get('office', '') or '').strip()
-        if isinstance(location, list) and location:
-            location = ', '.join(location) if all(isinstance(l, str) for l in location) else str(location[0])
-
-        apply_url = item.get('apply_url', '') or item.get('url', '') or item.get('link', '') or ''
-        if not apply_url:
-            slug = item.get('slug', '') or item.get('id', '')
-            if slug:
-                apply_url = f"{self.base_url}/job/{slug}"
-            else:
-                apply_url = self.url
-        if apply_url and apply_url.startswith('/'):
-            apply_url = f"{self.base_url}{apply_url}"
-
-        job_id = str(item.get('id', '') or item.get('job_id', '') or
-                      item.get('requisitionId', '') or f"cars24_{idx}")
-        department = str(item.get('department', '') or item.get('team', '') or
-                         item.get('function', '') or '')
-        employment_type = str(item.get('employment_type', '') or item.get('type', '') or '')
-        description = str(item.get('description', '') or item.get('content', '') or '')[:3000]
-        experience = str(item.get('experience', '') or item.get('experience_level', '') or '')
-
-        loc_data = self.parse_location(location)
-
-        return {
-            'external_id': self.generate_external_id(job_id, self.company_name),
-            'company_name': self.company_name,
-            'title': title,
-            'description': description,
-            'location': location or 'India',
-            'city': loc_data.get('city', ''),
-            'state': loc_data.get('state', ''),
-            'country': loc_data.get('country', 'India'),
-            'employment_type': employment_type,
-            'department': department,
-            'apply_url': apply_url,
-            'posted_date': str(item.get('posted_date', '') or item.get('date', '') or
-                              item.get('created_at', '') or ''),
-            'job_function': str(item.get('job_function', '') or ''),
-            'experience_level': experience,
-            'salary_range': '',
-            'remote_type': str(item.get('remote_type', '') or item.get('work_mode', '') or ''),
-            'status': 'active'
-        }
-
     def _extract_jobs_from_dom(self, driver, scraped_ids):
-        """Extract jobs from CARS24 DOM using JavaScript."""
+        """Extract jobs from DOM for Atlassian's custom SPA."""
         jobs = []
 
         try:
@@ -232,13 +258,13 @@ class CARS24Scraper:
                 var results = [];
                 var seen = {};
 
-                // Strategy 1: Job cards in a grid layout
+                // Strategy 1: Atlassian job list items (typically links in a grid/list)
                 var cards = document.querySelectorAll(
-                    'div[class*="job-card"], div[class*="jobCard"], a[class*="job-card"], ' +
-                    'div[class*="career-card"], div[class*="opening-card"], ' +
-                    'div[class*="position-card"], div[class*="listing-card"], ' +
-                    'div[class*="card"][class*="job"], li[class*="job"], ' +
-                    'div[class*="grid"] > div, div[class*="Grid"] > div'
+                    'a[href*="/company/careers/detail/"], a[href*="/careers/"], ' +
+                    'div[class*="job-card"], div[class*="jobCard"], ' +
+                    'div[class*="job-listing"], div[class*="career-listing"], ' +
+                    'tr[class*="job"], li[class*="job"], ' +
+                    'div[class*="opening"], div[class*="position"]'
                 );
 
                 for (var i = 0; i < cards.length; i++) {
@@ -248,12 +274,13 @@ class CARS24Scraper:
                     var location = '';
                     var department = '';
 
+                    // Title
                     var titleEl = card.querySelector(
-                        'h2, h3, h4, [class*="title"], [class*="Title"], ' +
-                        '[class*="name"], [class*="heading"], [class*="designation"]'
+                        'h2, h3, h4, [class*="title"], [class*="name"], [class*="heading"]'
                     );
                     if (titleEl) title = titleEl.innerText.trim().split('\\n')[0];
 
+                    // URL
                     if (card.tagName === 'A') {
                         url = card.href || '';
                         if (!title) title = card.innerText.trim().split('\\n')[0];
@@ -268,14 +295,13 @@ class CARS24Scraper:
                     if (!title || title.length < 3 || title.length > 200) continue;
                     if (url && seen[url]) continue;
 
-                    var locEl = card.querySelector(
-                        '[class*="location"], [class*="Location"], [class*="city"], [class*="place"]'
-                    );
+                    // Location
+                    var locEl = card.querySelector('[class*="location"], [class*="Location"]');
                     if (locEl) location = locEl.innerText.trim();
                     if (!location) {
                         var text = card.innerText || '';
-                        var cities = ['Gurgaon', 'Gurugram', 'Bangalore', 'Bengaluru', 'Mumbai',
-                                      'Delhi', 'Hyderabad', 'Chennai', 'Pune', 'Noida', 'India'];
+                        var cities = ['Bangalore', 'Bengaluru', 'Mumbai', 'Delhi', 'Hyderabad',
+                                      'Chennai', 'Pune', 'India', 'Remote'];
                         var lines = text.split('\\n');
                         for (var j = 0; j < lines.length; j++) {
                             for (var k = 0; k < cities.length; k++) {
@@ -288,51 +314,41 @@ class CARS24Scraper:
                         }
                     }
 
-                    var deptEl = card.querySelector(
-                        '[class*="department"], [class*="team"], [class*="category"], [class*="function"]'
-                    );
+                    // Department / Team
+                    var deptEl = card.querySelector('[class*="team"], [class*="department"], [class*="category"]');
                     if (deptEl) department = deptEl.innerText.trim();
 
                     if (url) seen[url] = true;
                     results.push({title: title, url: url || '', location: location, department: department});
                 }
 
-                // Strategy 2: Links with job-related href patterns
+                // Strategy 2: Table rows
                 if (results.length === 0) {
-                    var allLinks = document.querySelectorAll(
-                        'a[href*="/job"], a[href*="/career"], a[href*="/opening"], ' +
-                        'a[href*="/position"], a[href*="/role"]'
-                    );
-                    for (var i = 0; i < allLinks.length; i++) {
-                        var link = allLinks[i];
-                        var text = link.innerText.trim().split('\\n')[0];
+                    var rows = document.querySelectorAll('table tr, tbody tr');
+                    for (var i = 0; i < rows.length; i++) {
+                        var row = rows[i];
+                        if (row.querySelector('th')) continue;
+                        var link = row.querySelector('a[href]');
+                        if (!link) continue;
+                        var title = link.innerText.trim().split('\\n')[0];
                         var href = link.href || '';
-                        if (text.length < 5 || text.length > 200 || seen[href]) continue;
+                        if (!title || title.length < 3 || seen[href]) continue;
                         if (href) seen[href] = true;
-
-                        var parent = link.closest('div, li, tr');
-                        var loc = '';
-                        var dept = '';
-                        if (parent) {
-                            var locEl = parent.querySelector('[class*="location"]');
-                            if (locEl && locEl !== link) loc = locEl.innerText.trim();
-                            var deptEl = parent.querySelector('[class*="department"], [class*="team"]');
-                            if (deptEl && deptEl !== link) dept = deptEl.innerText.trim();
-                        }
-
-                        results.push({title: text, url: href, location: loc, department: dept});
+                        var tds = row.querySelectorAll('td');
+                        var loc = tds.length >= 2 ? tds[1].innerText.trim() : '';
+                        var dept = tds.length >= 3 ? tds[2].innerText.trim() : '';
+                        results.push({title: title, url: href, location: loc, department: dept});
                     }
                 }
 
-                // Strategy 3: Generic link detection with job title keywords
+                // Strategy 3: Generic link detection
                 if (results.length === 0) {
-                    var genLinks = document.querySelectorAll('a[href]');
+                    var allLinks = document.querySelectorAll('a[href*="career"], a[href*="job"], a[href*="detail"]');
                     var jobKeywords = ['engineer', 'manager', 'developer', 'analyst', 'designer',
-                                       'architect', 'lead', 'specialist', 'consultant', 'director',
-                                       'associate', 'executive', 'intern', 'product', 'data',
-                                       'operations', 'marketing', 'sales', 'finance'];
-                    for (var i = 0; i < genLinks.length; i++) {
-                        var link = genLinks[i];
+                                       'architect', 'lead', 'specialist', 'principal', 'director',
+                                       'head', 'intern', 'scientist', 'product', 'program'];
+                    for (var i = 0; i < allLinks.length; i++) {
+                        var link = allLinks[i];
                         var text = link.innerText.trim().split('\\n')[0];
                         var href = link.href || '';
                         if (text.length < 5 || text.length > 200 || seen[href]) continue;
@@ -365,6 +381,11 @@ class CARS24Scraper:
                         url = f"{self.base_url}{url}"
 
                     job_id = hashlib.md5((url or title).encode()).hexdigest()[:12]
+                    if url and '/detail/' in url:
+                        parts = url.split('/detail/')[-1].split('/')
+                        if parts[0]:
+                            job_id = parts[0].split('?')[0]
+
                     ext_id = self.generate_external_id(job_id, self.company_name)
                     if ext_id in scraped_ids:
                         continue
@@ -413,9 +434,9 @@ class CARS24Scraper:
                 (By.CSS_SELECTOR, 'button[aria-label="Next"]'),
                 (By.XPATH, '//button[contains(text(), "Next")]'),
                 (By.XPATH, '//a[contains(text(), "Next")]'),
-                (By.XPATH, '//button[contains(text(), "Load More")]'),
-                (By.XPATH, '//button[contains(text(), "Show More")]'),
-                (By.XPATH, '//button[contains(text(), "View More")]'),
+                (By.XPATH, '//button[contains(text(), "Show more")]'),
+                (By.XPATH, '//button[contains(text(), "Load more")]'),
+                (By.XPATH, '//button[contains(text(), "View more")]'),
                 (By.CSS_SELECTOR, 'a.next, button.next'),
                 (By.CSS_SELECTOR, '[class*="pagination"] button:last-child'),
             ]
@@ -458,7 +479,7 @@ class CARS24Scraper:
 
 
 if __name__ == "__main__":
-    scraper = CARS24Scraper()
+    scraper = AtlassianScraper()
     jobs = scraper.scrape()
     print(f"\nTotal jobs found: {len(jobs)}")
     for job in jobs:
