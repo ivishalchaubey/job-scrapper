@@ -1,10 +1,9 @@
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 import hashlib
+import re
 import time
 from pathlib import Path
 import os
@@ -12,7 +11,7 @@ import stat
 
 
 from core.logging import setup_logger
-from config.scraper import SCRAPE_TIMEOUT, HEADLESS_MODE, FETCH_FULL_JOB_DETAILS, MAX_PAGES_TO_SCRAPE
+from config.scraper import HEADLESS_MODE, MAX_PAGES_TO_SCRAPE
 
 logger = setup_logger('tcs_scraper')
 
@@ -22,9 +21,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 class TCSScraper:
     def __init__(self):
         self.company_name = 'TCS'
-        self.url = 'https://ibegin.tcs.com/iBegin/jobs/search'
-        # ibegin.tcs.com DNS is dead - use tcsapps.com as the working domain
-        self.alt_url = 'https://ibegin.tcsapps.com/candidate/'
+        self.url = 'https://ibegin.tcsapps.com/candidate/'
+        self.alt_url = 'https://www.tcs.com/careers/india'
 
     def setup_driver(self):
         chrome_options = Options()
@@ -83,91 +81,23 @@ class TCSScraper:
             driver = self.setup_driver()
             logger.info(f"Starting {self.company_name} scraping")
 
-            # Primary URL ibegin.tcs.com has DNS issues - try it first, then fall back
-            loaded = False
-            for url in [self.url, self.alt_url]:
-                try:
-                    logger.info(f"Trying URL: {url}")
-                    driver.get(url)
-                    # Smart wait: use WebDriverWait for job elements instead of blind sleep
-                    try:
-                        WebDriverWait(driver, 15).until(
-                            EC.presence_of_element_located((By.CSS_SELECTOR,
-                                "div[class*='job'], div[class*='result'], div[class*='listing'], "
-                                "a[href*='job'], table, [class*='opening'], [ng-repeat]"
-                            ))
-                        )
-                    except:
-                        time.sleep(5)  # Fallback if no elements found yet
+            driver.get(self.url)
+            time.sleep(8)
 
-                    current_url = driver.current_url
-                    title = driver.title
-                    logger.info(f"Loaded: {current_url} (title: {title})")
-
-                    # Check if page actually loaded (not error page)
-                    page_source = driver.page_source
-                    if len(page_source) > 1000 and 'error' not in title.lower():
-                        loaded = True
-                        logger.info(f"Successfully loaded {url}")
-                        break
-                    else:
-                        logger.warning(f"URL {url} loaded but seems like error page")
-                except Exception as e:
-                    logger.warning(f"Failed to load {url}: {str(e)}")
-                    continue
-
-            if not loaded:
-                logger.error("Could not load any TCS URL")
-                return all_jobs
-
-            # Quick scroll to trigger lazy loading (content already loaded via WebDriverWait)
-            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            # Dismiss cookie banner and click Search Jobs (AngularJS SPA)
+            driver.execute_script("var cb = document.querySelector('.cookie-banner'); if(cb) cb.remove();")
             time.sleep(1)
-            driver.execute_script("window.scrollTo(0, 0);")
-            time.sleep(0.5)
+            driver.execute_script("var btn = document.querySelector('button.btn-color'); if(btn) btn.click();")
+            logger.info("Clicked Search Jobs button")
+            time.sleep(10)
 
-            # Check if we need to navigate to job search
-            current_url = driver.current_url
-            if '/candidate/' in current_url and '/jobs' not in current_url:
-                # Try navigating to the jobs section via Angular routing
-                logger.info("On candidate portal, looking for job search section...")
-                try:
-                    # Look for job search link/button
-                    job_nav_selectors = [
-                        "a[href*='jobs']",
-                        "a[href*='search']",
-                        "[ng-click*='job']",
-                        "[ng-click*='search']",
-                        "a:contains('Jobs')",
-                        "a:contains('Search')",
-                    ]
-                    for sel in job_nav_selectors:
-                        try:
-                            elements = driver.find_elements(By.CSS_SELECTOR, sel)
-                            for elem in elements:
-                                text = elem.text.strip().lower()
-                                if 'job' in text or 'search' in text or 'career' in text:
-                                    driver.execute_script("arguments[0].click();", elem)
-                                    logger.info(f"Clicked job nav: {elem.text}")
-                                    time.sleep(3)
-                                    break
-                        except:
-                            continue
-                except Exception as e:
-                    logger.warning(f"Could not navigate to job search: {str(e)}")
-
-            # Try with short wait for job-related elements
-            short_wait = WebDriverWait(driver, 8)
-            try:
-                short_wait.until(EC.presence_of_element_located((
-                    By.CSS_SELECTOR,
-                    "div[class*='job'], div[class*='result'], div[class*='listing'], "
-                    "a[href*='job'], table, [class*='opening'], [ng-repeat]"
-                )))
-                logger.info("Page content loaded with job elements")
-            except Exception as e:
-                logger.warning(f"Timeout waiting for job elements: {str(e)}")
-                time.sleep(5)
+            # Verify jobs loaded
+            body_text = driver.find_element(By.TAG_NAME, 'body').text
+            if 'Jobs Found' not in body_text:
+                logger.warning("Jobs page did not load after clicking Search Jobs")
+                # Try alt URL
+                driver.get(self.alt_url)
+                time.sleep(10)
 
             current_page = 1
             while current_page <= max_pages:
@@ -179,7 +109,6 @@ class TCSScraper:
                 if current_page < max_pages:
                     if not self._go_to_next_page(driver, current_page):
                         break
-                    # No extra sleep needed - _go_to_next_page already handles waiting
                 current_page += 1
 
             logger.info(f"Total jobs scraped: {len(all_jobs)}")
@@ -195,415 +124,169 @@ class TCSScraper:
 
     def _go_to_next_page(self, driver, current_page):
         try:
-            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(0.5)
+            # Get first job title before pagination for change detection
+            old_body = driver.find_element(By.TAG_NAME, 'body').text[:200]
 
-            # Capture first card text BEFORE click for change detection
-            old_first = driver.execute_script("""
-                var cards = document.querySelectorAll(
-                    'div[class*="job"], div[class*="result"], a[href*="job"], [ng-repeat], div[class*="listing"]'
-                );
-                return cards.length > 0 ? cards[0].innerText.substring(0, 50) : '';
-            """)
-
-            next_selectors = [
-                (By.CSS_SELECTOR, 'a[aria-label="Next"]'),
-                (By.CSS_SELECTOR, 'button[aria-label="Next"]'),
-                (By.XPATH, '//a[contains(text(), "Next")]'),
-                (By.XPATH, '//button[contains(text(), "Next")]'),
-                (By.CSS_SELECTOR, '.pagination .next a'),
-                (By.CSS_SELECTOR, 'li.next a'),
-                (By.XPATH, f'//a[text()="{current_page + 1}"]'),
-                (By.XPATH, f'//button[text()="{current_page + 1}"]'),
-            ]
-            for selector_type, selector_value in next_selectors:
+            # Click the next page link in pagination (›)
+            next_page = current_page + 1
+            clicked = False
+            # Try clicking specific page number first, then › arrow
+            for selector in [
+                f'//ul[contains(@class,"pagination")]//a[text()="{next_page}"]',
+                '//ul[contains(@class,"pagination")]//a[text()="›"]',
+            ]:
                 try:
-                    btn = driver.find_element(selector_type, selector_value)
+                    btn = driver.find_element(By.XPATH, selector)
                     driver.execute_script("arguments[0].scrollIntoView();", btn)
                     time.sleep(0.3)
                     driver.execute_script("arguments[0].click();", btn)
-                    logger.info(f"Navigated to page {current_page + 1}")
-
-                    # Poll for content change instead of blind sleep (max 5s)
-                    for _ in range(25):
-                        time.sleep(0.2)
-                        new_first = driver.execute_script("""
-                            var cards = document.querySelectorAll(
-                                'div[class*="job"], div[class*="result"], a[href*="job"], [ng-repeat], div[class*="listing"]'
-                            );
-                            return cards.length > 0 ? cards[0].innerText.substring(0, 50) : '';
-                        """)
-                        if new_first and new_first != old_first:
-                            break
-                    time.sleep(0.5)  # Brief settle after change detected
-                    return True
+                    clicked = True
+                    break
                 except:
                     continue
-            return False
+
+            if not clicked:
+                return False
+
+            # Wait for content to change
+            for _ in range(30):
+                time.sleep(0.3)
+                new_body = driver.find_element(By.TAG_NAME, 'body').text[:200]
+                if new_body != old_body:
+                    break
+            time.sleep(1)
+            logger.info(f"Navigated to page {next_page}")
+            return True
         except Exception as e:
             logger.error(f"Error navigating: {str(e)}")
             return False
 
     def _scrape_page(self, driver):
+        """Parse jobs from body text. TCS iBegin renders jobs as repeating blocks:
+        title, location, department, experience, date, skills/tags"""
         jobs = []
-        scraped_ids = set()
+        date_pattern = re.compile(r'\d{1,2}-?\s*[A-Z][a-z]{2}-?\s*\d{4}')
+        year_pattern = re.compile(r'\d+-\d+\s+years?', re.IGNORECASE)
+        dept_keywords = ['business process services', 'consultancy', 'it infrastructure services',
+                         'technology', 'human resources', 'finance', 'quality assurance',
+                         'marketing and sales']
 
         try:
-            logger.info(f"Current URL: {driver.current_url}")
-            logger.info(f"Page title: {driver.title}")
+            body_text = driver.find_element(By.TAG_NAME, 'body').text
+            lines = [l.strip() for l in body_text.split('\n') if l.strip()]
 
-            # Quick scroll to trigger lazy loading
-            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(0.5)
-            driver.execute_script("window.scrollTo(0, 0);")
-            time.sleep(0.3)
+            # Find where job listings start (after "Filter" line)
+            start_idx = 0
+            for i, line in enumerate(lines):
+                if line == 'Filter':
+                    start_idx = i + 1
+                    break
 
-            # STRATEGY 1: JavaScript-first extraction (most reliable for SPAs)
-            logger.info("Trying JavaScript-based extraction...")
-            js_jobs = driver.execute_script("""
-                var results = [];
+            # Find where job listings end (before footer/pagination)
+            end_idx = len(lines)
+            for i in range(start_idx, len(lines)):
+                if lines[i] in ('Ask', '\u2039\u2039', '\u203a\u203a') or 'LEGAL' in lines[i] or 'CONNECT WITH US' in lines[i]:
+                    end_idx = i
+                    break
 
-                // Strategy A: Find all links with job-related hrefs
-                document.querySelectorAll('a[href]').forEach(function(link) {
-                    var text = (link.innerText || '').trim();
-                    var href = link.href || '';
-                    if (text.length > 3 && text.length < 200 && href.length > 10) {
-                        var lhref = href.toLowerCase();
-                        if (lhref.includes('/job') || lhref.includes('/position') ||
-                            lhref.includes('/career') || lhref.includes('/opening') ||
-                            lhref.includes('/detail') || lhref.includes('/requisition') ||
-                            lhref.includes('/vacancy') || lhref.includes('/role') ||
-                            lhref.includes('jobid') || lhref.includes('job-id')) {
-                            results.push({
-                                title: text.split('\\n')[0].trim(),
-                                url: href,
-                                type: 'link'
-                            });
-                        }
-                    }
-                });
+            job_lines = lines[start_idx:end_idx]
+            if not job_lines:
+                logger.warning("No job lines found in body text")
+                return jobs
 
-                // Strategy B: Find Angular ng-repeat job items
-                document.querySelectorAll('[ng-repeat*="job"], [ng-repeat*="result"], [ng-repeat*="item"]').forEach(function(elem) {
-                    var text = (elem.innerText || '').trim();
-                    if (text.length > 20 && text.length < 600) {
-                        var link = elem.querySelector('a[href]');
-                        var url = link ? link.href : '';
-                        results.push({
-                            title: text.split('\\n')[0].trim(),
-                            url: url,
-                            fullText: text,
-                            type: 'ng-repeat'
-                        });
-                    }
-                });
+            # Parse job blocks: each block ends with a date line, followed by skills/tags
+            current_block = []
+            skip_words = ['filter', 'search jobs', 'jobs at tcs', 'email me', 'jobs found',
+                          'my saved', 'browse through', 'guide me']
 
-                // Strategy C: Find divs with job-like content
-                if (results.length === 0) {
-                    document.querySelectorAll('div, li, tr').forEach(function(elem) {
-                        var text = (elem.innerText || '').trim();
-                        if (text.length > 30 && text.length < 500) {
-                            var lower = text.toLowerCase();
-                            var hasJobIndicators = (
-                                (lower.includes('experience') || lower.includes('year')) &&
-                                (lower.includes('location') || lower.includes('bangalore') ||
-                                 lower.includes('mumbai') || lower.includes('pune') ||
-                                 lower.includes('chennai') || lower.includes('hyderabad') ||
-                                 lower.includes('delhi') || lower.includes('india'))
-                            );
-                            if (hasJobIndicators) {
-                                var link = elem.querySelector('a[href]');
-                                var url = link ? link.href : '';
-                                results.push({
-                                    title: text.split('\\n')[0].trim(),
-                                    url: url,
-                                    fullText: text,
-                                    type: 'content-match'
-                                });
-                            }
-                        }
-                    });
-                }
+            for line in job_lines:
+                lower = line.lower()
+                if any(s in lower for s in skip_words):
+                    continue
 
-                return results;
-            """)
+                current_block.append(line)
 
-            if js_jobs:
-                logger.info(f"JavaScript extraction found {len(js_jobs)} potential jobs")
-                seen = set()
-                for item in js_jobs:
-                    title = item.get('title', '')
-                    url = item.get('url', '')
-                    full_text = item.get('fullText', '')
-                    item_type = item.get('type', '')
+                # Date line signals end of main job data; next line is skills
+                if date_pattern.search(line) and len(current_block) >= 4:
+                    # Peek: if block has exactly title+loc+dept+exp+date, next line is skills
+                    continue
 
-                    if not title or len(title) < 3 or title in seen:
-                        continue
+                # If previous line was a date and this line looks like skills/tags (contains |)
+                if len(current_block) >= 5 and date_pattern.search(current_block[-2]):
+                    self._parse_job_block(current_block, jobs, date_pattern, year_pattern, dept_keywords)
+                    current_block = []
 
-                    # Filter out navigation/non-job elements
-                    exclude = ['home', 'about', 'contact', 'login', 'sign', 'privacy',
-                               'terms', 'cookie', 'blog', 'filter', 'search jobs',
-                               'jobs at tcs', 'job title', 'first', 'submit', 'email',
-                               'register', 'saved', 'all jobs', 'sort by', 'filter by']
-                    if any(w in title.lower() for w in exclude):
-                        continue
+            # Handle remaining block
+            if len(current_block) >= 4:
+                self._parse_job_block(current_block, jobs, date_pattern, year_pattern, dept_keywords)
 
-                    seen.add(title)
-
-                    # Parse location from full text
-                    location = ''
-                    experience = ''
-                    department = ''
-                    posted_date = ''
-
-                    text_to_parse = full_text if full_text else title
-                    if text_to_parse:
-                        lines = [l.strip() for l in text_to_parse.split('\n') if l.strip()]
-                        for line in lines[1:]:
-                            line_lower = line.lower()
-                            if not location and any(city in line_lower for city in [
-                                'bangalore', 'bengaluru', 'mumbai', 'delhi', 'hyderabad',
-                                'chennai', 'pune', 'kolkata', 'ahmedabad', 'gurgaon',
-                                'noida', 'india', 'chandigarh', 'jaipur', 'kochi'
-                            ]):
-                                location = line
-                            elif not experience and 'year' in line_lower:
-                                experience = line
-                            elif not posted_date and any(m in line for m in [
-                                'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-                                'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
-                            ]):
-                                posted_date = line
-
-                    job_id_base = f"{title}_{url}" if url else f"{title}_{location}"
-                    job_id = f"tcs_{hashlib.md5(job_id_base.encode()).hexdigest()[:12]}"
-
-                    job_data = {
-                        'external_id': self.generate_external_id(job_id, self.company_name),
-                        'company_name': self.company_name,
-                        'title': title,
-                        'description': '',
-                        'location': location if location else 'India',
-                        'city': '',
-                        'state': '',
-                        'country': 'India',
-                        'employment_type': '',
-                        'department': department,
-                        'apply_url': url if url else self.url,
-                        'posted_date': posted_date,
-                        'job_function': '',
-                        'experience_level': experience,
-                        'salary_range': '',
-                        'remote_type': '',
-                        'status': 'active'
-                    }
-
-                    location_parts = self.parse_location(job_data.get('location', ''))
-                    job_data.update(location_parts)
-
-                    if job_data['external_id'] not in scraped_ids:
-                        jobs.append(job_data)
-                        scraped_ids.add(job_data['external_id'])
-                        logger.info(f"Extracted job: {title}")
-
-            # STRATEGY 2: Selenium selector-based extraction (fallback)
-            if not jobs:
-                logger.info("JS extraction yielded no results, trying selector-based approach...")
-                job_elements = []
-
-                # TCS-specific selectors
-                selectors = [
-                    ("a[href*='/job/']", "TCS job links"),
-                    ("div.job-card", "TCS job cards"),
-                    ("div[class*='search-result']", "TCS search results"),
-                    ("tr[class*='job']", "TCS job table rows"),
-                    ("div[class*='job']", "job divs"),
-                    ("a[href*='job']", "job links"),
-                    ("[class*='listing']", "listing elements"),
-                    ("[class*='result']", "result elements"),
-                    ("[class*='opening']", "opening elements"),
-                    ("table tbody tr", "table rows"),
-                    ("div[ng-repeat]", "ng-repeat divs"),
-                    ("[ng-click*='job']", "ng-click jobs"),
-                ]
-
-                for selector, desc in selectors:
-                    try:
-                        elements = driver.find_elements(By.CSS_SELECTOR, selector)
-                        if elements and len(elements) >= 2:
-                            job_elements = elements
-                            logger.info(f"Found {len(job_elements)} elements via: {desc} ({selector})")
-                            break
-                    except:
-                        continue
-
-                # Process found elements
-                for idx, job_elem in enumerate(job_elements, 1):
-                    try:
-                        job_data = self._extract_job(job_elem, driver, idx)
-                        if job_data and job_data['external_id'] not in scraped_ids:
-                            jobs.append(job_data)
-                            scraped_ids.add(job_data['external_id'])
-                            logger.info(f"Extracted job #{len(jobs)}: {job_data.get('title', 'N/A')}")
-                    except Exception as e:
-                        logger.debug(f"Could not extract job {idx}: {str(e)}")
-
-            if not jobs:
-                logger.warning("Could not find job listings with any strategy")
-                # Log page info for debugging
-                try:
-                    body_text = driver.execute_script('return document.body ? document.body.innerText : ""')
-                    logger.info(f"Page body text (first 500): {body_text[:500]}")
-                except:
-                    pass
-
+            logger.info(f"Parsed {len(jobs)} jobs from body text")
         except Exception as e:
             logger.error(f"Error scraping page: {str(e)}")
-
-        logger.info(f"Successfully extracted {len(jobs)} jobs from page")
         return jobs
 
-    def _extract_job(self, job_elem, driver, idx):
-        try:
-            elem_text = job_elem.text.strip()
-            elem_tag = job_elem.tag_name
-            job_url = self.url
+    def _parse_job_block(self, block, jobs, date_pattern, year_pattern, dept_keywords):
+        """Parse a single job block into a job dict."""
+        title = ''
+        location = ''
+        department = ''
+        experience = ''
+        posted_date = ''
+        skills = ''
 
-            if elem_tag == 'a':
-                href = job_elem.get_attribute('href')
-                if href:
-                    job_url = href
+        for line in block:
+            if date_pattern.search(line) and not posted_date:
+                posted_date = line
+            elif year_pattern.search(line) and not experience:
+                experience = line
+            elif any(d in line.lower() for d in dept_keywords) and not department:
+                department = line
+            elif '|' in line and len(line.split('|')) >= 2:
+                skills = line
+            elif not title:
+                title = line
+            elif not location:
+                location = line
 
-            if elem_tag == 'tr':
-                cells = job_elem.find_elements(By.TAG_NAME, 'td')
-                if len(cells) < 2:
-                    return None
+        if not title or len(title) < 3:
+            return
 
-                title = ""
-                location = ""
-                department = ""
-                posted_date = ""
-                experience_level = ""
+        # Filter out non-job entries
+        skip_titles = ['tcs careers', 'first', 'jobs at tcs', 'select', 'email me',
+                       'guided search', 'login', 'register', 'new user']
+        if title.lower().strip() in skip_titles or title.strip() in ('FIRST', 'EN'):
+            return
+        # Skip pagination artifacts
+        if any(c in title for c in ['\u2039', '\u203a', '\u2039\u2039', '\u203a\u203a']):
+            return
 
-                try:
-                    link = job_elem.find_element(By.TAG_NAME, 'a')
-                    href = link.get_attribute('href')
-                    if href and 'job' in href.lower():
-                        job_url = href
-                    title = link.text.strip()
-                except:
-                    if cells:
-                        title = cells[0].text.strip()
+        job_id = f"tcs_{hashlib.md5(f'{title}_{location}_{posted_date}'.encode()).hexdigest()[:12]}"
 
-                for cell in cells[1:]:
-                    cell_text = cell.text.strip()
-                    if not cell_text:
-                        continue
-                    cell_lower = cell_text.lower()
-                    if not location and any(city.lower() in cell_lower for city in [
-                        'bangalore', 'mumbai', 'delhi', 'hyderabad', 'chennai',
-                        'pune', 'kolkata', 'ahmedabad', 'gurgaon', 'noida', 'india'
-                    ]):
-                        location = cell_text
-                    elif not posted_date and any(month in cell_text for month in [
-                        'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-                        'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', '/'
-                    ]):
-                        posted_date = cell_text
-                    elif not experience_level and 'year' in cell_lower:
-                        experience_level = cell_text
-                    elif not department and len(cell_text) > 3:
-                        department = cell_text
+        job_data = {
+            'external_id': self.generate_external_id(job_id, self.company_name),
+            'company_name': self.company_name,
+            'title': title,
+            'description': skills,
+            'location': location if location else 'India',
+            'city': '',
+            'state': '',
+            'country': 'India',
+            'employment_type': '',
+            'department': department,
+            'apply_url': self.url,
+            'posted_date': posted_date,
+            'job_function': department,
+            'experience_level': experience,
+            'salary_range': '',
+            'remote_type': '',
+            'status': 'active'
+        }
 
-            else:
-                if not elem_text or len(elem_text) < 10:
-                    return None
+        location_parts = self.parse_location(location)
+        job_data.update(location_parts)
 
-                lines = [line.strip() for line in elem_text.split('\n') if line.strip()]
-                if len(lines) < 2:
-                    return None
-
-                title = lines[0]
-                location = ""
-                department = ""
-                experience_level = ""
-                posted_date = ""
-
-                for badge in ['WALK-IN', 'WALKIN', 'NEW', 'URGENT']:
-                    title = title.replace(badge, '').strip()
-
-                for line in lines[1:]:
-                    line_lower = line.lower()
-                    if not location and any(city.lower() in line_lower for city in [
-                        'bangalore', 'bengaluru', 'mumbai', 'delhi', 'hyderabad',
-                        'chennai', 'pune', 'kolkata', 'ahmedabad', 'gurgaon', 'noida',
-                        'india', 'chandigarh', 'jaipur', 'kochi', 'coimbatore'
-                    ]):
-                        location = line
-                    elif not experience_level and 'year' in line_lower:
-                        experience_level = line
-                    elif not posted_date and (any(month in line for month in [
-                        'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-                        'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
-                    ]) or '/' in line) and '-' in line:
-                        posted_date = line
-                    elif not department and any(dept.lower() in line_lower for dept in [
-                        'infrastructure', 'business', 'technology', 'consultancy',
-                        'human resources', 'finance', 'quality', 'marketing',
-                        'sales', 'operations', 'services', 'engineering'
-                    ]):
-                        department = line
-
-            if not title or len(title) < 3:
-                return None
-
-            invalid_titles = [
-                'jobs at tcs', 'job title', 'first', 'submit', 'email',
-                'filter', 'search', 'login', 'register', 'home', 'saved'
-            ]
-            if title.lower() in invalid_titles or any(inv in title.lower() for inv in ['filter by', 'sort by']):
-                return None
-
-            job_id_base = f"{title}_{location}_{idx}" if location else f"{title}_{idx}"
-            job_id = f"tcs_{hashlib.md5(job_id_base.encode()).hexdigest()[:12]}"
-
-            if job_url == self.url and elem_tag != 'a':
-                try:
-                    link = job_elem.find_element(By.TAG_NAME, 'a')
-                    href = link.get_attribute('href')
-                    if href and 'job' in href.lower():
-                        job_url = href
-                except:
-                    pass
-
-            job_data = {
-                'external_id': self.generate_external_id(job_id, self.company_name),
-                'company_name': self.company_name,
-                'title': title,
-                'apply_url': job_url,
-                'location': location if location else 'India',
-                'department': department,
-                'employment_type': '',
-                'description': '',
-                'posted_date': posted_date,
-                'city': '',
-                'state': '',
-                'country': 'India',
-                'job_function': department,
-                'experience_level': experience_level,
-                'salary_range': '',
-                'remote_type': '',
-                'status': 'active'
-            }
-
-            location_parts = self.parse_location(job_data.get('location', ''))
-            job_data.update(location_parts)
-
-            return job_data
-
-        except Exception as e:
-            logger.debug(f"Error extracting job: {str(e)}")
-            return None
+        jobs.append(job_data)
+        logger.info(f"Extracted: {title} | {location}")
 
     def parse_location(self, location_str):
         result = {'city': '', 'state': '', 'country': 'India'}

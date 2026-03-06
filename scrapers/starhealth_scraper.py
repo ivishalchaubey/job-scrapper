@@ -1,17 +1,13 @@
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 import hashlib
 import time
-from pathlib import Path
 import os
 
-
 from core.logging import setup_logger
-from config.scraper import SCRAPE_TIMEOUT, HEADLESS_MODE, FETCH_FULL_JOB_DETAILS, MAX_PAGES_TO_SCRAPE
+from config.scraper import HEADLESS_MODE, MAX_PAGES_TO_SCRAPE
 
 logger = setup_logger('starhealth_scraper')
 
@@ -21,7 +17,15 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 class StarHealthScraper:
     def __init__(self):
         self.company_name = 'Star Health Insurance'
-        self.url = 'https://starhealthcareers.peoplestrong.com/job/joblist'
+        # Star Health has migrated from PeopleStrong to DarwinBox.
+        # The old PeopleStrong portal (starhealthcareers.peoplestrong.com)
+        # returns 0 jobs and has empty master data (worksites, orgunit).
+        # The new DarwinBox v2 portal is at starhealth.darwinbox.in.
+        self.url = 'https://starhealth.darwinbox.in/ms/candidatev2/main/careers/allJobs'
+        # DarwinBox v1 URL (the v2 SPA may redirect here when active)
+        self.darwinbox_v1_url = 'https://starhealth.darwinbox.in/ms/candidate/careers'
+        # Keep the old PeopleStrong URL as a fallback
+        self.peoplestrong_url = 'https://starhealthcareers.peoplestrong.com/job/joblist'
 
     def setup_driver(self):
         chrome_options = Options()
@@ -57,19 +61,34 @@ class StarHealthScraper:
     def parse_location(self, location_str):
         if not location_str:
             return '', '', 'India'
+
         parts = [p.strip() for p in location_str.split(',')]
-        city = parts[0] if len(parts) > 0 else ''
-        state = parts[1] if len(parts) > 1 else ''
+
+        city = ''
+        state = ''
+        for part in parts:
+            part_clean = part.strip()
+            if part_clean == 'India':
+                continue
+            if '#' in part_clean or '_' in part_clean:
+                if '(' in part_clean and ')' in part_clean:
+                    state = part_clean.split('(')[-1].split(')')[0].strip()
+                continue
+            if '..+' in part_clean:
+                continue
+            if not city:
+                city = part_clean
+            elif not state:
+                state = part_clean
+
         return city, state, 'India'
 
     def scrape(self, max_pages=MAX_PAGES_TO_SCRAPE):
-        """Scrape jobs from Star Health Insurance PeopleStrong careers page.
+        """Scrape jobs from Star Health Insurance careers page.
 
-        PeopleStrong is an Angular SPA. The jobs-listing container renders
-        job cards dynamically. We wait for Angular to finish rendering,
-        then extract using the actual DOM selectors found on the site:
-        - Container: div.jobs-listing
-        - Each job row contains a link with href /job/jobdetail/...
+        Star Health has migrated from PeopleStrong to DarwinBox v2.
+        This scraper tries the DarwinBox portal first, then falls back
+        to the legacy PeopleStrong portal if DarwinBox yields no results.
         """
         jobs = []
         driver = None
@@ -78,35 +97,69 @@ class StarHealthScraper:
             logger.info(f"Starting scrape for {self.company_name}")
             driver = self.setup_driver()
 
+            # --- Strategy 1a: DarwinBox v2 SPA portal ---
+            logger.info(f"Trying DarwinBox v2 portal: {self.url}")
             driver.get(self.url)
+            time.sleep(15)
 
-            # Wait for Angular SPA to render (PeopleStrong needs extra time)
-            try:
-                WebDriverWait(driver, 20).until(
-                    EC.presence_of_element_located((By.CSS_SELECTOR, 'div.jobs-listing, app-root'))
-                )
-                logger.info("PeopleStrong Angular app loaded")
-            except Exception:
-                logger.warning("Timeout waiting for Angular app, continuing anyway")
+            body_text = driver.find_element(By.TAG_NAME, 'body').text.strip()
+            logger.info(f"DarwinBox v2 page body length: {len(body_text)}")
 
-            time.sleep(5)
+            if body_text and body_text != '-' and len(body_text) > 20:
+                # DarwinBox SPA loaded with content -- scrape it
+                for i in range(5):
+                    driver.execute_script('window.scrollTo(0, document.body.scrollHeight);')
+                    time.sleep(2)
+                driver.execute_script('window.scrollTo(0, 0);')
+                time.sleep(2)
 
-            # Check if site reports no jobs
+                jobs = self._scrape_darwinbox_jobs(driver)
+                if jobs:
+                    logger.info(f"DarwinBox v2 portal returned {len(jobs)} jobs")
+                    return jobs
+                else:
+                    logger.info("DarwinBox v2 portal loaded but no job tiles found")
+            else:
+                logger.info("DarwinBox v2 portal has no content or is not yet active")
+
+            # --- Strategy 1b: DarwinBox v1 table portal ---
+            logger.info(f"Trying DarwinBox v1 portal: {self.darwinbox_v1_url}")
+            driver.get(self.darwinbox_v1_url)
+            time.sleep(15)
+
+            body_text = driver.find_element(By.TAG_NAME, 'body').text.strip()
+            logger.info(f"DarwinBox v1 page body length: {len(body_text)}")
+
+            if body_text and body_text != '-' and len(body_text) > 20:
+                jobs = self._scrape_darwinbox_v1_table(driver, max_pages)
+                if jobs:
+                    logger.info(f"DarwinBox v1 portal returned {len(jobs)} jobs")
+                    return jobs
+                else:
+                    logger.info("DarwinBox v1 portal loaded but no job rows found")
+            else:
+                logger.info("DarwinBox v1 portal has no content or is not yet active")
+
+            # --- Strategy 2: Legacy PeopleStrong portal ---
+            logger.info(f"Falling back to PeopleStrong portal: {self.peoplestrong_url}")
+            driver.get(self.peoplestrong_url)
+            time.sleep(15)
+
             body_text = driver.execute_script(
                 "return (document.body.innerText || '').toLowerCase()"
             )
             if 'no jobs available' in body_text or 'no openings' in body_text:
-                logger.info("Site reports no jobs available at this time")
+                logger.info("PeopleStrong portal reports no jobs available at this time")
                 return jobs
 
-            # Scroll to load all content
+            # Scroll to load content
             for i in range(5):
                 driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
                 time.sleep(2)
             driver.execute_script("window.scrollTo(0, 0);")
             time.sleep(2)
 
-            # Try to load more jobs if there's a "Load More" or "Show More" button
+            # Try to load more jobs
             for _ in range(max_pages):
                 try:
                     load_more = driver.find_elements(By.XPATH,
@@ -121,10 +174,8 @@ class StarHealthScraper:
                 except Exception:
                     break
 
-            # Extract jobs using JavaScript
-            jobs = self._extract_jobs_js(driver)
-
-            logger.info(f"Successfully scraped {len(jobs)} total jobs from {self.company_name}")
+            jobs = self._extract_peoplestrong_jobs(driver)
+            logger.info(f"PeopleStrong portal returned {len(jobs)} jobs")
 
         except Exception as e:
             logger.error(f"Error scraping {self.company_name}: {str(e)}")
@@ -135,14 +186,275 @@ class StarHealthScraper:
 
         return jobs
 
-    def _extract_jobs_js(self, driver):
-        """Extract jobs from PeopleStrong Angular page using JavaScript.
+    def _scrape_darwinbox_jobs(self, driver):
+        """Extract jobs from the DarwinBox v2 allJobs page using JavaScript."""
+        jobs = []
 
-        PeopleStrong Angular DOM structure uses:
-        - div.jobs-listing as the main container
-        - Job items inside with links to /job/jobdetail/...
-        - Location, department info in sibling/child elements
+        try:
+            js_jobs = driver.execute_script("""
+                var results = [];
+                var seen = {};
+
+                // DarwinBox v2 (/candidatev2/) uses job tiles and jobDetails links
+                var tiles = document.querySelectorAll('div.job-tile, div.jobs-section, div[class*="job-card"], div[class*="job-item"], div[class*="job-listing"]');
+                if (tiles.length === 0) {
+                    var jobLinks = document.querySelectorAll('a[href*="jobDetails"]');
+                    for (var i = 0; i < jobLinks.length; i++) {
+                        var link = jobLinks[i];
+                        var container = link.closest('div[class]') || link.parentElement;
+                        var text = (container.innerText || '').trim();
+                        var title = text.split('\\n')[0].trim();
+                        if (title.length >= 3 && title !== 'View and Apply' && title !== 'Apply') {
+                            results.push({
+                                title: title,
+                                url: link.href,
+                                location: '',
+                                experience: '',
+                                employment_type: ''
+                            });
+                        }
+                    }
+                    return results;
+                }
+
+                for (var i = 0; i < tiles.length; i++) {
+                    var tile = tiles[i];
+                    var text = (tile.innerText || '').trim();
+                    if (text.length < 5) continue;
+
+                    var titleEl = tile.querySelector('span.job-title, .title-section, h3, h4, [class*="title"]');
+                    var title = titleEl ? titleEl.innerText.trim() : text.split('\\n')[0].trim();
+
+                    var linkEl = tile.querySelector('a[href*="jobDetails"]');
+                    var url = linkEl ? linkEl.href : '';
+
+                    var lines = text.split('\\n');
+                    var location = '';
+                    var experience = '';
+                    var employment_type = '';
+                    for (var j = 0; j < lines.length; j++) {
+                        var line = lines[j].trim();
+                        if (line.includes('India') || line.includes('Haryana') || line.includes('Gujarat') ||
+                            line.includes('Maharashtra') || line.includes('Karnataka') || line.includes('Goa') ||
+                            line.includes('Delhi') || line.includes('Tamil Nadu') || line.includes('Rajasthan') ||
+                            line.includes('Odisha') || line.includes('Jharkhand') || line.includes('Chhattisgarh') ||
+                            line.includes('Andhra Pradesh') || line.includes('Telangana') || line.includes('Kerala') ||
+                            line.includes('Punjab') || line.includes('West Bengal') || line.includes('Uttar Pradesh') ||
+                            line.includes('Bengaluru') || line.includes('Bangalore') || line.includes('Mumbai') ||
+                            line.includes('Chennai') || line.includes('Hyderabad') || line.includes('Pune') ||
+                            line.includes('Gurgaon') || line.includes('Gurugram') || line.includes('Noida') ||
+                            line.includes('Kolkata') || line.includes('Manesar')) {
+                            location = line;
+                        }
+                        if (line.includes('Years') || line.includes('years')) {
+                            experience = line;
+                        }
+                        if (line === 'Permanent' || line === 'Contract' || line === 'Probation' || line === 'Intern' || line === 'Full Time' || line === 'Part Time') {
+                            employment_type = line;
+                        }
+                    }
+
+                    if (title.length >= 3 && title !== 'View and Apply') {
+                        results.push({
+                            title: title,
+                            url: url,
+                            location: location,
+                            experience: experience,
+                            employment_type: employment_type
+                        });
+                    }
+                }
+                return results;
+            """)
+
+            if js_jobs:
+                logger.info(f"DarwinBox extraction found {len(js_jobs)} jobs")
+                seen_urls = set()
+                for idx, job_data in enumerate(js_jobs):
+                    title = job_data.get('title', '')
+                    url = job_data.get('url', '')
+                    location = job_data.get('location', '')
+                    experience = job_data.get('experience', '')
+                    employment_type = job_data.get('employment_type', '')
+
+                    if not title:
+                        continue
+                    if url and url in seen_urls:
+                        continue
+                    if url:
+                        seen_urls.add(url)
+
+                    city, state, country = self.parse_location(location)
+
+                    job_id = f"starhealth_{idx}"
+                    if url and 'jobDetails/' in url:
+                        job_id = url.split('jobDetails/')[-1].split('?')[0]
+                    elif url:
+                        job_id = hashlib.md5(url.encode()).hexdigest()[:12]
+
+                    jobs.append({
+                        'external_id': self.generate_external_id(job_id, self.company_name),
+                        'company_name': self.company_name,
+                        'title': title,
+                        'description': '',
+                        'location': location,
+                        'city': city,
+                        'state': state,
+                        'country': country,
+                        'employment_type': employment_type,
+                        'department': '',
+                        'apply_url': url if url else self.url,
+                        'posted_date': '',
+                        'job_function': '',
+                        'experience_level': experience,
+                        'salary_range': '',
+                        'remote_type': '',
+                        'status': 'active'
+                    })
+            else:
+                logger.info("No job tiles found on DarwinBox page")
+
+        except Exception as e:
+            logger.error(f"DarwinBox extraction error: {str(e)}")
+
+        return jobs
+
+    def _scrape_darwinbox_v1_table(self, driver, max_pages):
+        """Extract jobs from the DarwinBox v1 server-rendered table layout.
+
+        DarwinBox v1 uses a table.db-table-one with rows containing cells for:
+        title (with link), department, location, employee type, posted date.
+        Pagination uses li.pagination-next.
         """
+        all_jobs = []
+
+        current_page = 1
+        while current_page <= max_pages:
+            logger.info(f"Scraping DarwinBox v1 page {current_page}")
+
+            try:
+                js_jobs = driver.execute_script("""
+                    var results = [];
+                    var seen = {};
+                    var table = document.querySelector('table.db-table-one');
+                    if (table) {
+                        var rows = table.querySelectorAll('tbody tr');
+                        for (var i = 0; i < rows.length; i++) {
+                            var cells = rows[i].querySelectorAll('td');
+                            if (cells.length < 4) continue;
+                            var titleCell = cells[0];
+                            var link = titleCell.querySelector('a[href*="/careers/"]');
+                            var title = (link ? link.innerText : titleCell.innerText).trim();
+                            var href = link ? link.href : '';
+                            if (!title || title.length < 3 || seen[href || title]) continue;
+                            seen[href || title] = true;
+                            var department = cells.length > 1 ? cells[1].innerText.trim() : '';
+                            var location = cells.length > 2 ? cells[2].innerText.trim() : '';
+                            var employeeType = cells.length > 3 ? cells[3].innerText.trim() : '';
+                            var postedDate = cells.length > 4 ? cells[4].innerText.trim() : '';
+                            results.push({
+                                title: title, url: href, department: department,
+                                location: location, employment_type: employeeType,
+                                posted_date: postedDate
+                            });
+                        }
+                    }
+                    if (results.length === 0) {
+                        var links = document.querySelectorAll('a[href*="/careers/"]');
+                        for (var i = 0; i < links.length; i++) {
+                            var a = links[i];
+                            var text = a.innerText.trim();
+                            var href = a.href;
+                            if (!text || text.length < 3 || text === 'apply here' ||
+                                text.includes('LOGIN') || text.includes('SIGN UP')) continue;
+                            if (seen[href]) continue;
+                            seen[href] = true;
+                            var row = a.closest('tr');
+                            var dept = '', loc = '', empType = '', postDate = '';
+                            if (row) {
+                                var cells = row.querySelectorAll('td');
+                                if (cells.length > 1) dept = cells[1].innerText.trim();
+                                if (cells.length > 2) loc = cells[2].innerText.trim();
+                                if (cells.length > 3) empType = cells[3].innerText.trim();
+                                if (cells.length > 4) postDate = cells[4].innerText.trim();
+                            }
+                            results.push({
+                                title: text, url: href, department: dept,
+                                location: loc, employment_type: empType,
+                                posted_date: postDate
+                            });
+                        }
+                    }
+                    return results;
+                """)
+
+                if js_jobs:
+                    logger.info(f"DarwinBox v1 found {len(js_jobs)} jobs on page {current_page}")
+                    seen_urls = {j['apply_url'] for j in all_jobs if j.get('apply_url')}
+                    for idx, jd in enumerate(js_jobs):
+                        title = jd.get('title', '')
+                        url = jd.get('url', '')
+                        if not title or (url and url in seen_urls):
+                            continue
+                        if url:
+                            seen_urls.add(url)
+
+                        location = jd.get('location', '')
+                        city, state, country = self.parse_location(location)
+                        job_id = f"starhealth_{len(all_jobs) + idx}"
+                        if url and '/careers/' in url:
+                            job_id = url.split('/careers/')[-1].split('?')[0].split('/')[0]
+                        elif url:
+                            job_id = hashlib.md5(url.encode()).hexdigest()[:12]
+
+                        all_jobs.append({
+                            'external_id': self.generate_external_id(job_id, self.company_name),
+                            'company_name': self.company_name,
+                            'title': title,
+                            'description': '',
+                            'location': location,
+                            'city': city,
+                            'state': state,
+                            'country': country,
+                            'employment_type': jd.get('employment_type', ''),
+                            'department': jd.get('department', ''),
+                            'apply_url': url if url else self.darwinbox_v1_url,
+                            'posted_date': jd.get('posted_date', ''),
+                            'job_function': jd.get('department', ''),
+                            'experience_level': '',
+                            'salary_range': '',
+                            'remote_type': '',
+                            'status': 'active'
+                        })
+                else:
+                    logger.info("No job rows found on current page")
+                    break
+
+            except Exception as e:
+                logger.error(f"DarwinBox v1 extraction error: {str(e)}")
+                break
+
+            # Navigate to next page
+            if current_page < max_pages:
+                try:
+                    next_btn = driver.find_elements(
+                        By.CSS_SELECTOR, 'li.pagination-next:not(.disabled) a.page-link'
+                    )
+                    if next_btn:
+                        driver.execute_script("arguments[0].click();", next_btn[0])
+                        logger.info("Clicked next page")
+                        time.sleep(5)
+                    else:
+                        break
+                except Exception:
+                    break
+
+            current_page += 1
+
+        return all_jobs
+
+    def _extract_peoplestrong_jobs(self, driver):
+        """Extract jobs from legacy PeopleStrong Angular page using JavaScript."""
         jobs = []
 
         try:
@@ -150,10 +462,9 @@ class StarHealthScraper:
                 var results = [];
                 var seen = {};
 
-                // Strategy 1: PeopleStrong Angular specific — jobs-listing container
+                // Strategy 1: PeopleStrong Angular — jobs-listing container
                 var container = document.querySelector('div.jobs-listing');
                 if (container) {
-                    // Find all job item links within the listing
                     var jobLinks = container.querySelectorAll('a[href*="/job/"]');
                     for (var i = 0; i < jobLinks.length; i++) {
                         var link = jobLinks[i];
@@ -174,60 +485,7 @@ class StarHealthScraper:
                     }
                 }
 
-                // Strategy 2: Job cards with class containing 'job'
-                if (results.length === 0) {
-                    var selectors = [
-                        'div.job-card', 'div[class*="job-card"]', 'div[class*="jobCard"]',
-                        'div[class*="job-list"]', 'div[class*="jobList"]',
-                        'li[class*="job"]', 'div.card[class*="job"]',
-                        'div[class*="position"]', 'div[class*="opening"]',
-                        'div[class*="vacancy"]'
-                    ];
-
-                    for (var s = 0; s < selectors.length; s++) {
-                        var cards = document.querySelectorAll(selectors[s]);
-                        if (cards.length > 0) {
-                            for (var i = 0; i < cards.length; i++) {
-                                var card = cards[i];
-                                var title = '';
-                                var href = '';
-                                var location = '';
-                                var department = '';
-
-                                var heading = card.querySelector('h1, h2, h3, h4, h5, a[href*="/job/"]');
-                                if (heading) {
-                                    title = heading.innerText.trim().split('\\n')[0].trim();
-                                    if (heading.tagName === 'A') href = heading.href;
-                                }
-                                if (!title) {
-                                    var firstLink = card.querySelector('a');
-                                    if (firstLink) {
-                                        title = firstLink.innerText.trim().split('\\n')[0].trim();
-                                        href = firstLink.href;
-                                    }
-                                }
-                                if (!href) {
-                                    var jobLink = card.querySelector('a[href*="/job/"], a[href*="jobdetail"], a[href*="job-detail"]');
-                                    if (jobLink) href = jobLink.href;
-                                }
-
-                                var locEl = card.querySelector('[class*="location"], [class*="Location"], [data-field="location"]');
-                                if (locEl) location = locEl.innerText.trim();
-
-                                var deptEl = card.querySelector('[class*="department"], [class*="Department"], [class*="category"], [data-field="department"]');
-                                if (deptEl) department = deptEl.innerText.trim();
-
-                                if (title && title.length > 2 && !seen[title + href]) {
-                                    seen[title + href] = true;
-                                    results.push({title: title, href: href, location: location, department: department});
-                                }
-                            }
-                            if (results.length > 0) break;
-                        }
-                    }
-                }
-
-                // Strategy 3: Links with job-related hrefs (fallback)
+                // Strategy 2: Generic job-related links
                 if (results.length === 0) {
                     var links = document.querySelectorAll('a[href*="/job/"], a[href*="jobdetail"], a[href*="job-detail"]');
                     for (var i = 0; i < links.length; i++) {
@@ -254,7 +512,7 @@ class StarHealthScraper:
             """)
 
             if job_data:
-                logger.info(f"JS extraction found {len(job_data)} jobs")
+                logger.info(f"PeopleStrong extraction found {len(job_data)} jobs")
                 for idx, jd in enumerate(job_data):
                     title = jd.get('title', '')
                     href = jd.get('href', '')
@@ -278,7 +536,7 @@ class StarHealthScraper:
                         'country': country,
                         'employment_type': '',
                         'department': department,
-                        'apply_url': href if href else self.url,
+                        'apply_url': href if href else self.peoplestrong_url,
                         'posted_date': '',
                         'job_function': department,
                         'experience_level': '',
@@ -287,9 +545,9 @@ class StarHealthScraper:
                         'status': 'active'
                     })
             else:
-                logger.info("No job data found on page (site may have no open positions)")
+                logger.info("No job data found on PeopleStrong page")
         except Exception as e:
-            logger.error(f"JS extraction failed: {e}")
+            logger.error(f"PeopleStrong extraction failed: {e}")
 
         return jobs
 

@@ -1,4 +1,4 @@
-# STATUS: BLOCKED - Cloudflare WAF on careers.loreal.com (needs undetected-chromedriver) (tested 2026-02-22)
+# NOTE: careers.loreal.com uses Cloudflare WAF - may require undetected-chromedriver
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait

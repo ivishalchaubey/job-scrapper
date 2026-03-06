@@ -1,4 +1,4 @@
-# STATUS: DEAD - TurboHire page (britannia.turbohire.co) shows "Page Not Found" (tested 2026-02-22)
+# Fixed: Stay on careerpage URL, do not navigate to /jobs (which returns 404)
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -22,7 +22,7 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 class BritanniaScraper:
     def __init__(self):
         self.company_name = 'Britannia Industries'
-        self.url = 'https://britannia.turbohire.co/'
+        self.url = 'https://britannia.turbohire.co/careerpage/c143932d-0df7-4856-9dc5-0a9f1ca26dc5'
         self.base_url = 'https://britannia.turbohire.co'
 
     def setup_driver(self):
@@ -63,45 +63,34 @@ class BritanniaScraper:
             driver = self.setup_driver()
             logger.info(f"Starting {self.company_name} scraping from {self.url}")
             driver.get(self.url)
-            time.sleep(12)
 
-            # TurboHire landing page shows department categories.
-            # We need to click "View All Jobs" or similar link to get to the jobs listing.
-            clicked = False
-            view_all_selectors = [
-                (By.XPATH, '//a[contains(translate(text(),"ABCDEFGHIJKLMNOPQRSTUVWXYZ","abcdefghijklmnopqrstuvwxyz"),"view all jobs")]'),
-                (By.XPATH, '//button[contains(translate(text(),"ABCDEFGHIJKLMNOPQRSTUVWXYZ","abcdefghijklmnopqrstuvwxyz"),"view all jobs")]'),
-                (By.XPATH, '//a[contains(translate(text(),"ABCDEFGHIJKLMNOPQRSTUVWXYZ","abcdefghijklmnopqrstuvwxyz"),"view all")]'),
-                (By.XPATH, '//a[contains(translate(text(),"ABCDEFGHIJKLMNOPQRSTUVWXYZ","abcdefghijklmnopqrstuvwxyz"),"all jobs")]'),
-                (By.XPATH, '//a[contains(translate(text(),"ABCDEFGHIJKLMNOPQRSTUVWXYZ","abcdefghijklmnopqrstuvwxyz"),"all openings")]'),
-                (By.XPATH, '//a[contains(translate(text(),"ABCDEFGHIJKLMNOPQRSTUVWXYZ","abcdefghijklmnopqrstuvwxyz"),"see all")]'),
-                (By.CSS_SELECTOR, 'a[href*="/jobs"]'),
-                (By.CSS_SELECTOR, 'a[href*="/openings"]'),
-                (By.CSS_SELECTOR, 'a[href*="/all-jobs"]'),
-            ]
-            for sel_type, sel_val in view_all_selectors:
-                try:
-                    btn = driver.find_element(sel_type, sel_val)
-                    if btn.is_displayed():
-                        logger.info(f"Found 'View All Jobs' button: {btn.text.strip()}")
-                        driver.execute_script("arguments[0].click();", btn)
-                        clicked = True
-                        break
-                except:
-                    continue
+            # Wait for TurboHire SPA to fully render
+            logger.info("Waiting for TurboHire SPA to render...")
+            time.sleep(15)
 
-            if clicked:
-                logger.info("Clicked 'View All Jobs', waiting for jobs listing to load...")
-                time.sleep(8)
-            else:
-                # Try navigating directly to /jobs path
-                logger.info("No 'View All Jobs' button found, trying direct /jobs path")
-                driver.get(f"{self.base_url}/jobs")
-                time.sleep(8)
+            logger.info(f"Current URL after load: {driver.current_url}")
 
-            # Scroll to trigger lazy loading
-            for _ in range(5):
-                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            # Scroll to trigger lazy loading of all content on the careerpage
+            for i in range(5):
+                driver.execute_script("window.scrollTo(0, document.body.scrollHeight * %s);" % str((i + 1) / 5))
+                time.sleep(2)
+            driver.execute_script("window.scrollTo(0, 0);")
+            time.sleep(2)
+
+            # TurboHire career pages often show department categories that need
+            # to be clicked/expanded to reveal individual job listings.
+            # Try clicking all expandable department sections.
+            self._expand_all_departments(driver)
+            time.sleep(3)
+
+            # Try clicking any "View All Jobs" / "View All" / "See All" buttons
+            # that stay on the same page (not navigation links).
+            self._click_view_all_buttons(driver)
+            time.sleep(3)
+
+            # Scroll again after expanding to load any newly revealed content
+            for i in range(3):
+                driver.execute_script("window.scrollTo(0, document.body.scrollHeight * %s);" % str((i + 1) / 3))
                 time.sleep(2)
             driver.execute_script("window.scrollTo(0, 0);")
             time.sleep(2)
@@ -125,6 +114,99 @@ class BritanniaScraper:
                 driver.quit()
         return all_jobs
 
+    def _expand_all_departments(self, driver):
+        """Click on department sections/categories to expand job listings within them."""
+        try:
+            expanded_count = driver.execute_script("""
+                var count = 0;
+
+                // Strategy 1: Click department/category cards or sections
+                var deptSelectors = [
+                    '[class*="department"]', '[class*="Department"]',
+                    '[class*="category"]', '[class*="Category"]',
+                    '[class*="team-card"]', '[class*="teamCard"]',
+                    '[class*="dept"]', '[class*="Dept"]',
+                    '[class*="section-card"]', '[class*="sectionCard"]',
+                    '[class*="group-card"]', '[class*="groupCard"]'
+                ];
+
+                for (var s = 0; s < deptSelectors.length; s++) {
+                    var elements = document.querySelectorAll(deptSelectors[s]);
+                    for (var i = 0; i < elements.length; i++) {
+                        var el = elements[i];
+                        if (el.offsetParent !== null) {  // is visible
+                            try { el.click(); count++; } catch(e) {}
+                        }
+                    }
+                    if (count > 0) break;
+                }
+
+                // Strategy 2: Click accordion/expandable headers
+                if (count === 0) {
+                    var accordionSelectors = [
+                        '[class*="accordion"]', '[class*="Accordion"]',
+                        '[class*="expand"]', '[class*="Expand"]',
+                        '[class*="collapse"]', '[class*="Collapse"]',
+                        '[role="button"]', '[data-toggle]',
+                        '[class*="header"] [class*="arrow"]',
+                        '[class*="header"] [class*="chevron"]'
+                    ];
+                    for (var s = 0; s < accordionSelectors.length; s++) {
+                        var elements = document.querySelectorAll(accordionSelectors[s]);
+                        for (var i = 0; i < elements.length; i++) {
+                            var el = elements[i];
+                            if (el.offsetParent !== null) {
+                                try { el.click(); count++; } catch(e) {}
+                            }
+                        }
+                        if (count > 0) break;
+                    }
+                }
+
+                return count;
+            """)
+            if expanded_count:
+                logger.info(f"Expanded {expanded_count} department sections")
+            else:
+                logger.info("No department sections found to expand")
+        except Exception as e:
+            logger.warning(f"Error expanding departments: {str(e)}")
+
+    def _click_view_all_buttons(self, driver):
+        """Click 'View All Jobs' / 'View All' type buttons that stay on-page (not navigating away)."""
+        try:
+            clicked = driver.execute_script("""
+                var count = 0;
+                var buttons = document.querySelectorAll('button, a, span, div');
+                for (var i = 0; i < buttons.length; i++) {
+                    var el = buttons[i];
+                    var text = (el.innerText || '').trim().toLowerCase();
+                    // Only click in-page buttons, skip links that would navigate to a different URL
+                    if (el.tagName === 'A') {
+                        var href = (el.getAttribute('href') || '').toLowerCase();
+                        // Skip links that navigate to separate pages (e.g. /jobs, /openings)
+                        if (href && href !== '#' && href !== 'javascript:void(0)' && !href.startsWith('javascript:')) {
+                            continue;
+                        }
+                    }
+                    if (text === 'view all jobs' || text === 'view all' ||
+                        text === 'see all jobs' || text === 'see all' ||
+                        text === 'all jobs' || text === 'all openings' ||
+                        text === 'view all openings' || text === 'show all' ||
+                        text === 'view more' || text === 'show more jobs' ||
+                        text === 'load all') {
+                        if (el.offsetParent !== null) {
+                            try { el.click(); count++; } catch(e) {}
+                        }
+                    }
+                }
+                return count;
+            """)
+            if clicked:
+                logger.info(f"Clicked {clicked} 'View All' type buttons on the page")
+        except Exception as e:
+            logger.warning(f"Error clicking view-all buttons: {str(e)}")
+
     def _extract_jobs(self, driver):
         jobs = []
 
@@ -141,28 +223,45 @@ class BritanniaScraper:
                 var seen = {};
 
                 // Strategy 1: TurboHire specific - opening cards / job cards
-                var cards = document.querySelectorAll('.opening-card, .job-card, [class*="opening-card"], [class*="openingCard"]');
-                if (cards.length === 0) cards = document.querySelectorAll('[class*="job-card"], [class*="jobCard"]');
-                if (cards.length === 0) cards = document.querySelectorAll('[class*="job-listing"], [class*="job-item"]');
-                if (cards.length === 0) cards = document.querySelectorAll('div[class*="card"]');
+                var cards = document.querySelectorAll(
+                    '.opening-card, .job-card, [class*="opening-card"], [class*="openingCard"], ' +
+                    '[class*="job-card"], [class*="jobCard"], [class*="job-listing"], [class*="job-item"], ' +
+                    '[class*="position-card"], [class*="positionCard"], [class*="career-card"], [class*="careerCard"], ' +
+                    '[class*="requisition"], [class*="vacancy"]'
+                );
 
-                // Filter cards: only those containing a link with job-like path
-                var filteredCards = [];
-                for (var i = 0; i < cards.length; i++) {
-                    var c = cards[i];
-                    var hasJobLink = c.querySelector('a[href*="/jobs/"], a[href*="/job/"], a[href*="/openings/"], a[href*="/opening/"]');
-                    if (hasJobLink) filteredCards.push(c);
+                // If no specific job cards found, try generic cards
+                if (cards.length === 0) {
+                    cards = document.querySelectorAll('div[class*="card"]');
+                    // Filter to only cards that seem to contain job info
+                    var filteredCards = [];
+                    for (var i = 0; i < cards.length; i++) {
+                        var c = cards[i];
+                        var text = (c.innerText || '').trim();
+                        // Must have reasonable content length and contain a link or job-like text
+                        if (text.length > 10 && text.length < 500) {
+                            var hasLink = c.querySelector('a[href]');
+                            var hasJobKeyword = /manager|engineer|analyst|executive|officer|lead|head|specialist|associate|coordinator|developer|intern|trainee|supervisor|director|senior|junior|designer|consultant|advisor/i.test(text);
+                            if (hasLink || hasJobKeyword) {
+                                filteredCards.push(c);
+                            }
+                        }
+                    }
+                    if (filteredCards.length > 0) cards = filteredCards;
                 }
-                if (filteredCards.length > 0) cards = filteredCards;
 
                 for (var i = 0; i < cards.length; i++) {
                     var card = cards[i];
                     var titleEl = card.querySelector('h2, h3, h4, h5, .job-title, [class*="job-title"], [class*="title"], [class*="designation"], [class*="role-name"]');
                     var locEl = card.querySelector('[class*="location"], [class*="Location"], [class*="city"]');
-                    var linkEl = card.querySelector('a[href*="/jobs/"], a[href*="/job/"], a[href*="/openings/"], a[href*="/opening/"], a[href]');
+                    var linkEl = card.querySelector('a[href]');
 
                     var title = titleEl ? titleEl.innerText.trim().split('\\n')[0] : '';
                     if (!title && linkEl) title = linkEl.innerText.trim().split('\\n')[0];
+                    if (!title) {
+                        var cardText = card.innerText.trim();
+                        if (cardText) title = cardText.split('\\n')[0].trim();
+                    }
                     var location = locEl ? locEl.innerText.trim() : '';
                     var href = linkEl ? linkEl.href : '';
 
@@ -176,9 +275,12 @@ class BritanniaScraper:
                     }
                 }
 
-                // Strategy 2: Direct job links (TurboHire uses /jobs/ path typically)
+                // Strategy 2: Direct job links (TurboHire may use /jobs/, /job/, /openings/, or query params like jobId)
                 if (results.length === 0) {
-                    var jobLinks = document.querySelectorAll('a[href*="/jobs/"], a[href*="/job/"], a[href*="/openings/"], a[href*="/opening/"]');
+                    var jobLinks = document.querySelectorAll(
+                        'a[href*="/jobs/"], a[href*="/job/"], a[href*="/openings/"], a[href*="/opening/"], ' +
+                        'a[href*="jobId"], a[href*="openingId"], a[href*="requisitionId"]'
+                    );
                     for (var i = 0; i < jobLinks.length; i++) {
                         var el = jobLinks[i];
                         var title = (el.innerText || '').trim().split('\\n')[0].trim();
@@ -200,7 +302,7 @@ class BritanniaScraper:
                 // Strategy 3: Look for any links that look like job postings by text content
                 if (results.length === 0) {
                     var allLinks = document.querySelectorAll('a[href]');
-                    var jobKeywords = ['manager', 'engineer', 'analyst', 'executive', 'officer', 'lead', 'head', 'specialist', 'associate', 'coordinator', 'developer', 'intern', 'trainee', 'supervisor', 'director', 'senior', 'junior'];
+                    var jobKeywords = ['manager', 'engineer', 'analyst', 'executive', 'officer', 'lead', 'head', 'specialist', 'associate', 'coordinator', 'developer', 'intern', 'trainee', 'supervisor', 'director', 'senior', 'junior', 'designer', 'consultant', 'advisor', 'relationship'];
                     for (var i = 0; i < allLinks.length; i++) {
                         var el = allLinks[i];
                         var text = (el.innerText || '').trim().split('\\n')[0].trim();
@@ -231,7 +333,61 @@ class BritanniaScraper:
                     }
                 }
 
-                // Strategy 4: TurboHire department sections - extract job counts and individual jobs
+                // Strategy 4: Look for elements with job title keywords in text content
+                // (for cases where the SPA renders jobs as plain divs/spans without links)
+                if (results.length === 0) {
+                    var allElements = document.querySelectorAll('div, li, article, span, p, h2, h3, h4, h5, h6');
+                    var jobKeywords2 = ['manager', 'engineer', 'analyst', 'executive', 'officer', 'lead', 'head', 'specialist', 'associate', 'coordinator', 'developer', 'intern', 'trainee', 'supervisor', 'director', 'senior', 'junior', 'designer', 'consultant', 'advisor'];
+                    for (var i = 0; i < allElements.length; i++) {
+                        var el = allElements[i];
+                        if (el.children.length > 5) continue;  // Skip containers
+                        var elText = (el.innerText || '').trim();
+                        if (elText.length < 5 || elText.length > 300) continue;
+
+                        var elTitle = elText.split('\\n')[0].trim();
+                        if (elTitle.length < 3 || elTitle.length > 200 || seen[elTitle]) continue;
+
+                        var elLower = elTitle.toLowerCase();
+                        var isJobTitle = false;
+                        for (var k = 0; k < jobKeywords2.length; k++) {
+                            if (elLower.includes(jobKeywords2[k])) { isJobTitle = true; break; }
+                        }
+                        if (!isJobTitle) continue;
+
+                        // Skip navigation/UI text
+                        var skipWords = ['home', 'about', 'contact', 'login', 'sign', 'filter', 'search', 'sort', 'showing', 'privacy', 'terms', 'cookie'];
+                        var isSkip = false;
+                        for (var s = 0; s < skipWords.length; s++) {
+                            if (elLower.includes(skipWords[s])) { isSkip = true; break; }
+                        }
+                        if (isSkip) continue;
+
+                        seen[elTitle] = true;
+                        var elLink = el.querySelector('a[href]') || el.closest('a[href]');
+                        var elUrl = elLink ? elLink.href : '';
+
+                        var elLoc = '';
+                        var elLines = elText.split('\\n').map(function(l) { return l.trim(); }).filter(function(l) { return l.length > 0; });
+                        for (var j = 1; j < elLines.length; j++) {
+                            if (/mumbai|delhi|bangalore|bengaluru|pune|hyderabad|chennai|kolkata|india|noida|gurgaon|gurugram|remote|ahmedabad|jaipur|lucknow|indore|bhopal/i.test(elLines[j])) {
+                                elLoc = elLines[j];
+                                break;
+                            }
+                        }
+
+                        var elDept = '';
+                        for (var j = 1; j < elLines.length; j++) {
+                            if (/department|division|function/i.test(elLines[j])) {
+                                elDept = elLines[j].replace(/department|division|function/gi, '').replace(/[:\\-]/g, '').trim();
+                                break;
+                            }
+                        }
+
+                        results.push({title: elTitle, url: elUrl, location: elLoc, date: '', department: elDept});
+                    }
+                }
+
+                // Strategy 5: TurboHire department sections - extract job counts and individual jobs
                 if (results.length === 0) {
                     var sections = document.querySelectorAll('[class*="department"], [class*="category"], [class*="section"]');
                     for (var s = 0; s < sections.length; s++) {
@@ -281,6 +437,8 @@ class BritanniaScraper:
                         parts = url.split('/job/')[-1].split('/')
                         if parts[0]:
                             job_id = parts[0]
+                    elif url and 'jobId=' in url:
+                        job_id = url.split('jobId=')[-1].split('&')[0]
 
                     loc_data = self.parse_location(location)
                     jobs.append({
@@ -317,7 +475,7 @@ class BritanniaScraper:
             driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
             time.sleep(2)
 
-            # TurboHire pagination selectors
+            # TurboHire pagination / load-more selectors
             for sel_type, sel_val in [
                 (By.CSS_SELECTOR, 'button[class*="load-more"]'),
                 (By.CSS_SELECTOR, '[class*="load-more"] button'),

@@ -16,11 +16,19 @@ logger = setup_logger('marutisuzuki_scraper')
 
 CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0.7559.133_fresh/chromedriver-mac-arm64/chromedriver'
 
+# The old URL /corporate/career/current-openings returns 404 (page was removed).
+# Maruti Suzuki now uses /corporate/careers as the main careers page, with
+# sub-pages for workmen hiring and external links to Param AI for professional roles.
+CAREERS_URL = 'https://www.marutisuzuki.com/corporate/careers'
+WORKMEN_HIRING_URL = 'https://www.marutisuzuki.com/corporate/careers/join-us/workmen-hiring'
+PARAM_AI_URL = 'https://maruti.app.param.ai/jobs/'
+
+
 class MarutiSuzukiScraper:
     def __init__(self):
         self.company_name = 'Maruti Suzuki'
-        self.url = 'https://www.marutisuzuki.com/corporate/career/current-openings'
-    
+        self.url = CAREERS_URL
+
     def setup_driver(self):
         """Set up Chrome driver with options"""
         chrome_options = Options()
@@ -34,546 +42,460 @@ class MarutiSuzukiScraper:
         chrome_options.add_argument('--disable-blink-features=AutomationControlled')
         chrome_options.add_experimental_option('useAutomationExtension', False)
         chrome_options.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
-        
+
         try:
-            # Install and get the correct chromedriver path
-            driver_path = CHROMEDRIVER_PATH
-            logger.info(f"ChromeDriver installed at: {driver_path}")
-            
-            # Fix for macOS ARM - ensure we use the actual chromedriver binary
-            if 'chromedriver-mac-arm64' in driver_path and not driver_path.endswith('chromedriver'):
-                import os
-                driver_dir = os.path.dirname(driver_path)
-                actual_driver = os.path.join(driver_dir, 'chromedriver')
-                if os.path.exists(actual_driver):
-                    driver_path = actual_driver
-                    logger.info(f"Using corrected path: {driver_path}")
-            
-            service = Service(driver_path)
-            driver = webdriver.Chrome(service=service, options=chrome_options)
-            driver.execute_cdp_cmd('Network.setUserAgentOverride', {"userAgent": 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'})
-            driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-            return driver
-        except Exception as e:
-            logger.error(f"ChromeDriver setup failed: {str(e)}")
-            # Fallback: try without service specification
-            logger.info("Attempting fallback driver setup...")
             driver = webdriver.Chrome(options=chrome_options)
-            driver.execute_cdp_cmd('Network.setUserAgentOverride', {"userAgent": 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'})
-            driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-            return driver
-    
+        except Exception as e:
+            logger.warning(f"Auto-detect failed: {str(e)}, trying explicit path")
+            service = Service(CHROMEDRIVER_PATH)
+            driver = webdriver.Chrome(service=service, options=chrome_options)
+
+        driver.execute_cdp_cmd('Network.setUserAgentOverride', {
+            "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+        })
+        driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+        return driver
+
     def generate_external_id(self, job_id, company):
         """Generate stable external ID"""
         unique_string = f"{company}_{job_id}"
         return hashlib.md5(unique_string.encode()).hexdigest()
-    
+
     def scrape(self, max_pages=MAX_PAGES_TO_SCRAPE):
-        """Scrape jobs from Maruti Suzuki careers page with pagination support"""
-        jobs = []
+        """Scrape jobs from all Maruti Suzuki career sources."""
+        all_jobs = []
         driver = None
-        
+
         try:
             logger.info(f"Starting scrape for {self.company_name}")
             driver = self.setup_driver()
-            driver.get(self.url)
-            
-            # Wait for page to load - corporate SPA needs generous wait
-            wait = WebDriverWait(driver, 5)
-            time.sleep(15)
 
-            # Scroll to trigger lazy loading
-            for _ in range(5):
-                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                time.sleep(2)
-            driver.execute_script("window.scrollTo(0, 0);")
-            time.sleep(2)
+            # 1. Scrape the workmen-hiring page (Apprentice + Flexi Workmen positions)
+            workmen_jobs = self._scrape_workmen_hiring(driver)
+            all_jobs.extend(workmen_jobs)
+            logger.info(f"Workmen hiring page: {len(workmen_jobs)} jobs")
 
-            # Check for iframes
-            try:
-                iframes = driver.find_elements(By.TAG_NAME, 'iframe')
-                for iframe in iframes:
-                    src = iframe.get_attribute('src') or ''
-                    if 'job' in src.lower() or 'career' in src.lower() or 'opening' in src.lower():
-                        logger.info(f"Switching to iframe: {src}")
-                        driver.switch_to.frame(iframe)
-                        time.sleep(5)
-                        break
-            except Exception as e:
-                logger.warning(f"Iframe check failed: {str(e)}")
-            
-            current_page = 1
-            
-            while current_page <= max_pages:
-                logger.info(f"Scraping page {current_page} of {max_pages}")
-                
-                # Scrape current page
-                page_jobs = self._scrape_page(driver, wait)
-                jobs.extend(page_jobs)
-                
-                logger.info(f"Scraped {len(page_jobs)} jobs from page {current_page}")
-                
-                # Try to navigate to next page
-                if current_page < max_pages:
-                    if not self._go_to_next_page(driver, current_page):
-                        logger.info("No more pages available")
-                        break
-                    time.sleep(3)
-                
-                current_page += 1
-            
-            logger.info(f"Successfully scraped {len(jobs)} total jobs from {self.company_name}")
-            
+            # 2. Scrape the main careers page overlay cards
+            #    (Freshers, Engineering Hiring, Experienced Professionals)
+            careers_jobs = self._scrape_careers_page(driver)
+            all_jobs.extend(careers_jobs)
+            logger.info(f"Main careers page: {len(careers_jobs)} jobs")
+
+            # 3. Try Param AI for any active professional job openings
+            param_jobs = self._scrape_param_ai(driver)
+            all_jobs.extend(param_jobs)
+            logger.info(f"Param AI: {len(param_jobs)} jobs")
+
+            # Deduplicate by external_id
+            seen = set()
+            unique_jobs = []
+            for job in all_jobs:
+                if job['external_id'] not in seen:
+                    seen.add(job['external_id'])
+                    unique_jobs.append(job)
+            all_jobs = unique_jobs
+
+            logger.info(f"Successfully scraped {len(all_jobs)} total unique jobs from {self.company_name}")
+
         except Exception as e:
             logger.error(f"Error scraping {self.company_name}: {str(e)}")
-            raise
-        
+
         finally:
             if driver:
                 driver.quit()
-        
-        return jobs
-    
-    def _go_to_next_page(self, driver, current_page):
-        """Navigate to the next page"""
-        try:
-            next_page_num = current_page + 1
-            
-            # Scroll to pagination area
-            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(1)
-            
-            # Try to find and click next page button
-            next_page_selectors = [
-                (By.XPATH, f'//a[text()="{next_page_num}"]'),
-                (By.XPATH, f'//button[text()="{next_page_num}"]'),
-                (By.CSS_SELECTOR, f'a[aria-label="Page {next_page_num}"]'),
-                (By.XPATH, '//a[@aria-label="Next page"]'),
-                (By.XPATH, '//button[contains(text(), "Next")]'),
-                (By.CSS_SELECTOR, 'a.pagination-next'),
-            ]
-            
-            for selector_type, selector_value in next_page_selectors:
-                try:
-                    next_button = driver.find_element(selector_type, selector_value)
-                    driver.execute_script("arguments[0].scrollIntoView();", next_button)
-                    time.sleep(0.5)
-                    next_button.click()
-                    logger.info(f"Clicked next page button")
-                    return True
-                except:
-                    continue
-            
-            logger.warning("Could not find next page button")
-            return False
-                
-        except Exception as e:
-            logger.error(f"Error navigating to next page: {str(e)}")
-            return False
-    
-    def _scrape_page(self, driver, wait):
-        """Scrape jobs from current page using JS-first extraction"""
+
+        return all_jobs
+
+    # ------------------------------------------------------------------
+    # Workmen Hiring (ITI) page
+    # ------------------------------------------------------------------
+    def _scrape_workmen_hiring(self, driver):
+        """Scrape ITI Apprentice and Flexi Workmen positions."""
         jobs = []
-        time.sleep(3)
-
-        # Scroll to load dynamic content
-        for scroll_i in range(5):
-            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(2)
-        driver.execute_script("window.scrollTo(0, 0);")
-        time.sleep(2)
-
-        # Try to click on any "View All" or "Show More" buttons first
         try:
-            driver.execute_script("""
-                var buttons = document.querySelectorAll('button, a, span[role="button"]');
-                for (var i = 0; i < buttons.length; i++) {
-                    var text = (buttons[i].innerText || '').trim().toLowerCase();
-                    if (text.includes('view all') || text.includes('show all') || text.includes('show more') ||
-                        text.includes('load more') || text.includes('see all')) {
-                        buttons[i].click();
-                    }
-                }
-            """)
-            time.sleep(3)
-        except:
-            pass
+            logger.info(f"Navigating to workmen hiring: {WORKMEN_HIRING_URL}")
+            driver.get(WORKMEN_HIRING_URL)
+            time.sleep(10)
 
-        # Try expanding accordions/collapsibles
-        try:
-            driver.execute_script("""
-                var expandables = document.querySelectorAll('[data-toggle="collapse"], .accordion-header, .panel-heading, [aria-expanded="false"], button[class*="expand"], button[class*="toggle"]');
-                for (var i = 0; i < expandables.length; i++) {
-                    try { expandables[i].click(); } catch(e) {}
-                }
-            """)
-            time.sleep(2)
-        except:
-            pass
+            # The page has two tabs: Apprentice (#home) and Flexi Workmen (#menu1).
+            # Each tab has Overview, Selection Process, Eligibility panels.
+            positions = driver.execute_script("""
+                var positions = [];
 
-        # Maruti Suzuki corporate career page - JS-first comprehensive extraction
-        logger.info("Using JS-based comprehensive extraction for Maruti Suzuki")
-        try:
-            js_jobs = driver.execute_script("""
-                var results = [];
-                var seen = {};
-
-                // Strategy A: Look for job/opening cards/tiles
-                var cardSelectors = [
-                    'div[class*="job-card"]', 'div[class*="job-listing"]',
-                    'div[class*="career-card"]', 'div[class*="opening"]',
-                    'div[class*="vacancy"]', 'div[class*="position"]',
-                    'li[class*="job"]', 'li[class*="career"]', 'li[class*="opening"]',
-                    'article', 'div.card', 'div[class*="accordion"]',
-                    'div[class*="panel"]', 'div[class*="collapse"]',
-                    'tr[class*="job"]', 'tr[class*="data"]',
-                    'div[class*="listing"]', 'div[class*="result"]'
-                ];
-
-                for (var s = 0; s < cardSelectors.length; s++) {
-                    var cards = document.querySelectorAll(cardSelectors[s]);
-                    if (cards.length >= 2) {
-                        cards.forEach(function(card) {
-                            var text = (card.innerText || '').trim();
-                            if (text.length < 5 || text.length > 1000) return;
-                            var title = text.split('\n')[0].trim();
-                            if (title.length < 3 || title.length > 200) return;
-                            var link = card.querySelector('a[href]');
-                            var url = link ? link.href : '';
-                            if (link && link.innerText && link.innerText.trim().length > 3) {
-                                title = link.innerText.trim().split('\n')[0];
-                            }
-                            var key = title + '|' + url;
-                            if (seen[key]) return;
-                            seen[key] = true;
-
-                            var location = '';
-                            var lines = text.split('\n');
-                            for (var i = 1; i < lines.length; i++) {
-                                var line = lines[i].trim();
-                                if (line.match(/Gurgaon|Gurugram|Delhi|Manesar|Mumbai|India|Pune|Chennai|Bangalore/i)) {
-                                    location = line;
-                                    break;
+                // Helper: extract key-value pairs from overview text
+                function extractDetails(el) {
+                    var text = el ? el.innerText.trim() : '';
+                    var details = {};
+                    var lines = text.split('\\n').map(function(l) { return l.trim(); }).filter(Boolean);
+                    var keys = ['Location', 'Duration', 'Stipend', 'Salary', 'Other Benefits'];
+                    for (var i = 0; i < lines.length; i++) {
+                        for (var k = 0; k < keys.length; k++) {
+                            if (lines[i].toLowerCase().startsWith(keys[k].toLowerCase())) {
+                                // Value is on the next non-empty line
+                                for (var j = i+1; j < lines.length; j++) {
+                                    var val = lines[j].replace(/^["']|["']$/g, '').trim();
+                                    if (val && val.toLowerCase() !== lines[i].toLowerCase()) {
+                                        details[keys[k].toLowerCase()] = val;
+                                        break;
+                                    }
                                 }
                             }
-                            results.push({title: title, url: url, location: location, fullText: text});
-                        });
-                        if (results.length > 0) break;
+                        }
                     }
+                    details.fullText = text;
+                    return details;
                 }
 
-                // Strategy B: Find links with job-related patterns
-                if (results.length === 0) {
+                // Helper: extract trades from eligibility text
+                function extractTrades(el) {
+                    var text = el ? el.innerText.trim() : '';
+                    var tradesMatch = text.match(/Trades[\\s\\S]*?(?=Age|$)/i);
+                    return tradesMatch ? tradesMatch[0].replace(/^Trades\\s*/i, '').trim() : '';
+                }
+
+                // Tab 1: Apprentice (pane #home -> #Overview)
+                var overviewApp = document.querySelector('#Overview');
+                var eligApp = document.querySelector('#Eligibility');
+                if (overviewApp) {
+                    var d = extractDetails(overviewApp);
+                    positions.push({
+                        title: 'ITI Apprentice',
+                        category: 'Workmen Hiring (ITI)',
+                        location: d.location || 'Gurgaon / Manesar',
+                        duration: d.duration || '',
+                        salary: d.stipend || d.salary || '',
+                        benefits: d['other benefits'] || '',
+                        trades: extractTrades(eligApp),
+                        description: d.fullText || '',
+                        applyUrl: 'https://www.justjob.co.in/jobseeker/vitw.aspx'
+                    });
+                }
+
+                // Tab 2: Flexi Workmen (pane #menu1 -> #Overview1)
+                var overviewFlexi = document.querySelector('#Overview1');
+                var eligFlexi = document.querySelector('#Eligibility1');
+                if (overviewFlexi) {
+                    var d2 = extractDetails(overviewFlexi);
+                    positions.push({
+                        title: 'ITI Flexi Workmen',
+                        category: 'Workmen Hiring (ITI)',
+                        location: d2.location || 'Gurgaon / Manesar',
+                        duration: d2.duration || '',
+                        salary: d2.salary || d2.stipend || '',
+                        benefits: d2['other benefits'] || '',
+                        trades: extractTrades(eligFlexi),
+                        description: d2.fullText || '',
+                        applyUrl: 'https://www.justjob.co.in/jobseeker/vitw.aspx'
+                    });
+                }
+
+                return positions;
+            """)
+
+            if positions:
+                logger.info(f"Found {len(positions)} workmen hiring positions")
+                for pos in positions:
+                    title = pos.get('title', '').strip()
+                    if not title:
+                        continue
+                    location = pos.get('location', 'Gurgaon / Manesar')
+                    description = pos.get('description', '')
+                    trades = pos.get('trades', '')
+                    if trades:
+                        description = f"Trades: {trades}\n\n{description}"
+                    duration = pos.get('duration', '')
+                    if duration:
+                        description = f"Duration: {duration}\n{description}"
+
+                    job_id = hashlib.md5(title.encode()).hexdigest()[:12]
+                    city, state, country = self.parse_location(location)
+
+                    jobs.append({
+                        'external_id': self.generate_external_id(job_id, self.company_name),
+                        'company_name': self.company_name,
+                        'title': title,
+                        'description': description.strip()[:2000],
+                        'location': location,
+                        'city': city,
+                        'state': state,
+                        'country': country,
+                        'employment_type': 'Apprentice' if 'Apprentice' in title else 'Contract',
+                        'department': 'Manufacturing / ITI',
+                        'apply_url': pos.get('applyUrl', WORKMEN_HIRING_URL),
+                        'posted_date': '',
+                        'job_function': 'Workmen Hiring (ITI)',
+                        'experience_level': 'Entry Level / ITI',
+                        'salary_range': pos.get('salary', ''),
+                        'remote_type': 'On-site',
+                        'status': 'active',
+                    })
+            else:
+                logger.warning("No workmen hiring positions found on page")
+
+        except Exception as e:
+            logger.error(f"Error scraping workmen hiring: {str(e)}")
+
+        return jobs
+
+    # ------------------------------------------------------------------
+    # Main careers page (/corporate/careers)
+    # ------------------------------------------------------------------
+    def _scrape_careers_page(self, driver):
+        """Scrape hiring categories from the main careers page overlay cards."""
+        jobs = []
+        try:
+            logger.info(f"Navigating to main careers page: {CAREERS_URL}")
+            driver.get(CAREERS_URL)
+            time.sleep(10)
+
+            # Extract data from the overlay career windows (Freshers, Engineering
+            # Hiring, Experienced Professionals, Workmen Hiring).
+            # We skip "Workmen Hiring (ITI)" since we scrape it from its own page.
+            categories = driver.execute_script("""
+                var result = [];
+                var overlays = document.querySelectorAll('.overlay.careerwindow');
+                for (var i = 0; i < overlays.length; i++) {
+                    var overlay = overlays[i];
+                    var h2 = overlay.querySelector('h2');
+                    var title = h2 ? h2.innerText.trim() : '';
+                    if (!title) continue;
+
+                    // Skip workmen hiring -- scraped separately
+                    if (title.toLowerCase().includes('workmen')) continue;
+
+                    // Collect overview text
+                    var overview = '';
+                    var overviewPanes = overlay.querySelectorAll('.tab-pane');
+                    for (var j = 0; j < overviewPanes.length; j++) {
+                        var pText = overviewPanes[j].innerText.trim();
+                        if (pText.length > overview.length) overview = pText;
+                    }
+                    if (!overview) {
+                        overview = overlay.innerText.trim();
+                    }
+
+                    // Collect apply links
+                    var applyUrl = '';
+                    var links = overlay.querySelectorAll('a[href]');
+                    for (var k = 0; k < links.length; k++) {
+                        var href = links[k].href || '';
+                        var linkText = links[k].innerText.trim().toLowerCase();
+                        if (linkText.includes('apply') && href && !href.endsWith('#')) {
+                            applyUrl = href;
+                            break;
+                        }
+                    }
+                    if (!applyUrl) {
+                        // Use first external link
+                        for (var k = 0; k < links.length; k++) {
+                            var href = links[k].href || '';
+                            if (href && !href.includes('marutisuzuki.com') && !href.endsWith('#') && !href.includes('fraudulent')) {
+                                applyUrl = href;
+                                break;
+                            }
+                        }
+                    }
+
+                    result.push({
+                        title: title,
+                        overview: overview.substring(0, 2000),
+                        applyUrl: applyUrl
+                    });
+                }
+                return result;
+            """)
+
+            if categories:
+                logger.info(f"Found {len(categories)} career categories on main page")
+                for cat in categories:
+                    title = cat.get('title', '').strip()
+                    if not title:
+                        continue
+
+                    overview = cat.get('overview', '').strip()
+                    apply_url = cat.get('applyUrl', '') or CAREERS_URL
+
+                    # Determine employment type and department from the category
+                    emp_type = ''
+                    department = ''
+                    exp_level = ''
+                    if 'fresher' in title.lower():
+                        emp_type = 'Full-time'
+                        department = 'Campus Recruitment'
+                        exp_level = 'Entry Level'
+                    elif 'engineering' in title.lower():
+                        emp_type = 'Full-time'
+                        department = 'Engineering'
+                        exp_level = 'Entry Level'
+                    elif 'experienced' in title.lower():
+                        emp_type = 'Full-time'
+                        department = 'Various'
+                        exp_level = 'Experienced'
+
+                    job_id = hashlib.md5(title.encode()).hexdigest()[:12]
+
+                    jobs.append({
+                        'external_id': self.generate_external_id(job_id, self.company_name),
+                        'company_name': self.company_name,
+                        'title': f"Hiring: {title}",
+                        'description': overview[:2000],
+                        'location': 'Gurgaon / Manesar / Multiple Locations',
+                        'city': 'Gurgaon',
+                        'state': 'Haryana',
+                        'country': 'India',
+                        'employment_type': emp_type,
+                        'department': department,
+                        'apply_url': apply_url,
+                        'posted_date': '',
+                        'job_function': title,
+                        'experience_level': exp_level,
+                        'salary_range': '',
+                        'remote_type': 'On-site',
+                        'status': 'active',
+                    })
+            else:
+                logger.warning("No career categories found on main page")
+
+        except Exception as e:
+            logger.error(f"Error scraping careers page: {str(e)}")
+
+        return jobs
+
+    # ------------------------------------------------------------------
+    # Param AI jobs page (external platform for professional roles)
+    # ------------------------------------------------------------------
+    def _scrape_param_ai(self, driver):
+        """Scrape any active jobs from the Param AI platform."""
+        jobs = []
+        try:
+            logger.info(f"Navigating to Param AI: {PARAM_AI_URL}")
+            driver.get(PARAM_AI_URL)
+            time.sleep(10)
+
+            # Check if there are any job openings displayed
+            job_data = driver.execute_script("""
+                var result = [];
+                var body = document.body.innerText.trim();
+
+                // Check for "0 job openings" message
+                if (body.includes('0 job opening') || body.includes('No jobs')) {
+                    return result;
+                }
+
+                // Look for job cards/listings
+                var cards = document.querySelectorAll(
+                    '[class*="job-card"], [class*="job-listing"], [class*="opening"],' +
+                    ' article, .card, [class*="position"]'
+                );
+                for (var i = 0; i < cards.length; i++) {
+                    var card = cards[i];
+                    var text = card.innerText.trim();
+                    if (text.length < 10 || text.length > 1000) continue;
+                    var title = text.split('\\n')[0].trim();
+                    if (title.length < 3 || title.length > 200) continue;
+
+                    var link = card.querySelector('a[href]');
+                    var url = link ? link.href : '';
+                    if (link && link.innerText.trim().length > 3) {
+                        title = link.innerText.trim().split('\\n')[0];
+                    }
+
+                    var location = '';
+                    var lines = text.split('\\n');
+                    for (var j = 1; j < lines.length; j++) {
+                        var line = lines[j].trim();
+                        if (line.match(/Gurgaon|Gurugram|Delhi|Manesar|Mumbai|India|Pune|Chennai|Bangalore|Noida|Hyderabad/i)) {
+                            location = line;
+                            break;
+                        }
+                    }
+
+                    result.push({title: title, url: url, location: location, fullText: text});
+                }
+
+                // Also try links with job-related patterns
+                if (result.length === 0) {
                     document.querySelectorAll('a[href]').forEach(function(link) {
                         var text = (link.innerText || '').trim();
                         var href = link.href || '';
                         if (text.length < 3 || text.length > 200 || href.length < 10) return;
                         var lhref = href.toLowerCase();
-                        var ltext = text.toLowerCase();
-                        // Skip navigation links
-                        if (['home', 'about', 'contact', 'login', 'sign', 'privacy', 'terms',
-                             'cookie', 'blog', 'faq', 'menu', 'close', 'search', 'filter',
-                             'back', 'submit', 'read more', 'learn more', 'know more',
-                             'maruti suzuki', 'corporate', 'investor'].some(function(w) { return ltext === w; })) return;
-
                         if (lhref.includes('/job/') || lhref.includes('/jobs/') ||
-                            lhref.includes('/career') || lhref.includes('/opening') ||
-                            lhref.includes('/position') || lhref.includes('/vacancy') ||
-                            lhref.includes('/requisition') || lhref.includes('/apply') ||
-                            lhref.includes('workday') || lhref.includes('successfactors') ||
-                            lhref.includes('smartrecruiters') || lhref.includes('greenhouse')) {
-                            var key = text + '|' + href;
-                            if (seen[key]) return;
-                            seen[key] = true;
-                            results.push({title: text.split('\n')[0].trim(), url: href, location: '', fullText: text});
-                        }
-                    });
-                }
-
-                // Strategy C: Repeated sibling elements (job cards pattern)
-                if (results.length === 0) {
-                    var containers = document.querySelectorAll('div, ul, section, main');
-                    for (var c = 0; c < containers.length; c++) {
-                        var children = containers[c].children;
-                        if (children.length >= 3 && children.length <= 200) {
-                            var hasLinks = 0;
-                            var sameTag = true;
-                            var firstTag = children[0] ? children[0].tagName : '';
-                            for (var j = 0; j < Math.min(children.length, 5); j++) {
-                                if (children[j].tagName !== firstTag) sameTag = false;
-                                if (children[j].querySelector('a[href]')) hasLinks++;
-                            }
-                            if (sameTag && hasLinks >= 2 && children.length >= 3) {
-                                for (var k = 0; k < children.length; k++) {
-                                    var child = children[k];
-                                    var cText = (child.innerText || '').trim();
-                                    if (cText.length < 10 || cText.length > 500) continue;
-                                    var cTitle = cText.split('\n')[0].trim();
-                                    if (cTitle.length < 3) continue;
-                                    var cLink = child.querySelector('a[href]');
-                                    var cUrl = cLink ? cLink.href : '';
-                                    if (cLink && cLink.innerText) cTitle = cLink.innerText.trim().split('\n')[0];
-                                    var cKey = cTitle + '|' + cUrl;
-                                    if (seen[cKey]) continue;
-                                    seen[cKey] = true;
-                                    results.push({title: cTitle, url: cUrl, location: '', fullText: cText});
-                                }
-                                if (results.length >= 3) break;
-                            }
-                        }
-                    }
-                }
-
-                // Strategy D: Tables with job data
-                if (results.length === 0) {
-                    var tables = document.querySelectorAll('table');
-                    for (var t = 0; t < tables.length; t++) {
-                        var rows = tables[t].querySelectorAll('tr');
-                        if (rows.length >= 2) {
-                            for (var r = 1; r < rows.length; r++) {
-                                var rowText = (rows[r].innerText || '').trim();
-                                if (rowText.length < 10 || rowText.length > 500) continue;
-                                var rowTitle = rowText.split('\n')[0].trim();
-                                if (rowTitle.length < 3) continue;
-                                var rowLink = rows[r].querySelector('a[href]');
-                                var rowUrl = rowLink ? rowLink.href : '';
-                                if (rowLink && rowLink.innerText) rowTitle = rowLink.innerText.trim().split('\n')[0];
-                                var rKey = rowTitle + '|' + rowUrl;
-                                if (seen[rKey]) continue;
-                                seen[rKey] = true;
-                                var rowLoc = '';
-                                var rowLines = rowText.split('\n');
-                                for (var rl = 1; rl < rowLines.length; rl++) {
-                                    if (rowLines[rl].match(/Gurgaon|Gurugram|Delhi|Manesar|Mumbai|India/i)) {
-                                        rowLoc = rowLines[rl].trim();
-                                        break;
-                                    }
-                                }
-                                results.push({title: rowTitle, url: rowUrl, location: rowLoc, fullText: rowText});
-                            }
-                            if (results.length > 0) break;
-                        }
-                    }
-                }
-
-                // Strategy E: Find headings that look like job titles
-                if (results.length === 0) {
-                    var headings = document.querySelectorAll('h2, h3, h4, h5, strong, b');
-                    headings.forEach(function(h) {
-                        var ht = (h.innerText || '').trim();
-                        if (ht.length >= 5 && ht.length <= 150) {
-                            if (ht.match(/manager|engineer|analyst|executive|officer|specialist|lead|head|director|associate|trainee|consultant|developer|designer/i)) {
-                                var parentLink = h.closest('a');
-                                var hUrl = parentLink ? parentLink.href : '';
-                                if (!hUrl) {
-                                    var nearbyLink = h.parentElement ? h.parentElement.querySelector('a[href]') : null;
-                                    if (nearbyLink) hUrl = nearbyLink.href;
-                                }
-                                var hKey = ht + '|' + hUrl;
-                                if (!seen[hKey]) {
-                                    seen[hKey] = true;
-                                    results.push({title: ht, url: hUrl || '', location: '', fullText: ht});
-                                }
+                            lhref.includes('/opening') || lhref.includes('/apply')) {
+                            if (!text.match(/^(home|about|contact|login|privacy|terms)$/i)) {
+                                result.push({title: text.split('\\n')[0].trim(), url: href, location: '', fullText: text});
                             }
                         }
                     });
                 }
 
-                return results;
+                return result;
             """)
 
-            if js_jobs:
-                logger.info(f"JS extraction found {len(js_jobs)} potential jobs")
+            if job_data:
+                logger.info(f"Param AI found {len(job_data)} job listings")
                 seen_titles = set()
-                for item in js_jobs:
+                for item in job_data:
                     title = item.get('title', '').strip()
                     url = item.get('url', '').strip()
-                    full_text = item.get('fullText', '')
-
                     if not title or len(title) < 3 or title.lower() in seen_titles:
-                        continue
-                    # Skip non-job items
-                    skip_words = ['home', 'about', 'contact', 'login', 'sign in', 'register',
-                                  'privacy', 'cookie', 'terms', 'maruti suzuki', 'corporate']
-                    if any(w == title.lower() for w in skip_words):
                         continue
                     seen_titles.add(title.lower())
 
-                    job_id = f"maruti_{len(jobs)}"
-                    if url:
-                        job_id = hashlib.md5(url.encode()).hexdigest()[:12]
-
                     location = item.get('location', '')
-                    city = ''
-                    state = ''
-                    if location:
-                        city, state, _ = self.parse_location(location)
+                    city, state, country = self.parse_location(location) if location else ('', '', 'India')
+                    job_id = hashlib.md5((url or title).encode()).hexdigest()[:12]
 
-                    job_data = {
+                    jobs.append({
                         'external_id': self.generate_external_id(job_id, self.company_name),
                         'company_name': self.company_name,
                         'title': title,
                         'description': '',
-                        'location': location,
+                        'location': location or 'India',
                         'city': city,
                         'state': state,
-                        'country': 'India',
-                        'employment_type': '',
+                        'country': country,
+                        'employment_type': 'Full-time',
                         'department': '',
-                        'apply_url': url if url else self.url,
+                        'apply_url': url or PARAM_AI_URL,
                         'posted_date': '',
                         'job_function': '',
                         'experience_level': '',
                         'salary_range': '',
                         'remote_type': '',
-                        'status': 'active'
-                    }
-
-                    if FETCH_FULL_JOB_DETAILS and url:
-                        full_details = self._fetch_job_details(driver, url)
-                        job_data.update(full_details)
-
-                    jobs.append(job_data)
-
-                if jobs:
-                    logger.info(f"JS extraction yielded {len(jobs)} jobs")
-        except Exception as e:
-            logger.error(f"JS extraction error: {str(e)}")
-
-        # Selenium selector fallback
-        if not jobs:
-            logger.info("Using Selenium selector fallback")
-            job_cards = []
-            selectors = [
-                (By.CSS_SELECTOR, 'div[class*="job-card"]'),
-                (By.CSS_SELECTOR, 'div[class*="opening"]'),
-                (By.CSS_SELECTOR, 'div[class*="career"]'),
-                (By.CSS_SELECTOR, 'li[class*="job"]'),
-                (By.CSS_SELECTOR, 'a[href*="/job"]'),
-                (By.CSS_SELECTOR, 'a[href*="/career"]'),
-                (By.TAG_NAME, 'article'),
-            ]
-            for selector_type, selector_value in selectors:
-                try:
-                    elements = driver.find_elements(selector_type, selector_value)
-                    if elements and len(elements) >= 2:
-                        job_cards = elements
-                        logger.info(f"Found {len(job_cards)} elements using: {selector_value}")
-                        break
-                except:
-                    continue
-
-            for idx, card in enumerate(job_cards):
-                try:
-                    card_text = card.text
-                    if not card_text or len(card_text) < 10:
-                        continue
-                    job_title = ""
-                    job_link = ""
-                    try:
-                        title_link = card.find_element(By.TAG_NAME, 'a')
-                        job_title = title_link.text.strip()
-                        job_link = title_link.get_attribute('href')
-                    except:
-                        job_title = card_text.split('\n')[0].strip()
-                    if not job_title or len(job_title) < 3:
-                        continue
-                    job_id = f"maruti_{idx}"
-                    if job_link:
-                        job_id = hashlib.md5(job_link.encode()).hexdigest()[:12]
-                    location = ""
-                    city = ""
-                    state = ""
-                    lines = card_text.split('\n')
-                    for line in lines:
-                        if any(c in line for c in ['Gurgaon', 'Gurugram', 'Delhi', 'Manesar', 'Mumbai', 'India']):
-                            location = line.strip()
-                            city, state, _ = self.parse_location(location)
-                            break
-                    jobs.append({
-                        'external_id': self.generate_external_id(job_id, self.company_name),
-                        'company_name': self.company_name,
-                        'title': job_title,
-                        'description': '', 'location': location, 'city': city, 'state': state,
-                        'country': 'India', 'employment_type': '', 'department': '',
-                        'apply_url': job_link if job_link else self.url,
-                        'posted_date': '', 'job_function': '', 'experience_level': '',
-                        'salary_range': '', 'remote_type': '', 'status': 'active'
+                        'status': 'active',
                     })
-                except Exception as e:
-                    logger.error(f"Error extracting job {idx}: {str(e)}")
+            else:
+                logger.info("Param AI shows 0 job openings currently")
 
-        if not jobs:
-            logger.warning("No jobs found on this page")
-            try:
-                body_text = driver.execute_script('return document.body ? document.body.innerText.substring(0, 500) : ""')
-                logger.info(f"Page body preview: {body_text}")
-            except:
-                pass
+        except Exception as e:
+            logger.error(f"Error scraping Param AI: {str(e)}")
 
         return jobs
-    
-    def _fetch_job_details(self, driver, job_url):
-        """Fetch full job details by visiting the job page"""
-        details = {}
-        
-        try:
-            # Open job in new tab
-            original_window = driver.current_window_handle
-            driver.execute_script("window.open('');")
-            driver.switch_to.window(driver.window_handles[-1])
-            
-            driver.get(job_url)
-            time.sleep(3)
-            
-            # Extract description
-            try:
-                desc_selectors = [
-                    (By.CSS_SELECTOR, 'div.job-description'),
-                    (By.CSS_SELECTOR, 'div[class*="description"]'),
-                    (By.XPATH, '//div[contains(@class, "description")]'),
-                ]
-                
-                for selector_type, selector_value in desc_selectors:
-                    try:
-                        desc_elem = driver.find_element(selector_type, selector_value)
-                        if desc_elem and desc_elem.text.strip():
-                            details['description'] = desc_elem.text.strip()[:2000]
-                            break
-                    except:
-                        continue
-            except:
-                pass
-            
-            # Extract department
-            try:
-                dept_elem = driver.find_element(By.XPATH, "//*[contains(text(), 'Department')]//following-sibling::*")
-                details['department'] = dept_elem.text.strip()
-            except:
-                pass
-            
-            # Close tab and return to search results
-            driver.close()
-            driver.switch_to.window(original_window)
-            
-        except Exception as e:
-            logger.error(f"Error fetching job details: {str(e)}")
-            try:
-                if len(driver.window_handles) > 1:
-                    driver.close()
-                    driver.switch_to.window(driver.window_handles[0])
-            except:
-                pass
-        
-        return details
-    
+
+    # ------------------------------------------------------------------
+    # Utilities
+    # ------------------------------------------------------------------
+    def _go_to_next_page(self, driver, current_page):
+        """Navigate to the next page (unused -- positions are on single pages)."""
+        return False
+
     def parse_location(self, location_str):
         """Parse location string into city, state, country"""
         if not location_str:
             return '', '', 'India'
-        
+
         parts = [p.strip() for p in location_str.split(',')]
         city = parts[0] if len(parts) > 0 else ''
         state = parts[1] if len(parts) > 1 else ''
-        
+
+        # Handle common Maruti locations
+        loc_lower = location_str.lower()
+        if 'gurgaon' in loc_lower or 'gurugram' in loc_lower or 'manesar' in loc_lower:
+            if not state:
+                state = 'Haryana'
+        elif 'delhi' in loc_lower:
+            if not state:
+                state = 'Delhi'
+
         return city, state, 'India'

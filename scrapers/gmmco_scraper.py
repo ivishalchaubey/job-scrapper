@@ -58,6 +58,40 @@ class GMMCOScraper:
         unique_string = f"{company}_{job_id}"
         return hashlib.md5(unique_string.encode()).hexdigest()
 
+    def _wait_for_v1_jobs(self, driver, timeout=30):
+        """Poll-based wait for DarwinBox v1 page to render job elements"""
+        logger.info("Waiting for DarwinBox v1 page to render job elements...")
+        start = time.time()
+        while time.time() - start < timeout:
+            count = driver.execute_script("""
+                // Check for v1 job links: /ms/candidate/careers/{hash} or /ms/candidate/{hash}/careers/{hash}
+                var links = document.querySelectorAll('a[href*="/careers/"]');
+                var jobCount = 0;
+                for (var i = 0; i < links.length; i++) {
+                    var href = links[i].href || '';
+                    if (href.match(/\\/ms\\/candidate\\/(([a-f0-9]+)\\/)?careers\\/[a-f0-9]{10,}/)) {
+                        jobCount++;
+                    }
+                }
+                if (jobCount > 0) return jobCount;
+
+                // Also check for v2 job links
+                var v2Links = document.querySelectorAll('a[href*="jobDetails"]');
+                if (v2Links.length > 0) return v2Links.length;
+
+                // Check for job tiles/cards
+                var tiles = document.querySelectorAll('div.job-tile, div[class*="job-card"], div[class*="job-item"], div[class*="job-listing"]');
+                if (tiles.length > 0) return tiles.length;
+
+                return 0;
+            """)
+            if count and count > 0:
+                logger.info(f"Found {count} job elements after {time.time() - start:.1f}s")
+                return True
+            time.sleep(2)
+        logger.warning(f"No job elements found after {timeout}s polling")
+        return False
+
     def scrape(self, max_pages=MAX_PAGES_TO_SCRAPE):
         """Scrape jobs from GMMCO DarwinBox careers page"""
         jobs = []
@@ -70,7 +104,16 @@ class GMMCOScraper:
             # Load the careers page
             logger.info(f"Navigating to: {self.url}")
             driver.get(self.url)
-            time.sleep(12)
+
+            # Wait for document.readyState to be complete
+            for _ in range(10):
+                ready = driver.execute_script("return document.readyState")
+                if ready == 'complete':
+                    break
+                time.sleep(1)
+
+            # Initial sleep for page bootstrap
+            time.sleep(8)
 
             # This is a /candidate/careers URL - look for allJobs link
             current_url = driver.current_url
@@ -80,9 +123,10 @@ class GMMCOScraper:
             if all_jobs_url:
                 logger.info(f"Navigating to all jobs page: {all_jobs_url}")
                 driver.get(all_jobs_url)
-                time.sleep(12)
-            else:
-                logger.info("No allJobs link found, scraping current careers page directly")
+                time.sleep(8)
+
+            # Poll-based wait for job elements to render
+            self._wait_for_v1_jobs(driver, timeout=30)
 
             # Scroll to load all job tiles
             for i in range(5):
@@ -113,6 +157,7 @@ class GMMCOScraper:
                 """)
                 if clicked:
                     time.sleep(8)
+                    self._wait_for_v1_jobs(driver, timeout=20)
                     for i in range(3):
                         driver.execute_script('window.scrollTo(0, document.body.scrollHeight);')
                         time.sleep(2)
@@ -191,13 +236,16 @@ class GMMCOScraper:
                 var results = [];
                 var seen = {};
 
-                // DarwinBox v1 (/ms/candidate/careers) uses links like /ms/candidate/careers/{hash}
+                // DarwinBox v1: match /ms/candidate/{hash}/careers/{jobhash} and /ms/candidate/careers/{jobhash}
                 var jobLinks = document.querySelectorAll('a[href]');
                 for (var i = 0; i < jobLinks.length; i++) {
                     var link = jobLinks[i];
                     var href = link.href || '';
-                    // Match /ms/candidate/careers/{hash} but exclude /careers itself, /careers/others
-                    var match = href.match(/\\/ms\\/candidate\\/careers\\/([a-f0-9]{10,})/);
+                    // Match both hash-based and non-hash v1 patterns
+                    var match = href.match(/\\/ms\\/candidate\\/[a-f0-9]+\\/careers\\/([a-f0-9]{10,})/);
+                    if (!match) {
+                        match = href.match(/\\/ms\\/candidate\\/careers\\/([a-f0-9]{10,})/);
+                    }
                     if (!match) {
                         // Also try /jobDetails/ pattern for v2
                         if (!href.includes('jobDetails')) continue;
@@ -210,17 +258,24 @@ class GMMCOScraper:
                     if (seen[href]) continue;
                     seen[href] = true;
 
-                    // Try to get location from sibling/parent elements
+                    // Try to get location and other info from the container
                     var location = '';
-                    var row = link.closest('tr, div.job-row, div[class*="result"]');
-                    if (row) {
-                        var cells = row.querySelectorAll('td');
-                        if (cells.length >= 2) {
-                            for (var c = 1; c < cells.length; c++) {
-                                var cellText = (cells[c].innerText || '').trim();
-                                if (cellText.match(/India|Haryana|Gujarat|Maharashtra|Karnataka|Delhi|Tamil Nadu|Rajasthan|Odisha|Jharkhand|Chhattisgarh|Andhra Pradesh|Telangana|Kerala|Punjab|West Bengal|Uttar Pradesh|Bengaluru|Bangalore|Mumbai|Chennai|Hyderabad|Pune|Gurgaon|Noida|Kolkata/i)) {
-                                    location = cellText;
-                                }
+                    var experience = '';
+                    var employment_type = '';
+                    var container = link.closest('tr, div.job-row, div[class*="result"], div[class]') || link.parentElement;
+                    if (container) {
+                        var text = (container.innerText || '').trim();
+                        var lines = text.split('\\n');
+                        for (var j = 0; j < lines.length; j++) {
+                            var line = lines[j].trim();
+                            if (line.match(/India|Haryana|Gujarat|Maharashtra|Karnataka|Delhi|Tamil Nadu|Rajasthan|Odisha|Jharkhand|Chhattisgarh|Andhra Pradesh|Telangana|Kerala|Punjab|West Bengal|Uttar Pradesh|Bengaluru|Bangalore|Mumbai|Chennai|Hyderabad|Pune|Gurgaon|Noida|Kolkata/i)) {
+                                location = line;
+                            }
+                            if (line.match(/\\d+.*[Yy]ears?/) || line.match(/[Yy]ears?.*\\d+/)) {
+                                experience = line;
+                            }
+                            if (line === 'Permanent' || line === 'Contract' || line === 'Probation' || line === 'Intern' || line === 'Full Time' || line === 'Part Time') {
+                                employment_type = line;
                             }
                         }
                     }
@@ -229,8 +284,8 @@ class GMMCOScraper:
                         title: title,
                         url: href,
                         location: location,
-                        experience: '',
-                        employment_type: ''
+                        experience: experience,
+                        employment_type: employment_type
                     });
                 }
 
@@ -247,7 +302,25 @@ class GMMCOScraper:
                         var url = linkEl ? linkEl.href : '';
                         if (title.length >= 3 && title !== 'View and Apply' && !seen[url || title]) {
                             seen[url || title] = true;
-                            results.push({title: title, url: url, location: '', experience: '', employment_type: ''});
+
+                            var lines = text.split('\\n');
+                            var location = '';
+                            var experience = '';
+                            var employment_type = '';
+                            for (var j = 0; j < lines.length; j++) {
+                                var line = lines[j].trim();
+                                if (line.match(/India|Haryana|Gujarat|Maharashtra|Karnataka|Delhi|Tamil Nadu|Rajasthan|Chennai|Bengaluru|Mumbai|Hyderabad|Pune/i)) {
+                                    location = line;
+                                }
+                                if (line.includes('Years') || line.includes('years')) {
+                                    experience = line;
+                                }
+                                if (line === 'Permanent' || line === 'Contract' || line === 'Full Time' || line === 'Part Time') {
+                                    employment_type = line;
+                                }
+                            }
+
+                            results.push({title: title, url: url, location: location, experience: experience, employment_type: employment_type});
                         }
                     }
                 }
@@ -276,6 +349,9 @@ class GMMCOScraper:
                     job_id = f"gmmco_{idx}"
                     if url and 'jobDetails/' in url:
                         job_id = url.split('jobDetails/')[-1].split('?')[0]
+                    elif url and '/careers/' in url:
+                        # Extract the hash from v1 URL /careers/{hash}
+                        job_id = url.split('/careers/')[-1].split('?')[0]
                     elif url:
                         job_id = hashlib.md5(url.encode()).hexdigest()[:12]
 

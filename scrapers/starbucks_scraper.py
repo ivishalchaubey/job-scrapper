@@ -1,4 +1,9 @@
-# STATUS: DEAD - starbucks.in/careers returns 404 (tested 2026-02-22)
+# Starbucks India (Tata Starbucks) Scraper
+# Site: careers.starbucks.in - SAP SuccessFactors platform
+# The homepage shows nav links only; the /search/ page lists all jobs.
+# Structure: tr.data-row with a.jobTitle-link, span.jobLocation, span.jobDate, span.jobFacility
+# Pagination: 25 per page via startrow query param
+
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -8,20 +13,20 @@ from selenium.webdriver.chrome.service import Service
 import hashlib
 import time
 import os
-from datetime import datetime
-from pathlib import Path
 
 from core.logging import setup_logger
-from config.scraper import SCRAPE_TIMEOUT, HEADLESS_MODE, FETCH_FULL_JOB_DETAILS, MAX_PAGES_TO_SCRAPE
+from config.scraper import HEADLESS_MODE, MAX_PAGES_TO_SCRAPE
 
 logger = setup_logger('starbucks_scraper')
 
 CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0.7559.133_fresh/chromedriver-mac-arm64/chromedriver'
 
+
 class StarbucksScraper:
     def __init__(self):
         self.company_name = 'Starbucks'
-        self.url = 'https://www.starbucks.in/careers'
+        # Use the search page directly -- the homepage only has nav links, not job listings
+        self.url = 'https://careers.starbucks.in/search/?createNewAlert=false&q=&optionsFacetsDD_department=&optionsFacetsDD_customfield3=&optionsFacetsDD_country='
 
     def setup_driver(self):
         """Set up Chrome driver with options"""
@@ -59,249 +64,455 @@ class StarbucksScraper:
         return hashlib.md5(unique_string.encode()).hexdigest()
 
     def scrape(self, max_pages=MAX_PAGES_TO_SCRAPE):
-        """Scrape jobs from Starbucks India careers page.
-
-        NOTE: As of Feb 2026, the starbucks.in/careers page returns a 404 error.
-        The Starbucks India (Tata Starbucks) website has removed the careers section.
-        The site is now primarily a consumer ordering/rewards platform built on Angular
-        with no career routes defined. This scraper attempts multiple strategies and
-        returns an empty list if no careers page is found.
-        """
-        jobs = []
+        """Scrape jobs from Starbucks India (Tata Starbucks) SuccessFactors career portal."""
         driver = None
+        all_jobs = []
 
         try:
-            logger.info(f"Starting scrape for {self.company_name}")
             driver = self.setup_driver()
+            logger.info(f"Starting {self.company_name} scraping from {self.url}")
 
-            # Strategy 1: Try the main careers URL
-            logger.info(f"Navigating to: {self.url}")
             driver.get(self.url)
-            time.sleep(12)
 
-            # Check if we got a 404 page
-            is_404 = self._check_if_404(driver)
-            if is_404:
-                logger.warning(f"Careers page at {self.url} returns 404 - page has been removed")
+            # Smart wait for SuccessFactors job table to load
+            try:
+                WebDriverWait(driver, 15).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, 'a.jobTitle-link, tr.data-row'))
+                )
+            except Exception:
+                time.sleep(5)  # Fallback if selectors not found
 
-                # Strategy 2: Try alternative career URLs
-                alternative_urls = [
-                    'https://www.starbucks.in/about/careers',
-                    'https://www.starbucks.in/about-us/careers',
-                    'https://www.starbucks.in/join-us',
-                    'https://www.starbucks.in/work-with-us',
-                ]
-
-                for alt_url in alternative_urls:
-                    logger.info(f"Trying alternative URL: {alt_url}")
-                    try:
-                        driver.get(alt_url)
-                        time.sleep(8)
-                        if not self._check_if_404(driver):
-                            logger.info(f"Found working careers page at: {alt_url}")
-                            break
-                    except:
-                        continue
-                else:
-                    # All alternative URLs also 404
-                    logger.error(
-                        "Starbucks India careers page has been removed. "
-                        "No alternative career URLs found on starbucks.in. "
-                        "The site is now a consumer ordering platform with no career section."
-                    )
-                    return jobs
-
-            # If we reach here, we have a working page - try to extract jobs
-            # Scroll to trigger lazy loading
-            for i in range(4):
-                driver.execute_script(f"window.scrollTo(0, document.body.scrollHeight * {(i + 1) / 4});")
-                time.sleep(2)
+            # Quick scroll to trigger lazy loading
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            time.sleep(1)
             driver.execute_script("window.scrollTo(0, 0);")
-            time.sleep(2)
+            time.sleep(0.5)
 
             current_page = 1
+            seen_ids = set()
+            consecutive_empty_pages = 0
 
             while current_page <= max_pages:
-                logger.info(f"Scraping page {current_page} of {max_pages}")
+                logger.info(f"Scraping page {current_page}")
+                jobs = self._scrape_page(driver, seen_ids)
+                all_jobs.extend(jobs)
+                logger.info(f"Page {current_page}: found {len(jobs)} new jobs (total: {len(all_jobs)})")
 
-                page_jobs = self._scrape_page(driver)
-                jobs.extend(page_jobs)
-
-                logger.info(f"Scraped {len(page_jobs)} jobs from page {current_page}")
+                # Stop if we get 2 consecutive pages with no new jobs
+                if len(jobs) == 0:
+                    consecutive_empty_pages += 1
+                    if consecutive_empty_pages >= 2:
+                        logger.info("No new jobs on 2 consecutive pages, stopping pagination")
+                        break
+                else:
+                    consecutive_empty_pages = 0
 
                 if current_page < max_pages:
                     if not self._go_to_next_page(driver, current_page):
-                        logger.info("No more pages available")
                         break
-                    time.sleep(4)
-
                 current_page += 1
 
-            logger.info(f"Successfully scraped {len(jobs)} total jobs from {self.company_name}")
+            logger.info(f"Total jobs scraped for {self.company_name}: {len(all_jobs)}")
+            return all_jobs
 
         except Exception as e:
-            logger.error(f"Error scraping {self.company_name}: {str(e)}")
-            raise
-
+            logger.error(f"Error during {self.company_name} scraping: {str(e)}")
+            return all_jobs
         finally:
             if driver:
                 driver.quit()
-
-        return jobs
-
-    def _check_if_404(self, driver):
-        """Check if the current page shows a 404 error"""
-        try:
-            body_text = driver.execute_script("return document.body.innerText.substring(0, 500)")
-            if '404' in body_text and ('not found' in body_text.lower() or 'page not found' in body_text.lower()):
-                return True
-            # Starbucks-specific 404 message
-            if 'coffee beans were spilled' in body_text.lower():
-                return True
-        except:
-            pass
-        return False
+                logger.info("Browser closed")
 
     def _go_to_next_page(self, driver, current_page):
-        """Navigate to the next page"""
+        """Navigate to the next page of SuccessFactors search results."""
         try:
-            next_page_num = current_page + 1
-
             driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(1)
+            time.sleep(0.5)
 
-            next_page_selectors = [
-                (By.XPATH, '//button[@aria-label="Next Page"]'),
-                (By.XPATH, '//button[contains(@class, "next")]'),
-                (By.XPATH, '//a[contains(@class, "next")]'),
-                (By.CSS_SELECTOR, 'button.pagination-next'),
-                (By.XPATH, f'//button[text()="{next_page_num}"]'),
+            # Capture current first job text for change detection
+            old_first = driver.execute_script("""
+                var card = document.querySelector('a.jobTitle-link');
+                return card ? card.innerText.substring(0, 50) : '';
+            """)
+
+            # SuccessFactors pagination: try specific page number link first, then last-page arrow
+            next_selectors = [
+                (By.CSS_SELECTOR, f'a[title="Page {current_page + 1}"]'),
+                (By.CSS_SELECTOR, 'a.paginationItemLast'),
+                (By.CSS_SELECTOR, 'a.next'),
+                (By.CSS_SELECTOR, 'a[title="Next"]'),
+                (By.XPATH, '//a[contains(@class,"paginationItemLast")]'),
             ]
 
-            for selector_type, selector_value in next_page_selectors:
+            for selector_type, selector_value in next_selectors:
                 try:
                     next_button = driver.find_element(selector_type, selector_value)
-                    if next_button.is_enabled():
-                        driver.execute_script("arguments[0].scrollIntoView();", next_button)
-                        time.sleep(0.5)
-                        driver.execute_script("arguments[0].click();", next_button)
-                        logger.info(f"Clicked next page button")
-                        return True
-                except:
+                    if not next_button.is_displayed() or not next_button.is_enabled():
+                        continue
+                    btn_class = next_button.get_attribute('class') or ''
+                    if 'disabled' in btn_class or 'active' in btn_class:
+                        continue
+                    driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", next_button)
+                    time.sleep(0.3)
+                    driver.execute_script("arguments[0].click();", next_button)
+
+                    # Poll for page change instead of blind sleep
+                    for _ in range(20):
+                        time.sleep(0.2)
+                        new_first = driver.execute_script("""
+                            var card = document.querySelector('a.jobTitle-link');
+                            return card ? card.innerText.substring(0, 50) : '';
+                        """)
+                        if new_first and new_first != old_first:
+                            break
+                    time.sleep(0.5)
+                    logger.info(f"Navigated to page {current_page + 1}")
+                    return True
+                except Exception:
                     continue
+
+            # Try clicking on the specific page number in the pagination list
+            try:
+                page_links = driver.find_elements(By.CSS_SELECTOR, '.pagination a')
+                for link in page_links:
+                    text = link.text.strip()
+                    if text == str(current_page + 1):
+                        driver.execute_script("arguments[0].click();", link)
+                        for _ in range(20):
+                            time.sleep(0.2)
+                            new_first = driver.execute_script("""
+                                var card = document.querySelector('a.jobTitle-link');
+                                return card ? card.innerText.substring(0, 50) : '';
+                            """)
+                            if new_first and new_first != old_first:
+                                break
+                        time.sleep(0.5)
+                        logger.info(f"Navigated to page {current_page + 1} via page number link")
+                        return True
+            except Exception:
+                pass
 
             logger.warning("Could not find next page button")
             return False
-
         except Exception as e:
             logger.error(f"Error navigating to next page: {str(e)}")
             return False
 
-    def _scrape_page(self, driver):
-        """Scrape jobs from current page using JavaScript-first extraction"""
+    def _scrape_page(self, driver, seen_ids):
+        """Scrape jobs from the current page using JavaScript for reliable extraction."""
         jobs = []
-        time.sleep(3)
 
-        # Primary: JS-based extraction for any job-like content
-        js_jobs = driver.execute_script("""
-            var results = [];
+        try:
+            # Quick scroll to load all content
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            time.sleep(0.5)
+            driver.execute_script("window.scrollTo(0, 0);")
+            time.sleep(0.3)
 
-            // Try to find job cards using common selectors
-            var selectors = [
-                'div.job-tile', 'article.job-card', 'div[class*="job-card"]',
-                'div[class*="opening"]', 'div[class*="position"]',
-                'li[class*="job"]', 'div[class*="career"]', 'div[class*="vacancy"]'
-            ];
+            # Primary: JS extraction from SuccessFactors DOM
+            # Each tr.data-row contains:
+            #   - span.jobTitle.hidden-phone > a.jobTitle-link  (title + URL)
+            #   - span.jobLocation  (location)
+            #   - span.jobDate  (posted date)
+            #   - span.jobFacility  (store/facility name)
+            js_jobs = driver.execute_script("""
+                var results = [];
 
-            for (var s = 0; s < selectors.length; s++) {
-                var cards = document.querySelectorAll(selectors[s]);
-                if (cards.length > 0) {
-                    for (var i = 0; i < cards.length; i++) {
-                        var card = cards[i];
-                        var link = card.querySelector('a');
-                        var title = '';
-                        var href = '';
+                // Strategy 1: Extract from desktop view (span.jobTitle.hidden-phone > a.jobTitle-link)
+                var titleLinks = document.querySelectorAll('span.jobTitle.hidden-phone a.jobTitle-link');
+                if (titleLinks.length === 0) {
+                    titleLinks = document.querySelectorAll('a.jobTitle-link');
+                }
+                if (titleLinks.length > 0) {
+                    titleLinks.forEach(function(link) {
+                        var title = (link.innerText || link.textContent || '').trim();
+                        var href = link.href || link.getAttribute('href') || '';
+                        if (!title || !href) return;
 
-                        if (link) {
-                            title = link.innerText.trim();
-                            href = link.href || '';
-                        } else {
-                            var h = card.querySelector('h1, h2, h3, h4, h5');
-                            if (h) title = h.innerText.trim();
+                        var row = link.closest('tr');
+                        var location = '';
+                        var facility = '';
+                        var postedDate = '';
+
+                        if (row) {
+                            var locElem = row.querySelector('td.colLocation span.jobLocation, span.jobLocation');
+                            if (locElem) location = (locElem.innerText || locElem.textContent || '').trim();
+
+                            var dateElem = row.querySelector('span.jobDate');
+                            if (dateElem) postedDate = (dateElem.innerText || dateElem.textContent || '').trim();
+
+                            var facElem = row.querySelector('td.colFacility span.jobFacility, span.jobFacility');
+                            if (facElem) facility = (facElem.innerText || facElem.textContent || '').trim();
                         }
 
-                        if (title && title.length > 3 && title.length < 200) {
-                            results.push({title: title.split('\\n')[0].trim(), url: href});
+                        results.push({
+                            title: title,
+                            url: href,
+                            location: location,
+                            facility: facility,
+                            postedDate: postedDate
+                        });
+                    });
+                }
+
+                // Strategy 2: table rows directly
+                if (results.length === 0) {
+                    var rows = document.querySelectorAll('tr.data-row');
+                    rows.forEach(function(row) {
+                        var link = row.querySelector('a.jobTitle-link') || row.querySelector('a[href*="/job/"]');
+                        if (!link) return;
+                        var title = (link.innerText || link.textContent || '').trim();
+                        var href = link.href || link.getAttribute('href') || '';
+                        if (!title || !href || href === '#') return;
+
+                        var location = '';
+                        var facility = '';
+                        var postedDate = '';
+                        var locElem = row.querySelector('span.jobLocation');
+                        if (locElem) location = (locElem.innerText || locElem.textContent || '').trim();
+                        var facElem = row.querySelector('span.jobFacility');
+                        if (facElem) facility = (facElem.innerText || facElem.textContent || '').trim();
+                        var dateElem = row.querySelector('span.jobDate');
+                        if (dateElem) postedDate = (dateElem.innerText || dateElem.textContent || '').trim();
+
+                        results.push({
+                            title: title.split('\\n')[0].trim(),
+                            url: href,
+                            location: location,
+                            facility: facility,
+                            postedDate: postedDate
+                        });
+                    });
+                }
+
+                // Strategy 3: Fallback - any link containing /job/ in the path
+                if (results.length === 0) {
+                    document.querySelectorAll('a[href*="/job/"]').forEach(function(link) {
+                        var title = (link.innerText || link.textContent || '').trim();
+                        var href = link.href || '';
+                        if (title && title.length > 3 && title.length < 200 && href) {
+                            results.push({
+                                title: title.split('\\n')[0].trim(),
+                                url: href,
+                                location: '',
+                                facility: '',
+                                postedDate: ''
+                            });
                         }
+                    });
+                }
+
+                return results;
+            """)
+
+            if js_jobs:
+                logger.info(f"JavaScript extraction found {len(js_jobs)} jobs")
+                for jl in js_jobs:
+                    title = jl.get('title', '').strip()
+                    url = jl.get('url', '').strip()
+                    if not title or not url:
+                        continue
+
+                    job_id = self._extract_job_id(url)
+                    external_id = self.generate_external_id(job_id, self.company_name)
+
+                    if external_id in seen_ids:
+                        continue
+
+                    location = jl.get('location', '').strip()
+                    facility = jl.get('facility', '').strip()
+                    posted_date = jl.get('postedDate', '').strip()
+
+                    # Build a combined location string from location and facility
+                    # SuccessFactors location is like "Mumbai, IN" and facility is the store name
+                    full_location = location
+                    if facility and facility not in location:
+                        full_location = f"{location} - {facility}" if location else facility
+
+                    job_data = {
+                        'external_id': external_id,
+                        'company_name': self.company_name,
+                        'title': title,
+                        'apply_url': url,
+                        'location': full_location,
+                        'department': facility,
+                        'employment_type': '',
+                        'description': '',
+                        'posted_date': posted_date,
+                        'city': '',
+                        'state': '',
+                        'country': 'India',
+                        'job_function': '',
+                        'experience_level': '',
+                        'salary_range': '',
+                        'remote_type': '',
+                        'status': 'active'
                     }
-                    break;
-                }
-            }
 
-            // Fallback: Find all links that look like job postings
-            if (results.length === 0) {
-                var links = document.querySelectorAll('a[href]');
-                var seen = {};
-                var jobKeywords = ['/job/', '/jobs/', '/career', '/position/', '/opening/', '/vacancy/', '/apply/'];
-                for (var i = 0; i < links.length; i++) {
-                    var h = links[i].href.toLowerCase();
-                    var t = links[i].innerText.trim();
-                    if (t.length > 3 && t.length < 200 && !seen[links[i].href]) {
-                        for (var j = 0; j < jobKeywords.length; j++) {
-                            if (h.indexOf(jobKeywords[j]) !== -1) {
-                                seen[links[i].href] = true;
-                                results.push({title: t.split('\\n')[0].trim(), url: links[i].href});
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
+                    location_parts = self.parse_location(location)
+                    job_data.update(location_parts)
 
-            return results;
-        """)
+                    jobs.append(job_data)
+                    seen_ids.add(external_id)
+                    logger.info(f"Extracted: {title} | {full_location}")
+            else:
+                logger.warning("JavaScript extraction found no jobs, trying Selenium fallback")
+                jobs = self._scrape_page_selenium(driver, seen_ids)
 
-        if js_jobs:
-            logger.info(f"JS extraction found {len(js_jobs)} potential job listings")
-            seen_urls = set()
-            exclude_words = ['home', 'about', 'contact', 'login', 'sign', 'privacy', 'terms', 'cookie', 'blog', 'faq']
+        except Exception as e:
+            logger.error(f"Error scraping page: {str(e)}")
 
-            for idx, link_data in enumerate(js_jobs):
-                title = link_data.get('title', '')
-                url = link_data.get('url', '')
-
-                if not title or len(title) < 3:
-                    continue
-                if url in seen_urls:
-                    continue
-                if any(w in title.lower() for w in exclude_words):
-                    continue
-
-                seen_urls.add(url)
-                job_id = hashlib.md5((url or title).encode()).hexdigest()[:12]
-
-                job_data = {
-                    'external_id': self.generate_external_id(job_id, self.company_name),
-                    'company_name': self.company_name,
-                    'title': title,
-                    'description': '',
-                    'location': '',
-                    'city': '',
-                    'state': '',
-                    'country': 'India',
-                    'employment_type': '',
-                    'department': '',
-                    'apply_url': url if url else self.url,
-                    'posted_date': '',
-                    'job_function': '',
-                    'experience_level': '',
-                    'salary_range': '',
-                    'remote_type': '',
-                    'status': 'active'
-                }
-                jobs.append(job_data)
+        # Log diagnostic info if no jobs found
+        if not jobs:
+            try:
+                body_text = driver.execute_script('return document.body ? document.body.innerText.substring(0, 500) : ""')
+                logger.info(f"Page body preview: {body_text}")
+                current_url = driver.current_url
+                logger.info(f"Current URL: {current_url}")
+            except Exception:
+                pass
 
         return jobs
+
+    def _scrape_page_selenium(self, driver, seen_ids):
+        """Fallback Selenium-based extraction for the page."""
+        jobs = []
+
+        try:
+            job_elements = []
+            selectors = [
+                "tr.data-row",
+                "a.jobTitle-link",
+                "span.jobTitle a",
+                "a[href*='/job/']",
+            ]
+
+            for selector in selectors:
+                try:
+                    elements = driver.find_elements(By.CSS_SELECTOR, selector)
+                    if elements:
+                        job_elements = elements
+                        logger.info(f"Selenium found {len(elements)} elements using: {selector}")
+                        break
+                except Exception:
+                    continue
+
+            if not job_elements:
+                logger.warning("Selenium fallback found no job elements")
+                return jobs
+
+            for idx, elem in enumerate(job_elements, 1):
+                try:
+                    job_data = self._extract_job_from_element(elem, idx)
+                    if job_data and job_data['external_id'] not in seen_ids:
+                        jobs.append(job_data)
+                        seen_ids.add(job_data['external_id'])
+                        logger.info(f"Selenium extracted: {job_data.get('title', 'N/A')}")
+                except Exception as e:
+                    logger.error(f"Error extracting job {idx}: {str(e)}")
+                    continue
+
+        except Exception as e:
+            logger.error(f"Selenium fallback error: {str(e)}")
+
+        return jobs
+
+    def _extract_job_from_element(self, job_elem, idx):
+        """Extract job data from a single Selenium element."""
+        try:
+            title = ""
+            job_url = ""
+
+            tag_name = job_elem.tag_name
+            if tag_name == 'a':
+                title = job_elem.text.strip()
+                job_url = job_elem.get_attribute('href')
+            else:
+                title_selectors = [
+                    "a.jobTitle-link",
+                    "span.jobTitle a",
+                    "a[href*='/job/']",
+                    "a"
+                ]
+                for selector in title_selectors:
+                    try:
+                        title_elem = job_elem.find_element(By.CSS_SELECTOR, selector)
+                        title = title_elem.text.strip()
+                        job_url = title_elem.get_attribute('href')
+                        if title and job_url:
+                            break
+                    except Exception:
+                        continue
+
+            if not title:
+                text = job_elem.text.strip()
+                if text:
+                    title = text.split('\n')[0].strip()
+
+            if not title or not job_url:
+                return None
+
+            job_id = self._extract_job_id(job_url)
+
+            location = ""
+            facility = ""
+            try:
+                loc_elem = job_elem.find_element(By.CSS_SELECTOR, "span.jobLocation")
+                location = loc_elem.text.strip()
+            except Exception:
+                pass
+
+            try:
+                fac_elem = job_elem.find_element(By.CSS_SELECTOR, "span.jobFacility")
+                facility = fac_elem.text.strip()
+            except Exception:
+                pass
+
+            full_location = location
+            if facility and facility not in location:
+                full_location = f"{location} - {facility}" if location else facility
+
+            job_data = {
+                'external_id': self.generate_external_id(job_id, self.company_name),
+                'company_name': self.company_name,
+                'title': title,
+                'apply_url': job_url,
+                'location': full_location,
+                'department': facility,
+                'employment_type': '',
+                'description': '',
+                'posted_date': '',
+                'city': '',
+                'state': '',
+                'country': 'India',
+                'job_function': '',
+                'experience_level': '',
+                'salary_range': '',
+                'remote_type': '',
+                'status': 'active'
+            }
+
+            location_parts = self.parse_location(location)
+            job_data.update(location_parts)
+
+            return job_data
+
+        except Exception as e:
+            logger.error(f"Error extracting job data: {str(e)}")
+            return None
+
+    def _extract_job_id(self, job_url):
+        """Extract numeric job ID from a SuccessFactors URL like /job/Mumbai-Barista/1356742066/"""
+        job_id = ""
+        if '/job/' in job_url:
+            parts = job_url.rstrip('/').split('/')
+            for part in reversed(parts):
+                if part.isdigit():
+                    job_id = part
+                    break
+        if not job_id:
+            job_id = hashlib.md5(job_url.encode()).hexdigest()[:12]
+        return job_id
 
     def _fetch_job_details(self, driver, job_url):
         """Fetch full job details by visiting the job page"""
@@ -319,6 +530,7 @@ class StarbucksScraper:
                 desc_selectors = [
                     (By.CSS_SELECTOR, 'div.job-description'),
                     (By.CSS_SELECTOR, 'div[class*="description"]'),
+                    (By.CSS_SELECTOR, '.jobDisplay .content'),
                     (By.XPATH, '//h2[contains(text(), "Description")]/following-sibling::div'),
                     (By.CSS_SELECTOR, 'div[id*="description"]'),
                 ]
@@ -327,28 +539,11 @@ class StarbucksScraper:
                     try:
                         desc_elem = driver.find_element(selector_type, selector_value)
                         if desc_elem and desc_elem.text.strip():
-                            details['description'] = desc_elem.text.strip()[:2000]
+                            details['description'] = desc_elem.text.strip()[:3000]
                             break
-                    except:
+                    except Exception:
                         continue
-            except:
-                pass
-
-            try:
-                dept_selectors = [
-                    (By.CSS_SELECTOR, 'span[class*="department"]'),
-                    (By.XPATH, '//*[contains(text(), "Department")]/following-sibling::*'),
-                ]
-
-                for selector_type, selector_value in dept_selectors:
-                    try:
-                        dept_elem = driver.find_element(selector_type, selector_value)
-                        if dept_elem and dept_elem.text.strip():
-                            details['department'] = dept_elem.text.strip()
-                            break
-                    except:
-                        continue
-            except:
+            except Exception:
                 pass
 
             driver.close()
@@ -361,18 +556,53 @@ class StarbucksScraper:
                 if len(driver.window_handles) > 1:
                     driver.close()
                     driver.switch_to.window(driver.window_handles[0])
-            except:
+            except Exception:
                 pass
 
         return details
 
     def parse_location(self, location_str):
-        """Parse location string into city, state, country"""
+        """Parse SuccessFactors location string like 'Mumbai, IN' into city, state, country.
+
+        Handles edge cases:
+          - 'Mumbai, IN' -> city=Mumbai, country=India
+          - 'IN' -> city='', country=India  (country code only, no city)
+          - 'Delhi, Maharashtra, IN' -> city=Delhi, state=Maharashtra, country=India
+        """
+        result = {'city': '', 'state': '', 'country': 'India'}
         if not location_str:
-            return '', '', 'India'
+            return result
+
+        country_codes = ['IN', 'IND', 'India']
 
         parts = [p.strip() for p in location_str.split(',')]
-        city = parts[0] if len(parts) > 0 else ''
-        state = parts[1] if len(parts) > 1 else ''
 
-        return city, state, 'India'
+        # Single part that is just a country code -- no city info
+        if len(parts) == 1:
+            if parts[0] in country_codes:
+                return result
+            result['city'] = parts[0]
+        elif len(parts) == 2:
+            if parts[1] in country_codes:
+                result['city'] = parts[0]
+                result['country'] = 'India'
+            else:
+                result['city'] = parts[0]
+                result['state'] = parts[1]
+        elif len(parts) >= 3:
+            result['city'] = parts[0]
+            result['state'] = parts[1]
+            if parts[2] in country_codes:
+                result['country'] = 'India'
+            else:
+                result['country'] = parts[2]
+
+        return result
+
+
+if __name__ == "__main__":
+    scraper = StarbucksScraper()
+    jobs = scraper.scrape()
+    print(f"\nTotal jobs found: {len(jobs)}")
+    for job in jobs:
+        print(f"- {job['title']} | {job['location']} | {job['apply_url']}")

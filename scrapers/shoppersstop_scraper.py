@@ -1,28 +1,31 @@
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 import hashlib
 import time
-from datetime import datetime
-from pathlib import Path
+import os
 
 from core.logging import setup_logger
-from config.scraper import SCRAPE_TIMEOUT, HEADLESS_MODE, FETCH_FULL_JOB_DETAILS, MAX_PAGES_TO_SCRAPE
+from config.scraper import HEADLESS_MODE, MAX_PAGES_TO_SCRAPE
 
 logger = setup_logger('shoppersstop_scraper')
 
 CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0.7559.133_fresh/chromedriver-mac-arm64/chromedriver'
 
+
 class ShoppersStopScraper:
     def __init__(self):
         self.company_name = 'Shoppers Stop'
-        self.url = 'https://www.shoppersstop.com/careers'
-    
+        # Shoppers Stop uses DarwinBox v1 for their careers portal.
+        # The old URL (shoppersstop.com/careers) returns a 404.
+        # ss-people.darwinbox.in is their active DarwinBox tenant.
+        # The candidatev2 URL redirects to the v1 /ms/candidate/careers page,
+        # which uses a server-rendered table layout (not the v2 SPA tiles).
+        self.url = 'https://ss-people.darwinbox.in/ms/candidate/careers'
+
     def setup_driver(self):
-        """Set up Chrome driver with options"""
+        """Set up Chrome driver with anti-detection options"""
         chrome_options = Options()
         if HEADLESS_MODE:
             chrome_options.add_argument('--headless=new')
@@ -34,442 +37,303 @@ class ShoppersStopScraper:
         chrome_options.add_argument('--disable-blink-features=AutomationControlled')
         chrome_options.add_experimental_option('useAutomationExtension', False)
         chrome_options.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
-        
+
         try:
-            # Install and get the correct chromedriver path
-            driver_path = CHROMEDRIVER_PATH
-            logger.info(f"ChromeDriver installed at: {driver_path}")
-            
-            # Fix for macOS ARM - ensure we use the actual chromedriver binary
-            if 'chromedriver-mac-arm64' in driver_path and not driver_path.endswith('chromedriver'):
-                import os
-                driver_dir = os.path.dirname(driver_path)
-                actual_driver = os.path.join(driver_dir, 'chromedriver')
-                if os.path.exists(actual_driver):
-                    driver_path = actual_driver
-                    logger.info(f"Using corrected path: {driver_path}")
-            
-            service = Service(driver_path)
-            driver = webdriver.Chrome(service=service, options=chrome_options)
-            driver.execute_cdp_cmd('Network.setUserAgentOverride', {"userAgent": 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'})
-            driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-            return driver
+            if os.path.exists(CHROMEDRIVER_PATH):
+                service = Service(CHROMEDRIVER_PATH)
+                driver = webdriver.Chrome(service=service, options=chrome_options)
+            else:
+                driver = webdriver.Chrome(options=chrome_options)
         except Exception as e:
-            logger.error(f"ChromeDriver setup failed: {str(e)}")
-            # Fallback: try without service specification
-            logger.info("Attempting fallback driver setup...")
+            logger.warning(f"Primary driver setup failed: {str(e)}, trying fallback")
             driver = webdriver.Chrome(options=chrome_options)
-            driver.execute_cdp_cmd('Network.setUserAgentOverride', {"userAgent": 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'})
-            driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-            return driver
-    
+
+        driver.execute_cdp_cmd('Network.setUserAgentOverride', {
+            "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+        })
+        driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+        return driver
+
     def generate_external_id(self, job_id, company):
         """Generate stable external ID"""
         unique_string = f"{company}_{job_id}"
         return hashlib.md5(unique_string.encode()).hexdigest()
-    
+
     def scrape(self, max_pages=MAX_PAGES_TO_SCRAPE):
-        """Scrape jobs from Shoppers Stop careers page with pagination support"""
+        """Scrape jobs from Shoppers Stop DarwinBox careers page.
+
+        The DarwinBox v1 portal at ss-people.darwinbox.in renders jobs
+        in a server-side table (table.db-table-one). Each table row has
+        cells for: title (with link), department, location, employee type,
+        posted date. Pagination uses li.pagination-page / li.pagination-next.
+        """
         jobs = []
         driver = None
-        
+
         try:
             logger.info(f"Starting scrape for {self.company_name}")
             driver = self.setup_driver()
+
+            logger.info(f"Navigating to: {self.url}")
             driver.get(self.url)
+            time.sleep(15)
 
-            # Wait for page to load
-            time.sleep(12)
+            # Check if the page has content or is just a stub
+            body_text = driver.find_element(By.TAG_NAME, 'body').text.strip()
+            if not body_text or body_text == '-' or body_text == f'{self.company_name} -':
+                logger.info("DarwinBox portal has no active job postings at this time")
+                return jobs
 
-            # Scroll to trigger lazy-loaded content
-            for scroll_i in range(4):
-                driver.execute_script("window.scrollTo(0, document.body.scrollHeight * %s);" % str((scroll_i + 1) / 4))
-                time.sleep(2)
-            driver.execute_script("window.scrollTo(0, 0);")
-            time.sleep(2)
-            
             current_page = 1
-            
             while current_page <= max_pages:
-                logger.info(f"Scraping page {current_page} of {max_pages}")
-                
-                # Scrape current page
-                page_jobs = self._scrape_page(driver)
+                logger.info(f"Scraping page {current_page}")
+
+                page_jobs = self._scrape_darwinbox_table(driver)
                 jobs.extend(page_jobs)
-                
-                logger.info(f"Scraped {len(page_jobs)} jobs from page {current_page}")
-                
-                # Try to navigate to next page
+                logger.info(f"Found {len(page_jobs)} jobs on page {current_page}")
+
                 if current_page < max_pages:
-                    if not self._go_to_next_page(driver, current_page):
+                    if not self._go_to_next_page(driver):
                         logger.info("No more pages available")
                         break
-                    time.sleep(4)  # Wait for next page to load
-                
+                    time.sleep(5)
+
                 current_page += 1
-            
+
             logger.info(f"Successfully scraped {len(jobs)} total jobs from {self.company_name}")
-            
+
         except Exception as e:
             logger.error(f"Error scraping {self.company_name}: {str(e)}")
             raise
-        
+
         finally:
             if driver:
                 driver.quit()
-        
+
         return jobs
-    
-    def _go_to_next_page(self, driver, current_page):
-        """Navigate to the next page"""
+
+    def _go_to_next_page(self, driver):
+        """Click the next page button in DarwinBox v1 pagination."""
         try:
-            next_page_num = current_page + 1
-            
-            # Scroll to pagination area
-            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(1)
-            
-            # Try to find and click next page button
-            next_page_selectors = [
-                (By.XPATH, '//button[contains(@class, "next")]'),
-                (By.XPATH, '//a[contains(@class, "next")]'),
-                (By.CSS_SELECTOR, 'button.pagination-next'),
-                (By.XPATH, f'//button[text()="{next_page_num}"]'),
-                (By.XPATH, f'//a[text()="{next_page_num}"]'),
-            ]
-            
-            for selector_type, selector_value in next_page_selectors:
-                try:
-                    next_button = driver.find_element(selector_type, selector_value)
-                    if next_button.is_enabled():
-                        driver.execute_script("arguments[0].scrollIntoView();", next_button)
-                        time.sleep(0.5)
-                        driver.execute_script("arguments[0].click();", next_button)
-                        logger.info(f"Clicked next page button")
-                        return True
-                except:
-                    continue
-            
-            logger.warning("Could not find next page button")
+            # DarwinBox v1 pagination uses li.pagination-next with an <a> inside
+            next_btn = driver.find_elements(By.CSS_SELECTOR, 'li.pagination-next:not(.disabled) a.page-link')
+            if next_btn:
+                driver.execute_script("arguments[0].click();", next_btn[0])
+                logger.info("Clicked next page button")
+                return True
+
+            # Fallback: try clicking the next numbered page
+            active_page = driver.find_elements(By.CSS_SELECTOR, 'li.pagination-page.active')
+            if active_page:
+                next_sibling = driver.execute_script(
+                    "return arguments[0].nextElementSibling;", active_page[0]
+                )
+                if next_sibling:
+                    cls = next_sibling.get_attribute('class') or ''
+                    if 'pagination-page' in cls:
+                        link = next_sibling.find_elements(By.TAG_NAME, 'a')
+                        if link:
+                            driver.execute_script("arguments[0].click();", link[0])
+                            logger.info("Clicked next numbered page")
+                            return True
+
+            logger.info("No next page button found")
             return False
-                
+
         except Exception as e:
             logger.error(f"Error navigating to next page: {str(e)}")
             return False
-    
-    def _scrape_page(self, driver):
-        """Scrape jobs from current page"""
+
+    def _scrape_darwinbox_table(self, driver):
+        """Extract jobs from the DarwinBox v1 table layout using JavaScript.
+
+        DarwinBox v1 DOM structure:
+        - table.db-table-one > tbody > tr (job rows)
+        - Each tr has 6 td cells:
+          [0] title (contains <a href="/ms/candidate/careers/JOBID">)
+          [1] department
+          [2] location (e.g. "Store - City Mall, City, State, India")
+          [3] employee type (e.g. "Apprentice", "General")
+          [4] posted date (e.g. "Feb 27, 2026")
+          [5] empty / actions
+        """
         jobs = []
-        time.sleep(3)  # Wait for page content to load
-        
-        # Look for job cards
-        job_cards = []
-        
+
         try:
-            selectors = [
-                (By.CSS_SELECTOR, 'div.job-card'),
-                (By.CSS_SELECTOR, 'div.career-listing'),
-                (By.CSS_SELECTOR, 'div[class*="job"]'),
-                (By.XPATH, '//div[contains(@class, "career")]'),
-                (By.CSS_SELECTOR, 'a[href*="/job/"]'),
-                (By.CSS_SELECTOR, 'a[href*="/jobs/"]'),
-                (By.CSS_SELECTOR, 'a[href*="/careers/"]'),
-                (By.CSS_SELECTOR, 'div[class*="opening"]'),
-                (By.CSS_SELECTOR, 'div[class*="position"]'),
-                (By.CSS_SELECTOR, 'li[class*="job"]'),
-                (By.CSS_SELECTOR, 'div[class*="vacancy"]'),
-                (By.CSS_SELECTOR, 'a[href*="/job"]'),
-                (By.CSS_SELECTOR, 'a[href*="/career"]'),
-                (By.CSS_SELECTOR, 'a[href*="/opening"]'),
-                (By.CSS_SELECTOR, 'a[href*="/position"]'),
-                (By.CSS_SELECTOR, 'a[href*="/vacancy"]'),
-                (By.CSS_SELECTOR, 'div[class*="job-card"]'),
-                (By.CSS_SELECTOR, 'div[class*="opening"]'),
-                (By.CSS_SELECTOR, 'li[class*="job"]'),
-                (By.TAG_NAME, 'article'),
-            ]
-            
-            for selector_type, selector_value in selectors:
-                try:
-                    job_cards = driver.find_elements(selector_type, selector_value)
-                    if job_cards and len(job_cards) > 0:
-                        logger.info(f"Found {len(job_cards)} job cards using selector: {selector_value}")
-                        break
-                except:
-                    continue
-                    
-        except Exception as e:
-            logger.error(f"Error finding job cards: {str(e)}")
-        
-        if not job_cards:
-            # Fallback: look for all links that might be job listings
-            logger.warning("Standard selectors failed, trying link-based fallback")
-            try:
-                all_links = driver.find_elements(By.TAG_NAME, 'a')
-                job_keywords = ['/job/', '/jobs/', '/career', '/position/', '/opening/', '/vacancy/', '/apply/']
-                seen_urls = set()
-                for link in all_links:
-                    try:
-                        href = link.get_attribute('href') or ''
-                        link_text = link.text.strip()
-                        if not link_text or len(link_text) < 3:
-                            continue
-                        if not any(kw in href.lower() for kw in job_keywords):
-                            continue
-                        if href in seen_urls:
-                            continue
-                        seen_urls.add(href)
+            js_jobs = driver.execute_script("""
+                var results = [];
+                var seen = {};
 
-                        job_id = href.split('/')[-1].split('?')[0] if href else f"shoppersstop_link_{len(jobs)}"
+                // Strategy 1: DarwinBox v1 table (db-table-one)
+                var table = document.querySelector('table.db-table-one');
+                if (table) {
+                    var rows = table.querySelectorAll('tbody tr');
+                    for (var i = 0; i < rows.length; i++) {
+                        var cells = rows[i].querySelectorAll('td');
+                        if (cells.length < 4) continue;
 
-                        job_data = {
-                            'external_id': self.generate_external_id(job_id, self.company_name),
-                            'company_name': self.company_name,
-                            'title': link_text,
-                            'description': '',
-                            'location': '',
-                            'city': '',
-                            'state': '',
-                            'country': 'India',
-                            'employment_type': '',
-                            'department': '',
-                            'apply_url': href if href else self.url,
-                            'posted_date': '',
-                            'job_function': '',
-                            'experience_level': '',
-                            'salary_range': '',
-                            'remote_type': '',
-                            'status': 'active'
-                        }
-                        jobs.append(job_data)
-                        logger.info(f"Found job via link fallback: '{link_text}'")
-                    except:
-                        continue
-            except Exception as e:
-                logger.error(f"Link-based fallback failed: {str(e)}")
+                        var titleCell = cells[0];
+                        var link = titleCell.querySelector('a[href*="/careers/"]');
+                        var title = (link ? link.innerText : titleCell.innerText).trim();
+                        var href = link ? link.href : '';
 
-        # JS-based link extraction fallback
-        if not jobs:
-            logger.info("Trying JS-based link extraction fallback")
-            try:
-                js_links = driver.execute_script("""
-                    var results = [];
-                    document.querySelectorAll('a[href]').forEach(function(link) {
-                        var text = (link.innerText || '').trim();
-                        var href = link.href || '';
-                        if (text.length > 3 && text.length < 200 && href.length > 10) {
-                            var lhref = href.toLowerCase();
-                            if (lhref.includes('/job') || lhref.includes('/position') || lhref.includes('/career') ||
-                                lhref.includes('/opening') || lhref.includes('/detail') || lhref.includes('/vacancy') ||
-                                lhref.includes('/role') || lhref.includes('/requisition') || lhref.includes('/apply')) {
-                                results.push({title: text.split('\n')[0].trim(), url: href});
-                            }
-                        }
-                    });
-                    return results;
-                """)
-                if js_links:
-                    seen = set()
-                    exclude = ['home', 'about', 'contact', 'login', 'sign', 'privacy', 'terms', 'cookie', 'blog', 'faq']
-                    for link_data in js_links:
-                        title = link_data.get('title', '')
-                        url = link_data.get('url', '')
-                        if not title or not url or len(title) < 3 or title in seen:
-                            continue
-                        if any(w in title.lower() for w in exclude):
-                            continue
-                        seen.add(title)
-                        job_id = hashlib.md5(url.encode()).hexdigest()[:12]
-                        jobs.append({
-                            'external_id': self.generate_external_id(job_id, self.company_name),
-                            'company_name': self.company_name,
-                            'title': title,
-                            'description': '', 'location': '', 'city': '', 'state': '',
-                            'country': 'India', 'employment_type': '', 'department': '',
-                            'apply_url': url, 'posted_date': '', 'job_function': '',
-                            'experience_level': '', 'salary_range': '', 'remote_type': '', 'status': 'active'
-                        })
-                    if jobs:
-                        logger.info(f"JS fallback found {len(jobs)} jobs")
-            except Exception as e:
-                logger.error(f"JS fallback error: {str(e)}")
+                        if (!title || title.length < 3 || seen[href || title]) continue;
+                        seen[href || title] = true;
 
-            return jobs
-        
-        # Process each job card
-        for idx, card in enumerate(job_cards):
-            try:
-                card_text = card.text
-                if not card_text or len(card_text) < 10:
-                    continue
-                
-                # Extract job title
-                job_title = ""
-                job_link = ""
-                try:
-                    title_selectors = [
-                        (By.CSS_SELECTOR, 'h3'),
-                        (By.CSS_SELECTOR, 'h2'),
-                        (By.TAG_NAME, 'a'),
-                    ]
-                    
-                    for selector_type, selector_value in title_selectors:
-                        try:
-                            title_elem = card.find_element(selector_type, selector_value)
-                            job_title = title_elem.text.strip()
-                            if selector_type == By.TAG_NAME:
-                                job_link = title_elem.get_attribute('href')
-                            if job_title:
-                                break
-                        except:
-                            continue
-                    
-                    # Try to get link separately if not found
-                    if not job_link:
-                        try:
-                            link_elem = card.find_element(By.TAG_NAME, 'a')
-                            job_link = link_elem.get_attribute('href')
-                        except:
-                            pass
-                except:
-                    logger.debug(f"Could not extract title for card {idx}")
-                    continue
-                
-                if not job_title or len(job_title) < 3:
-                    logger.debug(f"Skipping card {idx}: Title too short")
-                    continue
-                
-                # Extract job ID from URL or generate one
-                job_id = f"shoppersstop_{idx}"
-                if job_link:
-                    try:
-                        if '/job/' in job_link:
-                            job_id = job_link.split('/job/')[-1].split('/')[0].split('?')[0]
-                    except:
-                        pass
-                
-                # Extract location
-                location = ""
-                city = ""
-                state = ""
-                try:
-                    loc_selectors = [
-                        (By.CSS_SELECTOR, 'span.location'),
-                        (By.CSS_SELECTOR, 'div.location'),
-                        (By.XPATH, './/*[contains(text(), "India")]'),
-                    ]
-                    
-                    for selector_type, selector_value in loc_selectors:
-                        try:
-                            loc_elem = card.find_element(selector_type, selector_value)
-                            location = loc_elem.text.strip()
-                            if location:
-                                city, state, _ = self.parse_location(location)
-                                break
-                        except:
-                            continue
-                except:
-                    pass
-                
-                # Generate external ID
-                external_id = self.generate_external_id(job_id, self.company_name)
-                
-                logger.info(f"Found job: '{job_title}' (ID: {job_id})")
-                
-                job_data = {
-                    'external_id': external_id,
-                    'company_name': self.company_name,
-                    'title': job_title,
-                    'description': '',
-                    'location': location,
-                    'city': city,
-                    'state': state,
-                    'country': 'India',
-                    'employment_type': '',
-                    'department': '',
-                    'apply_url': job_link if job_link else self.url,
-                    'posted_date': '',
-                    'job_function': '',
-                    'experience_level': '',
-                    'salary_range': '',
-                    'remote_type': '',
-                    'status': 'active'
+                        var department = cells.length > 1 ? cells[1].innerText.trim() : '';
+                        var location = cells.length > 2 ? cells[2].innerText.trim() : '';
+                        var employeeType = cells.length > 3 ? cells[3].innerText.trim() : '';
+                        var postedDate = cells.length > 4 ? cells[4].innerText.trim() : '';
+
+                        results.push({
+                            title: title,
+                            url: href,
+                            department: department,
+                            location: location,
+                            employment_type: employeeType,
+                            posted_date: postedDate
+                        });
+                    }
                 }
-                
-                # Fetch full details if enabled
-                if FETCH_FULL_JOB_DETAILS and job_link and job_link != self.url:
-                    full_details = self._fetch_job_details(driver, job_link)
-                    job_data.update(full_details)
-                
-                jobs.append(job_data)
-                logger.info(f"Successfully added job: {job_title}")
-                
-            except Exception as e:
-                logger.error(f"Error extracting job {idx}: {str(e)}")
-                import traceback
-                logger.error(traceback.format_exc())
-                continue
-        
-        return jobs
-    
-    def _fetch_job_details(self, driver, job_url):
-        """Fetch full job details by visiting the job page"""
-        details = {}
-        
-        try:
-            # Open job in new tab
-            original_window = driver.current_window_handle
-            driver.execute_script("window.open('');")
-            driver.switch_to.window(driver.window_handles[-1])
-            
-            driver.get(job_url)
-            time.sleep(4)
-            
-            # Extract job description
-            try:
-                desc_selectors = [
-                    (By.CSS_SELECTOR, 'div.job-description'),
-                    (By.CSS_SELECTOR, 'div[class*="description"]'),
-                    (By.XPATH, '//h2[contains(text(), "Description")]/following-sibling::div'),
-                    (By.CSS_SELECTOR, 'div.content'),
-                ]
-                
-                for selector_type, selector_value in desc_selectors:
-                    try:
-                        desc_elem = driver.find_element(selector_type, selector_value)
-                        if desc_elem and desc_elem.text.strip():
-                            details['description'] = desc_elem.text.strip()[:2000]
-                            logger.debug(f"Extracted description using selector: {selector_value}")
-                            break
-                    except:
+
+                // Strategy 2: Fallback — any clickable job links in the page
+                if (results.length === 0) {
+                    var links = document.querySelectorAll('a[href*="/careers/"]');
+                    for (var i = 0; i < links.length; i++) {
+                        var a = links[i];
+                        var text = a.innerText.trim();
+                        var href = a.href;
+                        // Skip navigation links
+                        if (!text || text.length < 3 || text === 'apply here' ||
+                            text.includes('LOGIN') || text.includes('SIGN UP')) continue;
+                        if (seen[href]) continue;
+                        seen[href] = true;
+
+                        // Try to get context from parent row
+                        var row = a.closest('tr');
+                        var department = '';
+                        var location = '';
+                        var employeeType = '';
+                        var postedDate = '';
+                        if (row) {
+                            var cells = row.querySelectorAll('td');
+                            if (cells.length > 1) department = cells[1].innerText.trim();
+                            if (cells.length > 2) location = cells[2].innerText.trim();
+                            if (cells.length > 3) employeeType = cells[3].innerText.trim();
+                            if (cells.length > 4) postedDate = cells[4].innerText.trim();
+                        }
+
+                        results.push({
+                            title: text,
+                            url: href,
+                            department: department,
+                            location: location,
+                            employment_type: employeeType,
+                            posted_date: postedDate
+                        });
+                    }
+                }
+
+                return results;
+            """)
+
+            if js_jobs:
+                logger.info(f"DarwinBox extraction found {len(js_jobs)} jobs on current page")
+                seen_urls = set()
+                for idx, job_data in enumerate(js_jobs):
+                    title = job_data.get('title', '')
+                    url = job_data.get('url', '')
+                    location = job_data.get('location', '')
+                    department = job_data.get('department', '')
+                    employment_type = job_data.get('employment_type', '')
+                    posted_date = job_data.get('posted_date', '')
+
+                    if not title:
                         continue
-            except Exception as e:
-                logger.debug(f"Error extracting description: {str(e)}")
-            
-            # Close tab and return to search results
-            driver.close()
-            driver.switch_to.window(original_window)
-            time.sleep(1)
-            
+                    if url and url in seen_urls:
+                        continue
+                    if url:
+                        seen_urls.add(url)
+
+                    city, state, _ = self.parse_location(location)
+
+                    # Extract job ID from URL (e.g. /careers/a69a1853d4a808)
+                    job_id = f"shoppersstop_{idx}"
+                    if url and '/careers/' in url:
+                        job_id = url.split('/careers/')[-1].split('?')[0].split('/')[0]
+                    elif url:
+                        job_id = hashlib.md5(url.encode()).hexdigest()[:12]
+
+                    jobs.append({
+                        'external_id': self.generate_external_id(job_id, self.company_name),
+                        'company_name': self.company_name,
+                        'title': title,
+                        'description': '',
+                        'location': location,
+                        'city': city,
+                        'state': state,
+                        'country': 'India',
+                        'employment_type': employment_type,
+                        'department': department,
+                        'apply_url': url if url else self.url,
+                        'posted_date': posted_date,
+                        'job_function': department,
+                        'experience_level': '',
+                        'salary_range': '',
+                        'remote_type': '',
+                        'status': 'active'
+                    })
+            else:
+                logger.warning("No job rows found on DarwinBox page")
+
         except Exception as e:
-            logger.error(f"Error fetching job details: {str(e)}")
-            # Make sure we return to original window
-            try:
-                if len(driver.window_handles) > 1:
-                    driver.close()
-                    driver.switch_to.window(driver.window_handles[0])
-            except:
-                pass
-        
-        return details
-    
+            logger.error(f"DarwinBox extraction error: {str(e)}")
+
+        return jobs
+
     def parse_location(self, location_str):
-        """Parse location string into city, state, country"""
+        """Parse DarwinBox v1 location string into city, state, country.
+
+        DarwinBox v1 locations look like:
+        "Store - City Mall, City, State, India"
+        """
         if not location_str:
             return '', '', 'India'
-        
+
         parts = [p.strip() for p in location_str.split(',')]
-        city = parts[0] if len(parts) > 0 else ''
-        state = parts[1] if len(parts) > 1 else ''
-        
+
+        city = ''
+        state = ''
+        for part in parts:
+            part_clean = part.strip()
+            if part_clean == 'India':
+                continue
+            # Skip store/branch identifiers (contain hyphens or special chars)
+            if ' - ' in part_clean and not city:
+                # Extract city name from "Store - CityName Mall" patterns
+                after_dash = part_clean.split(' - ', 1)[-1].strip()
+                # Remove common suffixes like "Mall", "Store"
+                for suffix in ['Mall', 'Store', 'Outlet', 'Shop', 'Branch', 'Airport']:
+                    if after_dash.endswith(suffix):
+                        after_dash = after_dash[:-(len(suffix))].strip()
+                if after_dash:
+                    city = after_dash
+                continue
+            if '#' in part_clean or '_' in part_clean:
+                continue
+            if '..+' in part_clean:
+                continue
+            if not city:
+                city = part_clean
+            elif not state:
+                state = part_clean
+
         return city, state, 'India'
+
+
+if __name__ == '__main__':
+    scraper = ShoppersStopScraper()
+    results = scraper.scrape()
+    print(f"Scraped {len(results)} jobs from {scraper.company_name}")
+    for job in results[:15]:
+        print(f"  - {job['title']} | {job['department']} | {job['location']} | {job['employment_type']} | {job['posted_date']}")

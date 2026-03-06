@@ -1,17 +1,13 @@
-# STATUS: PLATFORM_DOWN - Skillate platform (axisbank.skillate.com) timing out (tested 2026-02-22)
+# Updated: Rewritten for HirePro ARISE portal (static landing page with roles table)
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 import hashlib
 import time
-from datetime import datetime
-from pathlib import Path
 
 from core.logging import setup_logger
-from config.scraper import SCRAPE_TIMEOUT, HEADLESS_MODE, FETCH_FULL_JOB_DETAILS, MAX_PAGES_TO_SCRAPE
+from config.scraper import HEADLESS_MODE, MAX_PAGES_TO_SCRAPE
 
 logger = setup_logger('axisbank_scraper')
 
@@ -20,9 +16,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 class AxisBankScraper:
     def __init__(self):
         self.company_name = 'Axis Bank'
-        # Point to actual job listings, not the careers landing page
-        self.url = 'https://axisbank.skillate.com/'
-    
+        self.url = 'https://axisbankarise.hirepro.in/'
+
     def setup_driver(self):
         """Set up Chrome driver with options"""
         chrome_options = Options()
@@ -36,7 +31,7 @@ class AxisBankScraper:
         chrome_options.add_argument('--disable-blink-features=AutomationControlled')
         chrome_options.add_experimental_option('useAutomationExtension', False)
         chrome_options.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
-        
+
         driver = None
         try:
             service = Service(CHROMEDRIVER_PATH)
@@ -56,17 +51,23 @@ class AxisBankScraper:
         })
         driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
         return driver
-    
+
     def generate_external_id(self, job_id, company):
         """Generate stable external ID"""
         unique_string = f"{company}_{job_id}"
         return hashlib.md5(unique_string.encode()).hexdigest()
-    
+
     def scrape(self, max_pages=MAX_PAGES_TO_SCRAPE):
-        """Scrape jobs from Axis Bank careers page with pagination support"""
+        """Scrape jobs from Axis Bank ARISE HirePro landing page.
+
+        The ARISE page is a static landing page (not a paginated job board).
+        Roles are listed in a table with PDF job description links.
+        There is one global 'Apply Now' registration link.
+        Pagination (max_pages) is accepted for interface compatibility but not used.
+        """
         jobs = []
         driver = None
-        
+
         max_retries = 3
         for attempt in range(max_retries):
           try:
@@ -85,35 +86,38 @@ class AxisBankScraper:
                     continue
                 raise
 
-            short_wait = WebDriverWait(driver, 5)
-            time.sleep(15)  # Wait for Skillate SPA to load
+            # Wait for the page to load -- it's a simple static HTML page
+            time.sleep(5)
 
+            # Verify we landed on the right page
+            logger.info(f"Page title: {driver.title}, URL: {driver.current_url}")
+
+            # --- Extract the global "Apply Now" URL ---
+            apply_url = self.url  # fallback
             try:
-                WebDriverWait(driver, 10).until(EC.presence_of_element_located((
-                    By.CSS_SELECTOR, "div.job-card, div[class*='job-listing'], a[href*='/jobs/'], div[class*='job']"
-                )))
-                logger.info("Job listings loaded")
-            except:
-                logger.warning("Timeout waiting for job listings, continuing with fallbacks")
+                apply_links = driver.find_elements(By.CSS_SELECTOR, 'a[href*="registration"]')
+                if not apply_links:
+                    apply_links = driver.find_elements(By.XPATH, '//a[contains(text(), "Apply Now")]')
+                if apply_links:
+                    apply_url = apply_links[0].get_attribute('href')
+                    logger.info(f"Found Apply Now URL: {apply_url}")
+            except Exception as e:
+                logger.warning(f"Could not find Apply Now link: {e}")
 
-            current_page = 1
+            # --- Extract roles from the table ---
+            # Each role is a <tr> with two <td>s: role name and a "Download JD" PDF link.
+            jobs = self._extract_roles_from_table(driver, apply_url)
 
-            while current_page <= max_pages:
-                logger.info(f"Scraping page {current_page} of {max_pages}")
+            if not jobs:
+                # Fallback: try extracting via JavaScript in case DOM structure varies
+                logger.info("Table extraction found 0 roles, trying JS fallback")
+                jobs = self._extract_roles_js_fallback(driver, apply_url)
 
-                page_jobs = self._scrape_page(driver, short_wait)
-                jobs.extend(page_jobs)
-                
-                logger.info(f"Scraped {len(page_jobs)} jobs from page {current_page}")
-                
-                if current_page < max_pages:
-                    if not self._go_to_next_page(driver, current_page):
-                        logger.info("No more pages available")
-                        break
-                    time.sleep(3)
-                
-                current_page += 1
-            
+            if not jobs:
+                # Last-resort fallback: extract from PDF links paired with preceding text
+                logger.info("JS fallback found 0 roles, trying PDF-link fallback")
+                jobs = self._extract_roles_from_pdf_links(driver, apply_url)
+
             logger.info(f"Successfully scraped {len(jobs)} total jobs from {self.company_name}")
             break  # Success
 
@@ -134,269 +138,216 @@ class AxisBankScraper:
                 driver = None
 
         return jobs
-    
-    def _go_to_next_page(self, driver, current_page):
-        """Navigate to the next page"""
-        try:
-            next_page_num = current_page + 1
-            next_page_selectors = [
-                (By.XPATH, f'//a[text()="{next_page_num}"]'),
-                (By.CSS_SELECTOR, f'a[aria-label="Page {next_page_num}"]'),
-                (By.XPATH, '//a[@aria-label="Next page"]'),
-                (By.XPATH, '//button[contains(text(), "Next")]'),
-                (By.CSS_SELECTOR, 'a.pagination-next'),
-            ]
-            
-            for selector_type, selector_value in next_page_selectors:
-                try:
-                    next_button = driver.find_element(selector_type, selector_value)
-                    driver.execute_script("arguments[0].scrollIntoView();", next_button)
-                    time.sleep(1)
-                    next_button.click()
-                    logger.info(f"Clicked next page button")
-                    return True
-                except:
-                    continue
-            
-            return False
-                
-        except Exception as e:
-            logger.error(f"Error navigating to next page: {str(e)}")
-            return False
-    
-    def _scrape_page(self, driver, wait):
-        """Scrape jobs from current page"""
+
+    def _extract_roles_from_table(self, driver, apply_url):
+        """Extract roles from the HTML table rows under the 'Roles Available' section.
+
+        Expected structure:
+          <tr>
+            <td>Role Name</td>
+            <td><a href="jds/SomeFile.pdf">Download JD</a></td>
+          </tr>
+        """
         jobs = []
-        time.sleep(3)
-
-        # Scroll to load dynamic content
-        for scroll_i in range(5):
-            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(2)
-        driver.execute_script("window.scrollTo(0, 0);")
-        time.sleep(2)
-
-        job_cards = []
-        # Skillate platform priority selectors
-        selectors = [
-            (By.CSS_SELECTOR, 'div.job-card'),
-            (By.CSS_SELECTOR, 'div[class*="job-listing"]'),
-            (By.CSS_SELECTOR, 'a[href*="/jobs/"]'),
-            (By.CSS_SELECTOR, 'div.job-title'),
-            (By.CSS_SELECTOR, 'div.job-details'),
-            (By.CSS_SELECTOR, '[class*="job-card"]'),
-            (By.CSS_SELECTOR, '[class*="jobCard"]'),
-            (By.CSS_SELECTOR, '[class*="job-listing"]'),
-            (By.CSS_SELECTOR, 'div[class*="job"]'),
-            (By.CSS_SELECTOR, 'div[class*="opening"]'),
-            (By.CSS_SELECTOR, 'div[class*="position"]'),
-            (By.CSS_SELECTOR, 'div[class*="vacancy"]'),
-            (By.CSS_SELECTOR, 'div[class*="result"]'),
-            (By.XPATH, '//div[contains(@class, "listing")]'),
-            (By.TAG_NAME, 'article'),
-        ]
-
-        for selector_type, selector_value in selectors:
-            try:
-                elements = driver.find_elements(selector_type, selector_value)
-                if elements and len(elements) >= 1:
-                    job_cards = elements
-                    logger.info(f"Found {len(job_cards)} job cards using: {selector_value}")
-                    break
-            except:
-                continue
-
-        # Link-based fallback: find <a> tags with job/career-related hrefs
-        if not job_cards:
-            logger.info("Primary selectors failed, trying link-based fallback")
-            try:
-                all_links = driver.find_elements(By.TAG_NAME, 'a')
-                job_links = []
-                seen_hrefs = set()
-                for link in all_links:
-                    href = (link.get_attribute('href') or '').lower()
-                    text = (link.text or '').strip()
-                    if not href or not text or len(text) < 5:
-                        continue
-                    if href in seen_hrefs:
-                        continue
-                    if any(kw in href for kw in ['/job', '/career', '/opening', '/position', '/vacancy', 'requisition', 'apply']):
-                        if not any(skip in href for skip in ['login', 'sign-in', 'faq', '#', 'javascript:']):
-                            job_links.append(link)
-                            seen_hrefs.add(href)
-                if job_links:
-                    job_cards = job_links
-                    logger.info(f"Link-based fallback found {len(job_cards)} job links")
-            except Exception as e:
-                logger.error(f"Link-based fallback failed: {str(e)}")
-
-        # JavaScript fallback for link extraction
-        if not job_cards:
-            logger.info("Trying JavaScript fallback for link extraction")
-            try:
-                js_links = driver.execute_script("""
-                    var results = [];
-                    document.querySelectorAll('a[href]').forEach(function(link) {
-                        var text = (link.innerText || '').trim();
-                        var href = link.href || '';
-                        if (text.length > 3 && text.length < 200 && href.length > 10) {
-                            if (href.includes('/job') || href.includes('/position') || href.includes('/career') || href.includes('/opening') || href.includes('/requisition')) {
-                                results.push({title: text.split('\\n')[0].trim(), url: href});
-                            }
-                        }
-                    });
-                    return results;
-                """)
-                if js_links:
-                    logger.info(f"JS fallback found {len(js_links)} job links")
-                    for jl in js_links:
-                        title = jl.get('title', '').strip()
-                        url = jl.get('url', '').strip()
-                        if title and url:
-                            job_id = hashlib.md5(url.encode()).hexdigest()[:12]
-                            job_data = {
-                                'external_id': self.generate_external_id(job_id, self.company_name),
-                                'company_name': self.company_name,
-                                'title': title,
-                                'description': '',
-                                'location': '',
-                                'city': '',
-                                'state': '',
-                                'country': 'India',
-                                'employment_type': '',
-                                'department': '',
-                                'apply_url': url,
-                                'posted_date': '',
-                                'job_function': '',
-                                'experience_level': '',
-                                'salary_range': '',
-                                'remote_type': '',
-                                'status': 'active'
-                            }
-                            jobs.append(job_data)
-                            logger.info(f"JS Extracted: {title}")
-                    return jobs
-            except Exception as e:
-                logger.error(f"JS fallback failed: {str(e)}")
-
-        if not job_cards:
-            logger.warning("No job cards found with any selector or fallback")
-            return jobs
-        
-        for idx, card in enumerate(job_cards):
-            try:
-                card_text = card.text
-                if not card_text or len(card_text) < 10:
-                    continue
-                
-                job_title = ""
-                job_link = ""
-                try:
-                    title_link = card.find_element(By.TAG_NAME, 'a')
-                    job_title = title_link.text.strip()
-                    job_link = title_link.get_attribute('href')
-                except:
-                    job_title = card_text.split('\n')[0].strip()
-                
-                if not job_title or len(job_title) < 3:
-                    continue
-                
-                job_id = f"axisbank_{idx}"
-                if job_link:
-                    job_id = hashlib.md5(job_link.encode()).hexdigest()[:12]
-                
-                location = ""
-                city = ""
-                state = ""
-                lines = card_text.split('\n')
-                for line in lines:
-                    if 'India' in line or any(city_name in line for city_name in ['Mumbai', 'Delhi', 'Bangalore', 'Chennai', 'Hyderabad', 'Pune', 'Kolkata']):
-                        location = line.strip()
-                        city, state, _ = self.parse_location(location)
-                        break
-                
-                job_data = {
-                    'external_id': self.generate_external_id(job_id, self.company_name),
-                    'company_name': self.company_name,
-                    'title': job_title,
-                    'description': '',
-                    'location': location,
-                    'city': city,
-                    'state': state,
-                    'country': 'India',
-                    'employment_type': '',
-                    'department': '',
-                    'apply_url': job_link if job_link else self.url,
-                    'posted_date': '',
-                    'job_function': '',
-                    'experience_level': '',
-                    'salary_range': '',
-                    'remote_type': '',
-                    'status': 'active'
-                }
-                
-                if FETCH_FULL_JOB_DETAILS and job_link:
-                    full_details = self._fetch_job_details(driver, job_link)
-                    job_data.update(full_details)
-                
-                jobs.append(job_data)
-                
-            except Exception as e:
-                logger.error(f"Error extracting job {idx}: {str(e)}")
-                continue
-        
-        return jobs
-    
-    def _fetch_job_details(self, driver, job_url):
-        """Fetch full job details by visiting the job page"""
-        details = {}
-        
         try:
-            original_window = driver.current_window_handle
-            driver.execute_script("window.open('');")
-            driver.switch_to.window(driver.window_handles[-1])
-            
-            driver.get(job_url)
-            time.sleep(3)
-            
-            try:
-                desc_selectors = [
-                    (By.CSS_SELECTOR, 'div[class*="description"]'),
-                    (By.XPATH, "//div[contains(@class, 'job-description')]"),
-                    (By.CSS_SELECTOR, 'div.description'),
-                ]
-                
-                for selector_type, selector_value in desc_selectors:
-                    try:
-                        desc_elem = driver.find_element(selector_type, selector_value)
-                        details['description'] = desc_elem.text.strip()[:2000]
-                        break
-                    except:
+            # Find all table rows that contain a PDF download link
+            rows = driver.find_elements(By.CSS_SELECTOR, 'tr')
+            logger.info(f"Found {len(rows)} table rows total")
+
+            for idx, row in enumerate(rows):
+                try:
+                    cells = row.find_elements(By.TAG_NAME, 'td')
+                    if len(cells) < 2:
                         continue
-            except:
-                pass
-            
-            driver.close()
-            driver.switch_to.window(original_window)
-            
+
+                    role_name = cells[0].text.strip()
+                    if not role_name or len(role_name) < 2:
+                        continue
+
+                    # Look for a PDF link in the second cell
+                    jd_url = ''
+                    try:
+                        pdf_link = cells[1].find_element(By.CSS_SELECTOR, 'a[href*=".pdf"]')
+                        jd_url = pdf_link.get_attribute('href')
+                    except:
+                        # Also check other cells
+                        for cell in cells[1:]:
+                            try:
+                                pdf_link = cell.find_element(By.CSS_SELECTOR, 'a[href*=".pdf"]')
+                                jd_url = pdf_link.get_attribute('href')
+                                break
+                            except:
+                                continue
+
+                    if not jd_url:
+                        # Skip rows without a JD PDF -- they are likely headers
+                        continue
+
+                    # Build a stable job ID from the role name
+                    role_slug = role_name.lower().replace(' ', '_').replace('-', '_')
+                    job_id = f"axisbank_arise_{role_slug}"
+
+                    job_data = {
+                        'external_id': self.generate_external_id(job_id, self.company_name),
+                        'company_name': self.company_name,
+                        'title': f"ARISE - {role_name}",
+                        'description': f"Axis Bank ARISE program role in {role_name}. Job description: {jd_url}",
+                        'location': 'India',
+                        'city': '',
+                        'state': '',
+                        'country': 'India',
+                        'employment_type': 'Full-time',
+                        'department': role_name,
+                        'apply_url': apply_url,
+                        'posted_date': '',
+                        'job_function': role_name,
+                        'experience_level': '0-5 years',
+                        'salary_range': '',
+                        'remote_type': '',
+                        'status': 'active',
+                        'jd_pdf_url': jd_url,
+                    }
+
+                    jobs.append(job_data)
+                    logger.info(f"Extracted role: {role_name} (JD: {jd_url})")
+
+                except Exception as e:
+                    logger.error(f"Error extracting row {idx}: {str(e)}")
+                    continue
+
         except Exception as e:
-            logger.error(f"Error fetching job details: {str(e)}")
-            try:
-                if len(driver.window_handles) > 1:
-                    driver.close()
-                    driver.switch_to.window(driver.window_handles[0])
-            except:
-                pass
-        
-        return details
-    
+            logger.error(f"Table extraction failed: {str(e)}")
+
+        return jobs
+
+    def _extract_roles_js_fallback(self, driver, apply_url):
+        """JavaScript fallback: extract role rows from the table via JS."""
+        jobs = []
+        try:
+            role_data = driver.execute_script("""
+                var results = [];
+                var rows = document.querySelectorAll('tr');
+                for (var i = 0; i < rows.length; i++) {
+                    var cells = rows[i].querySelectorAll('td');
+                    if (cells.length < 2) continue;
+                    var roleName = (cells[0].innerText || '').trim();
+                    if (!roleName || roleName.length < 2) continue;
+                    var pdfLink = cells[1].querySelector('a[href*=".pdf"]');
+                    if (!pdfLink) continue;
+                    results.push({
+                        name: roleName,
+                        jd_url: pdfLink.href
+                    });
+                }
+                return results;
+            """)
+
+            if role_data:
+                logger.info(f"JS fallback found {len(role_data)} roles")
+                for rd in role_data:
+                    role_name = rd.get('name', '').strip()
+                    jd_url = rd.get('jd_url', '').strip()
+                    if not role_name:
+                        continue
+
+                    role_slug = role_name.lower().replace(' ', '_').replace('-', '_')
+                    job_id = f"axisbank_arise_{role_slug}"
+
+                    job_data = {
+                        'external_id': self.generate_external_id(job_id, self.company_name),
+                        'company_name': self.company_name,
+                        'title': f"ARISE - {role_name}",
+                        'description': f"Axis Bank ARISE program role in {role_name}. Job description: {jd_url}",
+                        'location': 'India',
+                        'city': '',
+                        'state': '',
+                        'country': 'India',
+                        'employment_type': 'Full-time',
+                        'department': role_name,
+                        'apply_url': apply_url,
+                        'posted_date': '',
+                        'job_function': role_name,
+                        'experience_level': '0-5 years',
+                        'salary_range': '',
+                        'remote_type': '',
+                        'status': 'active',
+                        'jd_pdf_url': jd_url,
+                    }
+                    jobs.append(job_data)
+                    logger.info(f"JS Extracted role: {role_name}")
+
+        except Exception as e:
+            logger.error(f"JS fallback failed: {str(e)}")
+
+        return jobs
+
+    def _extract_roles_from_pdf_links(self, driver, apply_url):
+        """Last-resort fallback: extract roles by finding all PDF links and deriving
+        role names from the PDF filename or surrounding text."""
+        jobs = []
+        try:
+            pdf_links = driver.find_elements(By.CSS_SELECTOR, 'a[href*=".pdf"]')
+            logger.info(f"PDF-link fallback found {len(pdf_links)} PDF links")
+
+            for pdf_link in pdf_links:
+                try:
+                    jd_url = pdf_link.get_attribute('href')
+                    if not jd_url:
+                        continue
+
+                    # Derive role name from the PDF filename
+                    # e.g. "jds/BusinessIntelligenceUnit.pdf" -> "Business Intelligence Unit"
+                    filename = jd_url.split('/')[-1].replace('.pdf', '')
+                    # Insert spaces before capital letters: "BusinessIntelligenceUnit" -> "Business Intelligence Unit"
+                    import re
+                    role_name = re.sub(r'(?<=[a-z])(?=[A-Z])', ' ', filename)
+                    role_name = role_name.replace('-', ' - ')  # handle hyphens like "InternalAudit-CorporateAudits"
+
+                    if not role_name or len(role_name) < 2:
+                        continue
+
+                    role_slug = role_name.lower().replace(' ', '_').replace('-', '_')
+                    job_id = f"axisbank_arise_{role_slug}"
+
+                    job_data = {
+                        'external_id': self.generate_external_id(job_id, self.company_name),
+                        'company_name': self.company_name,
+                        'title': f"ARISE - {role_name}",
+                        'description': f"Axis Bank ARISE program role in {role_name}. Job description: {jd_url}",
+                        'location': 'India',
+                        'city': '',
+                        'state': '',
+                        'country': 'India',
+                        'employment_type': 'Full-time',
+                        'department': role_name,
+                        'apply_url': apply_url,
+                        'posted_date': '',
+                        'job_function': role_name,
+                        'experience_level': '0-5 years',
+                        'salary_range': '',
+                        'remote_type': '',
+                        'status': 'active',
+                        'jd_pdf_url': jd_url,
+                    }
+                    jobs.append(job_data)
+                    logger.info(f"PDF-link extracted role: {role_name}")
+
+                except Exception as e:
+                    logger.error(f"Error extracting from PDF link: {str(e)}")
+                    continue
+
+        except Exception as e:
+            logger.error(f"PDF-link fallback failed: {str(e)}")
+
+        return jobs
+
     def parse_location(self, location_str):
         """Parse location string into city, state, country"""
         if not location_str:
             return '', '', 'India'
-        
+
         parts = [p.strip() for p in location_str.split(',')]
         city = parts[0] if len(parts) > 0 else ''
         state = parts[1] if len(parts) > 1 else ''
-        
+
         return city, state, 'India'

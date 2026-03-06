@@ -1,291 +1,246 @@
-# STATUS: DEAD - Greenhouse board (boards.greenhouse.io/myntra) no longer exists (tested 2026-02-22)
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
+# Updated: Switched from Selenium-based scraping to Spire2Grow REST API
+# The Myntra careers site (jobs.myntra.com) is a Flutter Web SPA powered by
+# the Spire2Grow career portal platform. Flutter renders to HTML/canvas which
+# makes DOM extraction unreliable. Instead, we call the same REST API that
+# the Flutter app uses internally.
+import requests
 import hashlib
-import time
+import re
 from datetime import datetime
-from pathlib import Path
 
 from core.logging import setup_logger
-from config.scraper import SCRAPE_TIMEOUT, HEADLESS_MODE, FETCH_FULL_JOB_DETAILS, MAX_PAGES_TO_SCRAPE
+from config.scraper import SCRAPE_TIMEOUT, MAX_PAGES_TO_SCRAPE
 
 logger = setup_logger('myntra_scraper')
 
-CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0.7559.133_fresh/chromedriver-mac-arm64/chromedriver'
+# Spire2Grow API backing the Flutter Web SPA at jobs.myntra.com
+API_BASE = 'https://io.spire2grow.com/ies/v1/p'
+WORKSPACE_ID = 'MYNTRA-93as3'
+PAGE_SIZE = 20
+
 
 class MyntraScraper:
     def __init__(self):
         self.company_name = 'Myntra'
-        self.url = 'https://boards.greenhouse.io/myntra'
-    
-    def setup_driver(self):
-        """Set up Chrome driver with options"""
-        chrome_options = Options()
-        if HEADLESS_MODE:
-            chrome_options.add_argument('--headless=new')
-        chrome_options.add_argument('--no-sandbox')
-        chrome_options.add_argument('--disable-dev-shm-usage')
-        chrome_options.add_argument('--disable-gpu')
-        chrome_options.add_argument('--window-size=1920,1080')
-        chrome_options.add_argument('--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36')
-        chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-        chrome_options.add_experimental_option('excludeSwitches', ['enable-logging'])
-        
-        try:
-            # Install and get the correct chromedriver path
-            driver_path = CHROMEDRIVER_PATH
-            logger.info(f"ChromeDriver installed at: {driver_path}")
-            
-            # Fix for macOS ARM - ensure we use the actual chromedriver binary
-            if 'chromedriver-mac-arm64' in driver_path and not driver_path.endswith('chromedriver'):
-                import os
-                driver_dir = os.path.dirname(driver_path)
-                actual_driver = os.path.join(driver_dir, 'chromedriver')
-                if os.path.exists(actual_driver):
-                    driver_path = actual_driver
-                    logger.info(f"Using corrected path: {driver_path}")
-            
-            service = Service(driver_path)
-            driver = webdriver.Chrome(service=service, options=chrome_options)
-            return driver
-        except Exception as e:
-            logger.error(f"ChromeDriver setup failed: {str(e)}")
-            # Fallback: try without service specification
-            logger.info("Attempting fallback driver setup...")
-            driver = webdriver.Chrome(options=chrome_options)
-            return driver
-    
+        self.url = 'https://jobs.myntra.com/home'  # kept for reference / apply_url fallback
+        self.api_search_url = f'{API_BASE}/requisition/_search'
+        self.api_count_url = f'{API_BASE}/requisition/_count'
+        self.headers = {
+            'Content-Type': 'application/json',
+            'WorkspaceId': WORKSPACE_ID,
+            'language': 'en',
+            'Referer': 'https://jobs.myntra.com/',
+            'Origin': 'https://jobs.myntra.com',
+            'User-Agent': (
+                'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) '
+                'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            ),
+        }
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
     def generate_external_id(self, job_id, company):
-        """Generate stable external ID"""
+        """Generate a stable external ID from company + job identifier."""
         unique_string = f"{company}_{job_id}"
         return hashlib.md5(unique_string.encode()).hexdigest()
-    
+
+    @staticmethod
+    def _strip_html(html_str):
+        """Remove HTML tags and collapse whitespace."""
+        if not html_str:
+            return ''
+        text = re.sub(r'<[^>]+>', ' ', html_str)
+        text = re.sub(r'\s+', ' ', text).strip()
+        return text
+
+    @staticmethod
+    def _format_experience(exp_obj):
+        """Convert requiredExperienceInMonths object to a human-readable string."""
+        if not exp_obj:
+            return ''
+        from_months = exp_obj.get('from', 0) or 0
+        to_months = exp_obj.get('to', 0) or 0
+        from_years = from_months // 12
+        to_years = to_months // 12
+        if from_years and to_years:
+            return f'{from_years}-{to_years} years'
+        if from_years:
+            return f'{from_years}+ years'
+        if to_years:
+            return f'0-{to_years} years'
+        return ''
+
+    @staticmethod
+    def _format_employment_type(raw):
+        """Normalise the employmentType value coming from the API."""
+        if not raw:
+            return ''
+        mapping = {
+            'FULL_TIME': 'Full-time',
+            'PART_TIME': 'Part-time',
+            'CONTRACT': 'Contract',
+            'INTERNSHIP': 'Internship',
+            'TEMPORARY': 'Temporary',
+        }
+        return mapping.get(raw.upper(), raw.replace('_', ' ').title())
+
+    @staticmethod
+    def _epoch_to_date(epoch_ms):
+        """Convert epoch milliseconds to YYYY-MM-DD string."""
+        if not epoch_ms:
+            return ''
+        try:
+            return datetime.utcfromtimestamp(epoch_ms / 1000).strftime('%Y-%m-%d')
+        except Exception:
+            return ''
+
+    # ------------------------------------------------------------------
+    # Core scraping logic
+    # ------------------------------------------------------------------
+    def _get_total_count(self):
+        """Hit the count endpoint to know the total number of active jobs."""
+        try:
+            resp = requests.get(
+                self.api_count_url,
+                headers=self.headers,
+                timeout=SCRAPE_TIMEOUT,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            return data.get('totalCount', 0)
+        except Exception as e:
+            logger.warning(f"Could not fetch job count: {e}")
+            return 0
+
+    def _fetch_page(self, page):
+        """Fetch a single page of job requisitions from the Spire2Grow API."""
+        params = {
+            'page': page,
+            'size': PAGE_SIZE,
+            'selectedSortOrder': 'desc',
+            'selectedSortField': 'postedOn',
+        }
+        resp = requests.get(
+            self.api_search_url,
+            headers=self.headers,
+            params=params,
+            timeout=SCRAPE_TIMEOUT,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
     def scrape(self, max_pages=MAX_PAGES_TO_SCRAPE):
-        """Scrape jobs from Myntra careers page with pagination support"""
-        jobs = []
-        driver = None
-        
+        """Scrape all Myntra jobs from the Spire2Grow API with pagination."""
+        all_jobs = []
+
         try:
-            logger.info(f"Starting scrape for {self.company_name}")
-            driver = self.setup_driver()
-            driver.get(self.url)
-            
-            # Wait for page to load
-            wait = WebDriverWait(driver, SCRAPE_TIMEOUT)
-            time.sleep(5)  # Wait for dynamic content
-            
-            current_page = 1
-            
-            while current_page <= max_pages:
-                logger.info(f"Scraping page {current_page} of {max_pages}")
-                
-                # Scrape current page
-                page_jobs = self._scrape_page(driver, wait)
-                jobs.extend(page_jobs)
-                
-                logger.info(f"Scraped {len(page_jobs)} jobs from page {current_page}")
-                
-                # Try to navigate to next page
-                if current_page < max_pages:
-                    if not self._go_to_next_page(driver, current_page):
-                        logger.info("No more pages available")
-                        break
-                    time.sleep(3)  # Wait for next page to load
-                
-                current_page += 1
-            
-            logger.info(f"Successfully scraped {len(jobs)} total jobs from {self.company_name}")
-            
-        except Exception as e:
-            logger.error(f"Error scraping {self.company_name}: {str(e)}")
-            raise
-        
-        finally:
-            if driver:
-                driver.quit()
-        
-        return jobs
-    
-    def _go_to_next_page(self, driver, current_page):
-        """Navigate to the next page"""
-        try:
-            next_page_num = current_page + 1
-            next_page_selectors = [
-                (By.XPATH, f'//a[text()="{next_page_num}"]'),
-                (By.CSS_SELECTOR, f'a[aria-label="Page {next_page_num}"]'),
-                (By.XPATH, '//a[@aria-label="Next page"]'),
-                (By.XPATH, '//button[contains(text(), "Next")]'),
-                (By.CSS_SELECTOR, 'a.pagination-next'),
-            ]
-            
-            for selector_type, selector_value in next_page_selectors:
-                try:
-                    next_button = driver.find_element(selector_type, selector_value)
-                    driver.execute_script("arguments[0].scrollIntoView();", next_button)
-                    time.sleep(1)
-                    next_button.click()
-                    logger.info(f"Clicked next page button")
-                    return True
-                except:
-                    continue
-            
-            logger.warning("Could not find next page button")
-            return False
-                
-        except Exception as e:
-            logger.error(f"Error navigating to next page: {str(e)}")
-            return False
-    
-    def _scrape_page(self, driver, wait):
-        """Scrape jobs from current page"""
-        jobs = []
-        time.sleep(2)  # Wait for page content
-        
-        # Try multiple selectors for job listings (Greenhouse-specific)
-        job_cards = []
-        selectors = [
-            (By.CSS_SELECTOR, 'div.opening'),
-            (By.CSS_SELECTOR, 'div[class*="job"]'),
-            (By.CSS_SELECTOR, 'section[class*="level"]'),
-        ]
-        
-        for selector_type, selector_value in selectors:
-            try:
-                wait.until(EC.presence_of_element_located((selector_type, selector_value)))
-                job_cards = driver.find_elements(selector_type, selector_value)
-                if job_cards and len(job_cards) > 0:
-                    logger.info(f"Found {len(job_cards)} job cards using selector: {selector_value}")
+            total_count = self._get_total_count()
+            logger.info(f"Myntra reports {total_count} total active jobs")
+
+            page = 1
+            while page <= max_pages:
+                logger.info(f"Fetching page {page} (size={PAGE_SIZE})")
+                data = self._fetch_page(page)
+                entities = data.get('entities', [])
+
+                if not entities:
+                    logger.info(f"No more entities on page {page}, stopping")
                     break
-            except:
-                continue
-        
-        if not job_cards:
-            logger.warning("No job cards found")
-            return jobs
-        
-        # Extract from job cards
-        for idx, card in enumerate(job_cards):
-            try:
-                card_text = card.text
-                if not card_text or len(card_text) < 10:
-                    continue
-                
-                # Get job title
-                job_title = ""
-                job_link = ""
-                try:
-                    title_link = card.find_element(By.TAG_NAME, 'a')
-                    job_title = title_link.text.strip()
-                    job_link = title_link.get_attribute('href')
-                except:
-                    job_title = card_text.split('\n')[0].strip()
-                
-                if not job_title or len(job_title) < 3:
-                    continue
-                
-                # Extract Job ID
-                job_id = f"myntra_{idx}"
-                if job_link and '/jobs/' in job_link:
-                    job_id = job_link.split('/jobs/')[-1].split('?')[0]
-                
-                # Extract location
-                location = ""
-                city = ""
-                state = ""
-                lines = card_text.split('\n')
-                for line in lines:
-                    if 'India' in line or 'Bangalore' in line or 'Mumbai' in line:
-                        location = line.strip()
-                        city, state, _ = self.parse_location(location)
-                        break
-                
-                job_data = {
-                    'external_id': self.generate_external_id(job_id, self.company_name),
-                    'company_name': self.company_name,
-                    'title': job_title,
-                    'description': '',
-                    'location': location,
-                    'city': city,
-                    'state': state,
-                    'country': 'India',
-                    'employment_type': '',
-                    'department': '',
-                    'apply_url': job_link if job_link else self.url,
-                    'posted_date': '',
-                    'job_function': '',
-                    'experience_level': '',
-                    'salary_range': '',
-                    'remote_type': '',
-                    'status': 'active'
-                }
-                
-                # Fetch full details if enabled
-                if FETCH_FULL_JOB_DETAILS and job_link:
-                    full_details = self._fetch_job_details(driver, job_link)
-                    job_data.update(full_details)
-                
-                jobs.append(job_data)
-                
-            except Exception as e:
-                logger.error(f"Error extracting job {idx}: {str(e)}")
-                continue
-        
-        return jobs
-    
-    def _fetch_job_details(self, driver, job_url):
-        """Fetch full job details by visiting the job page"""
-        details = {}
-        
-        try:
-            # Open job in new tab to avoid losing search results page
-            original_window = driver.current_window_handle
-            driver.execute_script("window.open('');")
-            driver.switch_to.window(driver.window_handles[-1])
-            
-            driver.get(job_url)
-            time.sleep(3)
-            
-            # Extract description
-            try:
-                desc_elem = driver.find_element(By.CSS_SELECTOR, 'div#content')
-                details['description'] = desc_elem.text.strip()[:2000]
-            except:
-                pass
-            
-            # Extract department
-            try:
-                dept_elem = driver.find_element(By.CSS_SELECTOR, 'div.location')
-                details['department'] = dept_elem.text.strip()
-            except:
-                pass
-            
-            # Close tab and return to search results
-            driver.close()
-            driver.switch_to.window(original_window)
-            
+
+                for job in entities:
+                    try:
+                        parsed = self._parse_job(job)
+                        if parsed:
+                            all_jobs.append(parsed)
+                    except Exception as e:
+                        logger.error(f"Error parsing job: {e}")
+                        continue
+
+                logger.info(f"Parsed {len(entities)} jobs from page {page}")
+
+                # Stop early when we've fetched everything
+                if len(all_jobs) >= total_count:
+                    break
+
+                page += 1
+
         except Exception as e:
-            logger.error(f"Error fetching job details: {str(e)}")
-            # Make sure we return to original window
-            try:
-                if len(driver.window_handles) > 1:
-                    driver.close()
-                    driver.switch_to.window(driver.window_handles[0])
-            except:
-                pass
-        
-        return details
-    
-    def parse_location(self, location_str):
-        """Parse location string into city, state, country"""
-        if not location_str:
-            return '', '', 'India'
-        
-        parts = [p.strip() for p in location_str.split(',')]
-        city = parts[0] if len(parts) > 0 else ''
-        state = parts[1] if len(parts) > 1 else ''
-        
-        return city, state, 'India'
+            logger.error(f"Error scraping {self.company_name}: {e}")
+            raise
+
+        logger.info(f"Successfully scraped {len(all_jobs)} total jobs from {self.company_name}")
+        return all_jobs
+
+    # ------------------------------------------------------------------
+    # Job parsing
+    # ------------------------------------------------------------------
+    def _parse_job(self, job):
+        """Transform a single API entity into the standard job dict."""
+        title = job.get('jobTitle', '').strip()
+        if not title:
+            return None
+
+        # IDs
+        display_id = job.get('displayId', '')
+        internal_id = job.get('id', display_id)
+        job_id = display_id or internal_id
+
+        # Location
+        locations = job.get('jobLocation', [])
+        if locations:
+            loc = locations[0]
+            city = loc.get('city', '')
+            state = loc.get('state', '')
+            country = loc.get('country', 'India')
+            location = loc.get('fqLocationName', '')
+            if not location:
+                location = ', '.join(filter(None, [city, state, country]))
+        else:
+            city, state, country, location = '', '', 'India', ''
+
+        # Description (HTML -> plain text, capped at 5000 chars)
+        description = self._strip_html(job.get('jobDescription', ''))[:5000]
+
+        # Department — strip the internal code suffix like "(F1121)"
+        department_raw = job.get('departmentName', '')
+        department = re.sub(r'\s*\(F\d+\)\s*$', '', department_raw).strip()
+
+        # Employment type
+        employment_type = self._format_employment_type(job.get('employmentType', ''))
+
+        # Posted date
+        posted_epoch = (job.get('jobPosting') or {}).get('startDate')
+        posted_date = self._epoch_to_date(posted_epoch)
+
+        # Experience
+        experience_level = self._format_experience(job.get('requiredExperienceInMonths'))
+
+        # Skills as a comma-separated string (useful as job_function)
+        skills = job.get('skills', [])
+        skills_str = ', '.join(
+            s.get('skill', '') for s in skills if s.get('skill')
+        )
+
+        # Apply URL — deep-link into the Flutter SPA
+        apply_url = f"https://jobs.myntra.com/jobDescription/{display_id}" if display_id else self.url
+
+        return {
+            'external_id': self.generate_external_id(str(job_id), self.company_name),
+            'company_name': self.company_name,
+            'title': title,
+            'description': description,
+            'location': location,
+            'city': city,
+            'state': state,
+            'country': country,
+            'employment_type': employment_type,
+            'department': department,
+            'apply_url': apply_url,
+            'posted_date': posted_date,
+            'job_function': skills_str,
+            'experience_level': experience_level,
+            'salary_range': '',
+            'remote_type': '',
+            'status': 'active',
+        }

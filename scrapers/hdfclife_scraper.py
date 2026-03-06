@@ -6,6 +6,7 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 import hashlib
 import time
+import json
 import os
 from pathlib import Path
 
@@ -16,6 +17,66 @@ from config.scraper import SCRAPE_TIMEOUT, HEADLESS_MODE, FETCH_FULL_JOB_DETAILS
 logger = setup_logger('hdfclife_scraper')
 
 CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0.7559.133_fresh/chromedriver-mac-arm64/chromedriver'
+
+# Hardcoded token and IV used by the HDFC Life careers portal JS.
+# These values are embedded in the public JS at /hdfc-careers/js/custom.js
+HDFC_API_TOKEN = (
+    "ob1VbQlyRRaKms81nzKB91hjb4QvmP-5f7jSdTgmOIzNvWh5-eLFykYnBx7_1flXG7MGYXSwcVKplNypX26VC1"
+    "9wHmYI4RZFD9uiUfjj3pyUOG-YX7-TkGzIUTpMEE2Bm9YDYBpNRzI6FGns0csd0t1XU7hoVuwazD_NEMJiv2f6"
+    "8HaM7zf_YKHIJHamig2p7jWtBnaUSvm5UZi3wJSw_B7A6qiIFKFYstdxQJCTv7G1jyTmBIWWi23rQ8"
+)
+HDFC_API_IV = "vS7YzoFtgUU1Ovf"
+HDFC_API_URL = "https://mist.api-hdfclife.com/career-portal/get-open-requisition"
+
+# AES-GCM Encrypter class (JS) that mirrors the site's own Encrypter.
+# Injected into the browser context so we can encrypt/decrypt payloads.
+ENCRYPTER_JS = """
+class __HdfcEncrypter {
+    constructor(encryptionkey, iv) {
+        this.algorithm = "AES-GCM";
+        this.key = this.getKey(encryptionkey);
+        this.iv = this.getIV(iv);
+    }
+    getKey(encryptionKey) {
+        return crypto.subtle.importKey(
+            "raw",
+            this.stringToArrayBuffer(encryptionKey.substr(0, 32)),
+            { name: this.algorithm },
+            false,
+            ["encrypt", "decrypt"]
+        );
+    }
+    getIV(iv) { return this.stringToArrayBuffer(atob(iv)); }
+    stringToArrayBuffer(str) {
+        const buf = new ArrayBuffer(str.length);
+        const bufView = new Uint8Array(buf);
+        for (let i = 0; i < str.length; i++) { bufView[i] = str.charCodeAt(i); }
+        return buf;
+    }
+    async encrypt(data) {
+        const key = await this.key;
+        const iv = this.iv;
+        const encodedData = new TextEncoder().encode(JSON.stringify(data));
+        return crypto.subtle.encrypt({ name: this.algorithm, iv }, key, encodedData)
+            .then(encryptedData => {
+                const arr = new Uint8Array(encryptedData);
+                const str = String.fromCharCode.apply(null, arr);
+                return btoa(str);
+            });
+    }
+    async decrypt(encryptedData) {
+        const key = await this.key;
+        const iv = this.iv;
+        const decodedData = atob(encryptedData);
+        const arr = new Uint8Array(decodedData.length);
+        for (let i = 0; i < decodedData.length; i++) { arr[i] = decodedData.charCodeAt(i); }
+        return crypto.subtle.decrypt({ name: this.algorithm, iv }, key, arr)
+            .then(decryptedData => {
+                return JSON.parse(new TextDecoder().decode(decryptedData));
+            });
+    }
+}
+"""
 
 
 class HDFCLifeScraper:
@@ -59,72 +120,31 @@ class HDFCLifeScraper:
         all_jobs = []
         try:
             driver = self.setup_driver()
-            # The main careers page only has department categories (Sales, Operations, Technology, Support).
-            # Actual job listings are loaded dynamically on the find-your-fit.html page via encrypted API calls.
-            # We navigate directly to find-your-fit.html which triggers JS to load all open requisitions.
-            fit_url = self.url.rstrip('/') + '/find-your-fit.html'
+            # Load the find-your-fit page with a jobRole param to trigger JS loading.
+            # We use jobRole=Sales to get the page into a state where jQuery and
+            # crypto.subtle are available, but we call the API ourselves afterwards.
+            fit_url = f"{self.url.rstrip('/')}/find-your-fit.html?jobRole=Sales"
             logger.info(f"Starting {self.company_name} scraping from {fit_url}")
             driver.get(fit_url)
-            time.sleep(15)
 
-            # Scroll to trigger lazy loading and allow JS to fully render job cards
-            for _ in range(5):
-                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                time.sleep(2)
-            driver.execute_script("window.scrollTo(0, 0);")
-            time.sleep(3)
-
-            # Wait for job cards to appear (the page loads them via encrypted API)
-            # The JS renders .main-job-card-list divs for each job
-            for attempt in range(6):
-                card_count = driver.execute_script(
-                    "return document.querySelectorAll('.main-job-card-list').length;"
+            # Wait for jQuery and crypto to be ready
+            for attempt in range(12):
+                ready = driver.execute_script(
+                    "return (typeof $ !== 'undefined' && typeof crypto !== 'undefined' "
+                    "&& typeof crypto.subtle !== 'undefined');"
                 )
-                if card_count > 0:
-                    logger.info(f"Found {card_count} job cards after {(attempt+1)*3}s wait")
+                if ready:
+                    logger.info(f"Page JS context ready after {(attempt + 1) * 2}s")
                     break
-                logger.info(f"Waiting for job cards to load... attempt {attempt+1}")
-                time.sleep(3)
+                time.sleep(2)
+            else:
+                logger.warning("jQuery/crypto not available after waiting; attempting API call anyway")
 
-            # Also try clicking each job role tab to load all categories
-            try:
-                tabs = driver.find_elements(By.CSS_SELECTOR, '.job-type')
-                if tabs:
-                    logger.info(f"Found {len(tabs)} job role tabs")
-                    for tab in tabs:
-                        try:
-                            tab_text = tab.text.strip()
-                            if not tab_text or 'Front Line Sales' in tab_text:
-                                continue
-                            driver.execute_script("arguments[0].click();", tab)
-                            time.sleep(5)
-                            page_jobs = self._extract_jobs(driver)
-                            if page_jobs:
-                                all_jobs.extend(page_jobs)
-                                logger.info(f"Tab '{tab_text}': {len(page_jobs)} jobs (total: {len(all_jobs)})")
-                        except Exception as e:
-                            logger.warning(f"Error clicking tab: {str(e)}")
-                            continue
-            except Exception as e:
-                logger.warning(f"Could not find tabs: {str(e)}")
-
-            # If no tabs found or tabs didn't work, extract from current page
-            if not all_jobs:
-                page_jobs = self._extract_jobs(driver)
-                if page_jobs:
-                    all_jobs.extend(page_jobs)
-                    logger.info(f"Extracted {len(page_jobs)} jobs from main page")
-
-            # Deduplicate by external_id
-            seen_ids = set()
-            unique_jobs = []
-            for job in all_jobs:
-                if job['external_id'] not in seen_ids:
-                    seen_ids.add(job['external_id'])
-                    unique_jobs.append(job)
-            all_jobs = unique_jobs
-
+            # Call the encrypted API via Selenium's JS context.
+            # The request body matches what the site's own JS sends.
+            all_jobs = self._call_api(driver)
             logger.info(f"Total unique jobs scraped: {len(all_jobs)}")
+
         except Exception as e:
             logger.error(f"Error: {str(e)}")
         finally:
@@ -132,183 +152,227 @@ class HDFCLifeScraper:
                 driver.quit()
         return all_jobs
 
-    def _extract_jobs(self, driver):
+    def _call_api(self, driver):
+        """Call the HDFC Life encrypted API and return parsed job list."""
         jobs = []
+
+        # Build the JS that encrypts the request, calls the API, decrypts the
+        # response, and returns the structured job data back to Python.
+        js_code = """
+        var callback = arguments[arguments.length - 1];
+        try {
+            // Define Encrypter inline (execute_async_script has its own scope)
+            class __Enc {
+                constructor(ek, iv) {
+                    this.algorithm = "AES-GCM";
+                    this.key = this._getKey(ek);
+                    this.iv = this._getIV(iv);
+                }
+                _s2ab(str) {
+                    var buf = new ArrayBuffer(str.length);
+                    var v = new Uint8Array(buf);
+                    for (var i = 0; i < str.length; i++) v[i] = str.charCodeAt(i);
+                    return buf;
+                }
+                _getKey(ek) {
+                    return crypto.subtle.importKey("raw", this._s2ab(ek.substr(0,32)),
+                        {name: this.algorithm}, false, ["encrypt","decrypt"]);
+                }
+                _getIV(iv) { return this._s2ab(atob(iv)); }
+                async encrypt(data) {
+                    var key = await this.key;
+                    var ed = new TextEncoder().encode(JSON.stringify(data));
+                    var enc = await crypto.subtle.encrypt({name:this.algorithm,iv:this.iv},key,ed);
+                    var arr = new Uint8Array(enc);
+                    var s = String.fromCharCode.apply(null, arr);
+                    return btoa(s);
+                }
+                async decrypt(encData) {
+                    var key = await this.key;
+                    var d = atob(encData);
+                    var arr = new Uint8Array(d.length);
+                    for (var i=0;i<d.length;i++) arr[i]=d.charCodeAt(i);
+                    var dec = await crypto.subtle.decrypt({name:this.algorithm,iv:this.iv},key,arr);
+                    return JSON.parse(new TextDecoder().decode(dec));
+                }
+            }
+
+            var token = "%s";
+            var iv = "%s";
+            var apiUrl = "%s";
+
+            var encrypter = new __Enc(token.substring(0, 32), iv);
+
+            var reqBody = {
+                "jobRole": "All",
+                "functionParam": [],
+                "locationParam": [],
+                "dob": "",
+                "totalWorkExpParam": "",
+                "totalSalesExpParam": "",
+                "totalBFSIExp": "",
+                "qualification": "",
+                "living": ""
+            };
+
+            encrypter.encrypt(reqBody).then(function(encryptedPayload) {
+                var xhr = new XMLHttpRequest();
+                xhr.open('POST', apiUrl, true);
+                xhr.setRequestHeader('Content-Type', 'application/json; charset=utf-8');
+                xhr.onload = function() {
+                    if (xhr.status === 200) {
+                        try {
+                            var response = JSON.parse(xhr.responseText);
+                            if (response && response.data) {
+                                var decrypter = new __Enc(
+                                    response.data.token.substring(0, 32),
+                                    response.data.iv
+                                );
+                                decrypter.decrypt(response.data.payload).then(function(decrypted) {
+                                    // Extract all jobs from all role groups
+                                    var allJobs = [];
+                                    if (decrypted.results && decrypted.results.results) {
+                                        decrypted.results.results.forEach(function(roleGroup) {
+                                            if (roleGroup.REQUISITION && roleGroup.REQUISITION.results) {
+                                                roleGroup.REQUISITION.results.forEach(function(job) {
+                                                    allJobs.push({
+                                                        jobRole: roleGroup.JOB_ROLE || '',
+                                                        reqId: job.REQID || '',
+                                                        designation: job.DESIGNATION || '',
+                                                        city: job.CITY || '',
+                                                        locName: job.LOC_NAME || '',
+                                                        deptName: job.DEPT_NAME || '',
+                                                        experience: job.EXPERIENCE || '',
+                                                        salary: job.SALARY || '',
+                                                        band: job.BAND || '',
+                                                        jobCode: job.JOB_CODE || '',
+                                                        jobCategory: job.JOBCATEGORY || '',
+                                                        noOpening: job.NO_OPENING || ''
+                                                    });
+                                                });
+                                            }
+                                        });
+                                    }
+                                    callback(JSON.stringify({success: true, jobs: allJobs}));
+                                }).catch(function(err) {
+                                    callback(JSON.stringify({success: false, error: 'decrypt: ' + err}));
+                                });
+                            } else {
+                                callback(JSON.stringify({success: false, error: 'no data field', raw: xhr.responseText.substring(0, 200)}));
+                            }
+                        } catch(e) {
+                            callback(JSON.stringify({success: false, error: 'parse: ' + e.message}));
+                        }
+                    } else {
+                        callback(JSON.stringify({success: false, error: 'http ' + xhr.status}));
+                    }
+                };
+                xhr.onerror = function() {
+                    callback(JSON.stringify({success: false, error: 'network error'}));
+                };
+                xhr.send(JSON.stringify({
+                    token: token,
+                    iv: iv,
+                    payload: encryptedPayload
+                }));
+            }).catch(function(err) {
+                callback(JSON.stringify({success: false, error: 'encrypt: ' + err}));
+            });
+        } catch(e) {
+            callback(JSON.stringify({success: false, error: 'js: ' + e.message}));
+        }
+        """ % (HDFC_API_TOKEN, HDFC_API_IV, HDFC_API_URL)
+
         try:
-            # Scroll to load all lazy content
-            for _ in range(3):
-                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                time.sleep(2)
-            driver.execute_script("window.scrollTo(0, 0);")
-            time.sleep(1)
+            # execute_async_script waits for the callback to fire
+            driver.set_script_timeout(60)
+            raw = driver.execute_async_script(js_code)
+            result = json.loads(raw)
 
-            js_jobs = driver.execute_script("""
-                var results = [];
-                var seen = {};
+            if not result.get('success'):
+                logger.error(f"API call failed: {result.get('error', 'unknown')}")
+                return jobs
 
-                // Strategy 1: HDFC Life find-your-fit page renders job cards as .main-job-card-list
-                // Each card has: data-id (JOB_ROLE), req-id (REQID)
-                // Inside: .job-card-title-list (role), .job-card-sub-title (designation),
-                //         .card-loc-text (city), .exp-text (experience), salary text
-                var cards = document.querySelectorAll('.main-job-card-list');
-                for (var i = 0; i < cards.length; i++) {
-                    var card = cards[i];
-                    var reqId = card.getAttribute('req-id') || '';
-                    var jobRole = card.getAttribute('data-id') || '';
+            api_jobs = result.get('jobs', [])
+            logger.info(f"API returned {len(api_jobs)} jobs")
 
-                    var titleEl = card.querySelector('.job-card-sub-title');
-                    var roleEl = card.querySelector('.job-card-title-list');
-                    var locEl = card.querySelector('.card-loc-text');
-                    var expEl = card.querySelector('.exp-text');
-                    var salaryEl = card.querySelector('.sal-text p, [class*="sal"] p');
+            seen_ids = set()
+            for jdata in api_jobs:
+                req_id = jdata.get('reqId', '').strip()
+                designation = jdata.get('designation', '').strip()
+                city = jdata.get('city', '').strip()
+                loc_name = jdata.get('locName', '').strip()
+                dept_name = jdata.get('deptName', '').strip()
+                experience = jdata.get('experience', '').strip()
+                salary = jdata.get('salary', '').strip()
+                job_role = jdata.get('jobRole', '').strip()
 
-                    var designation = titleEl ? titleEl.innerText.trim().split('\\n')[0] : '';
-                    var role = roleEl ? roleEl.innerText.trim() : '';
-                    var title = designation || role;
-                    if (!title) continue;
+                title = designation if designation else job_role
+                if not title or len(title) < 3:
+                    continue
 
-                    var location = locEl ? locEl.innerText.trim() : '';
-                    var experience = expEl ? expEl.innerText.trim() : '';
-                    var salary = salaryEl ? salaryEl.innerText.trim() : '';
-                    var department = role || jobRole;
+                dedup_key = req_id if req_id else f"{title}_{city}"
+                if dedup_key in seen_ids:
+                    continue
+                seen_ids.add(dedup_key)
 
-                    var key = reqId || title + '_' + location;
-                    if (seen[key]) continue;
-                    seen[key] = true;
+                location = city
+                if loc_name and loc_name != city:
+                    location = loc_name
 
-                    results.push({
-                        title: title,
-                        location: location,
-                        url: '',
-                        date: '',
-                        department: department,
-                        experience: experience,
-                        salary: salary,
-                        reqId: reqId
-                    });
-                }
+                apply_url = (
+                    f"{self.url.rstrip('/')}/find-your-fit.html?jobRole={job_role}&reqId={req_id}"
+                    if req_id else self.url
+                )
 
-                // Strategy 2: If no .main-job-card-list found, look for job cards in .fit-page-card
-                if (results.length === 0) {
-                    var fitCards = document.querySelectorAll('.fit-page-card > div, .job-card > div');
-                    for (var i = 0; i < fitCards.length; i++) {
-                        var card = fitCards[i];
-                        var text = card.innerText.trim();
-                        if (!text || text.length < 5 || text === 'No Result Found') continue;
+                job_id = req_id if req_id else hashlib.md5(title.encode()).hexdigest()[:12]
+                loc_data = self.parse_location(location)
 
-                        var titleEl = card.querySelector('h3, h4, [class*="title"], [class*="sub-title"]');
-                        var locEl = card.querySelector('[class*="loc"], [class*="city"]');
-                        var title = titleEl ? titleEl.innerText.trim().split('\\n')[0] : text.split('\\n')[0];
-                        var location = locEl ? locEl.innerText.trim() : '';
-                        var reqId = card.getAttribute('req-id') || '';
+                jobs.append({
+                    'external_id': self.generate_external_id(job_id, self.company_name),
+                    'company_name': self.company_name,
+                    'title': title,
+                    'apply_url': apply_url,
+                    'location': location,
+                    'department': dept_name,
+                    'employment_type': '',
+                    'description': '',
+                    'posted_date': '',
+                    'city': loc_data.get('city', ''),
+                    'state': loc_data.get('state', ''),
+                    'country': loc_data.get('country', 'India'),
+                    'job_function': dept_name or job_role,
+                    'experience_level': experience,
+                    'salary_range': salary,
+                    'remote_type': '',
+                    'status': 'active',
+                })
 
-                        var key = reqId || title + '_' + location;
-                        if (seen[key]) continue;
-                        seen[key] = true;
+            logger.info(f"Parsed {len(jobs)} unique jobs from API response")
 
-                        results.push({
-                            title: title,
-                            location: location,
-                            url: '',
-                            date: '',
-                            department: '',
-                            experience: '',
-                            salary: '',
-                            reqId: reqId
-                        });
-                    }
-                }
-
-                // Strategy 3: Generic fallback - look for any job-related links on the page
-                if (results.length === 0) {
-                    var links = document.querySelectorAll('a[href*="find-your-fit"], a[href*="career"], a[href*="job"]');
-                    for (var i = 0; i < links.length; i++) {
-                        var el = links[i];
-                        var text = (el.innerText || '').trim().split('\\n')[0];
-                        var href = el.href || '';
-                        if (!text || text.length < 3 || text.length > 200) continue;
-                        if (href.includes('javascript:') || href.includes('#') || href.includes('login')) continue;
-                        if (seen[href]) continue;
-                        seen[href] = true;
-                        results.push({title: text, url: href, location: '', date: '', department: '', experience: '', salary: '', reqId: ''});
-                    }
-                }
-
-                return results;
-            """)
-
-            if js_jobs:
-                logger.info(f"JS extraction found {len(js_jobs)} jobs")
-                seen_keys = set()
-                for jdata in js_jobs:
-                    title = jdata.get('title', '').strip()
-                    location = jdata.get('location', '').strip()
-                    department = jdata.get('department', '').strip()
-                    experience = jdata.get('experience', '').strip()
-                    salary = jdata.get('salary', '').strip()
-                    req_id = jdata.get('reqId', '').strip()
-                    url = jdata.get('url', '').strip()
-                    date = jdata.get('date', '').strip()
-
-                    if not title or len(title) < 3:
-                        continue
-
-                    # Use reqId as primary key, fallback to title+location
-                    dedup_key = req_id if req_id else f"{title}_{location}"
-                    if dedup_key in seen_keys:
-                        continue
-                    seen_keys.add(dedup_key)
-
-                    if url and url.startswith('/'):
-                        url = f"{self.base_url}{url}"
-
-                    # Build apply URL from reqId if available
-                    apply_url = url if url else self.url
-                    if req_id and not url:
-                        apply_url = f"{self.url.rstrip('/')}/find-your-fit.html?reqId={req_id}"
-
-                    job_id = req_id if req_id else hashlib.md5((url or title).encode()).hexdigest()[:12]
-                    loc_data = self.parse_location(location)
-                    jobs.append({
-                        'external_id': self.generate_external_id(job_id, self.company_name),
-                        'company_name': self.company_name, 'title': title,
-                        'apply_url': apply_url, 'location': location,
-                        'department': department, 'employment_type': '', 'description': '',
-                        'posted_date': date, 'city': loc_data.get('city', ''),
-                        'state': loc_data.get('state', ''),
-                        'country': loc_data.get('country', 'India'),
-                        'job_function': department, 'experience_level': experience,
-                        'salary_range': salary,
-                        'remote_type': '', 'status': 'active'
-                    })
-            if jobs:
-                logger.info(f"Successfully extracted {len(jobs)} jobs")
-            else:
-                logger.warning("No jobs found on this page")
-                try:
-                    body_text = driver.execute_script('return document.body ? document.body.innerText.substring(0, 500) : ""')
-                    logger.info(f"Page body preview: {body_text}")
-                except:
-                    pass
         except Exception as e:
-            logger.error(f"Error extracting jobs: {str(e)}")
+            logger.error(f"Error calling HDFC Life API: {str(e)}")
+
         return jobs
 
     def _go_to_next_page(self, driver):
-        # HDFC Life find-your-fit page loads all jobs at once via API, no pagination needed
+        # The API returns all jobs at once (no pagination), so this is unused.
         return False
 
     def parse_location(self, location_str):
         result = {'city': '', 'state': '', 'country': 'India'}
-        if not location_str: return result
+        if not location_str:
+            return result
         parts = [p.strip() for p in location_str.split(',')]
-        if len(parts) >= 1: result['city'] = parts[0]
+        if len(parts) >= 1:
+            result['city'] = parts[0]
         if len(parts) >= 3:
             result['state'] = parts[1]
             result['country'] = parts[2]
         elif len(parts) == 2:
             result['country'] = parts[1]
-        if 'India' in location_str: result['country'] = 'India'
+        if 'India' in location_str:
+            result['country'] = 'India'
         return result
 
 
@@ -316,5 +380,7 @@ if __name__ == "__main__":
     scraper = HDFCLifeScraper()
     jobs = scraper.scrape()
     print(f"\nTotal jobs found: {len(jobs)}")
-    for job in jobs:
-        print(f"- {job['title']} | {job['location']}")
+    for job in jobs[:20]:
+        print(f"- {job['title']} | {job['location']} | {job['department']} | {job['salary_range']}")
+    if len(jobs) > 20:
+        print(f"... and {len(jobs) - 20} more")

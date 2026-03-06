@@ -21,7 +21,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 class GoDigitScraper:
     def __init__(self):
         self.company_name = 'Go Digit Insurance'
-        self.url = 'https://godigit.darwinbox.in/ms/candidatev2/main/careers/allJobs'
+        # Go Digit moved from candidatev2 to candidate v1 URL
+        self.url = 'https://godigit.darwinbox.in/ms/candidate/careers'
 
     def setup_driver(self):
         """Set up Chrome driver with anti-detection options"""
@@ -58,17 +59,31 @@ class GoDigitScraper:
         unique_string = f"{company}_{job_id}"
         return hashlib.md5(unique_string.encode()).hexdigest()
 
-    def _wait_for_angular_jobs(self, driver, timeout=30):
-        """Poll-based wait for DarwinBox v2 Angular app to render job elements"""
-        logger.info("Waiting for Angular app to render job elements...")
+    def _wait_for_v1_jobs(self, driver, timeout=30):
+        """Poll-based wait for DarwinBox v1 page to render job elements"""
+        logger.info("Waiting for DarwinBox v1 page to render job elements...")
         start = time.time()
         while time.time() - start < timeout:
             count = driver.execute_script("""
-                var links = document.querySelectorAll('a[href*="jobDetails"]');
-                if (links.length > 0) return links.length;
-                // Also check for any job-related containers
+                // Check for v1 job links: /ms/candidate/careers/{hash} or /ms/candidate/{hash}/careers/{hash}
+                var links = document.querySelectorAll('a[href*="/careers/"]');
+                var jobCount = 0;
+                for (var i = 0; i < links.length; i++) {
+                    var href = links[i].href || '';
+                    if (href.match(/\\/ms\\/candidate\\/(([a-f0-9]+)\\/)?careers\\/[a-f0-9]{10,}/)) {
+                        jobCount++;
+                    }
+                }
+                if (jobCount > 0) return jobCount;
+
+                // Also check for v2 job links as fallback
+                var v2Links = document.querySelectorAll('a[href*="jobDetails"]');
+                if (v2Links.length > 0) return v2Links.length;
+
+                // Check for job tiles/cards
                 var tiles = document.querySelectorAll('div.job-tile, div[class*="job-card"], div[class*="job-item"], div[class*="job-listing"]');
                 if (tiles.length > 0) return tiles.length;
+
                 return 0;
             """)
             if count and count > 0:
@@ -87,7 +102,7 @@ class GoDigitScraper:
             logger.info(f"Starting scrape for {self.company_name}")
             driver = self.setup_driver()
 
-            # Load the allJobs page directly
+            # Load the v1 careers page
             logger.info(f"Navigating to: {self.url}")
             driver.get(self.url)
 
@@ -98,11 +113,22 @@ class GoDigitScraper:
                     break
                 time.sleep(1)
 
-            # Initial sleep for Angular bootstrap
+            # Initial sleep for page bootstrap
             time.sleep(8)
 
+            # Check current URL after load
+            current_url = driver.current_url
+            logger.info(f"Current URL after load: {current_url}")
+
+            # Look for allJobs link on the careers landing page
+            all_jobs_url = self._find_all_jobs_link(driver)
+            if all_jobs_url:
+                logger.info(f"Navigating to all jobs page: {all_jobs_url}")
+                driver.get(all_jobs_url)
+                time.sleep(8)
+
             # Poll-based wait for job elements to render
-            self._wait_for_angular_jobs(driver, timeout=30)
+            self._wait_for_v1_jobs(driver, timeout=30)
 
             # Scroll to load all job tiles
             for i in range(5):
@@ -114,6 +140,33 @@ class GoDigitScraper:
             # Extract jobs
             page_jobs = self._scrape_darwinbox_jobs(driver)
             jobs.extend(page_jobs)
+
+            # If no jobs found and we didn't navigate to allJobs, try clicking any
+            # visible "Jobs" or "Open Positions" buttons/tabs on the page
+            if not jobs and not all_jobs_url:
+                logger.info("No jobs found on initial page, trying to click job tabs/buttons...")
+                clicked = driver.execute_script("""
+                    var elements = document.querySelectorAll('a, button, span, div');
+                    for (var i = 0; i < elements.length; i++) {
+                        var text = (elements[i].innerText || '').trim().toLowerCase();
+                        if (text === 'jobs' || text === 'open positions' || text === 'open jobs' ||
+                            text === 'current openings' || text === 'view jobs' || text === 'career opportunities') {
+                            elements[i].click();
+                            return true;
+                        }
+                    }
+                    return false;
+                """)
+                if clicked:
+                    time.sleep(8)
+                    self._wait_for_v1_jobs(driver, timeout=20)
+                    for i in range(3):
+                        driver.execute_script('window.scrollTo(0, document.body.scrollHeight);')
+                        time.sleep(2)
+                    driver.execute_script('window.scrollTo(0, 0);')
+                    time.sleep(2)
+                    page_jobs = self._scrape_darwinbox_jobs(driver)
+                    jobs.extend(page_jobs)
 
             logger.info(f"Successfully scraped {len(jobs)} total jobs from {self.company_name}")
 
@@ -127,8 +180,57 @@ class GoDigitScraper:
 
         return jobs
 
+    def _find_all_jobs_link(self, driver):
+        """Find the allJobs or Open Jobs link on a DarwinBox careers page - broad search"""
+        try:
+            all_jobs_url = driver.execute_script("""
+                // Strategy 1: Check href patterns
+                var links = document.querySelectorAll('a[href]');
+                for (var i = 0; i < links.length; i++) {
+                    var href = links[i].href || '';
+                    if (href.includes('allJobs') || href.includes('all-jobs') || href.includes('openJobs') ||
+                        href.includes('allOpenings') || href.includes('openPositions')) {
+                        return href;
+                    }
+                }
+
+                // Strategy 2: Check link text (case-insensitive, partial match)
+                for (var i = 0; i < links.length; i++) {
+                    var text = (links[i].innerText || '').trim().toLowerCase();
+                    if (text.includes('open jobs') || text.includes('view all') || text.includes('all jobs') ||
+                        text.includes('view openings') || text.includes('current openings') ||
+                        text.includes('job openings') || text.includes('open positions') ||
+                        text.includes('career opportunities') || text.includes('browse jobs')) {
+                        return links[i].href;
+                    }
+                }
+
+                // Strategy 3: Check buttons and spans for clickable text
+                var allElements = document.querySelectorAll('a, button, span');
+                for (var i = 0; i < allElements.length; i++) {
+                    var text = (allElements[i].innerText || '').trim().toLowerCase();
+                    if (text === 'open jobs' || text === 'view all jobs' || text === 'all jobs' ||
+                        text === 'view all' || text === 'view openings' || text === 'current openings' ||
+                        text === 'job openings' || text === 'open positions') {
+                        if (allElements[i].href) return allElements[i].href;
+                    }
+                }
+
+                // Strategy 4: Look for candidatev2 allJobs pattern in any element
+                var allLinks2 = document.querySelectorAll('a[href*="candidatev2"]');
+                for (var i = 0; i < allLinks2.length; i++) {
+                    return allLinks2[i].href;
+                }
+
+                return null;
+            """)
+            return all_jobs_url
+        except Exception as e:
+            logger.warning(f"Error finding allJobs link: {str(e)}")
+            return None
+
     def _scrape_darwinbox_jobs(self, driver):
-        """Extract jobs from the DarwinBox allJobs page using JavaScript"""
+        """Extract jobs from the DarwinBox page using JavaScript"""
         jobs = []
 
         try:
@@ -136,35 +238,47 @@ class GoDigitScraper:
                 var results = [];
                 var seen = {};
 
-                // DarwinBox v2: find all a[href*="jobDetails"] links
-                var jobLinks = document.querySelectorAll('a[href*="jobDetails"]');
+                // DarwinBox v1: match /ms/candidate/{hash}/careers/{jobhash} and /ms/candidate/careers/{jobhash}
+                var jobLinks = document.querySelectorAll('a[href]');
                 for (var i = 0; i < jobLinks.length; i++) {
                     var link = jobLinks[i];
                     var href = link.href || '';
+                    // Match both hash-based and non-hash v1 patterns
+                    var match = href.match(/\\/ms\\/candidate\\/[a-f0-9]+\\/careers\\/([a-f0-9]{10,})/);
+                    if (!match) {
+                        match = href.match(/\\/ms\\/candidate\\/careers\\/([a-f0-9]{10,})/);
+                    }
+                    if (!match) {
+                        // Also try /jobDetails/ pattern for v2
+                        if (!href.includes('jobDetails')) continue;
+                    }
+                    // Skip non-job links
+                    if (href.includes('/others')) continue;
+
+                    var title = (link.innerText || '').trim().split('\\n')[0].trim();
+                    if (title.length < 3 || title === 'View and Apply' || title === 'Apply' || title === 'apply here') continue;
                     if (seen[href]) continue;
                     seen[href] = true;
 
-                    // Get the closest container for context
-                    var container = link.closest('div[class]') || link.parentElement;
-                    var text = (container ? container.innerText : link.innerText || '').trim();
-                    var lines = text.split('\\n');
-                    var title = lines[0].trim();
-
-                    if (title.length < 3 || title === 'View and Apply' || title === 'Apply') continue;
-
+                    // Try to get location and other info from the container
                     var location = '';
                     var experience = '';
                     var employment_type = '';
-                    for (var j = 0; j < lines.length; j++) {
-                        var line = lines[j].trim();
-                        if (line.match(/India|Haryana|Gujarat|Maharashtra|Karnataka|Goa|Delhi|Tamil Nadu|Rajasthan|Odisha|Jharkhand|Chhattisgarh|Andhra Pradesh|Telangana|Kerala|Punjab|West Bengal|Uttar Pradesh|Bengaluru|Bangalore|Mumbai|Chennai|Hyderabad|Pune|Gurgaon|Noida|Kolkata/i)) {
-                            location = line;
-                        }
-                        if (line.match(/\\d+.*[Yy]ears?/) || line.match(/[Yy]ears?.*\\d+/)) {
-                            experience = line;
-                        }
-                        if (line === 'Permanent' || line === 'Contract' || line === 'Probation' || line === 'Intern' || line === 'Full Time' || line === 'Part Time') {
-                            employment_type = line;
+                    var container = link.closest('tr, div.job-row, div[class*="result"], div[class]') || link.parentElement;
+                    if (container) {
+                        var text = (container.innerText || '').trim();
+                        var lines = text.split('\\n');
+                        for (var j = 0; j < lines.length; j++) {
+                            var line = lines[j].trim();
+                            if (line.match(/India|Haryana|Gujarat|Maharashtra|Karnataka|Goa|Delhi|Tamil Nadu|Rajasthan|Odisha|Jharkhand|Chhattisgarh|Andhra Pradesh|Telangana|Kerala|Punjab|West Bengal|Uttar Pradesh|Bengaluru|Bangalore|Mumbai|Chennai|Hyderabad|Pune|Gurgaon|Noida|Kolkata/i)) {
+                                location = line;
+                            }
+                            if (line.match(/\\d+.*[Yy]ears?/) || line.match(/[Yy]ears?.*\\d+/)) {
+                                experience = line;
+                            }
+                            if (line === 'Permanent' || line === 'Contract' || line === 'Probation' || line === 'Intern' || line === 'Full Time' || line === 'Part Time') {
+                                employment_type = line;
+                            }
                         }
                     }
 
@@ -177,41 +291,41 @@ class GoDigitScraper:
                     });
                 }
 
-                // Fallback: try tile-based selectors
+                // Fallback: try div.job-tile selectors for DarwinBox v2
                 if (results.length === 0) {
-                    var tiles = document.querySelectorAll('div.job-tile, div[class*="job-card"], div[class*="job-item"], div[class*="job-listing"]');
+                    var tiles = document.querySelectorAll('div.job-tile, div[class*="job-card"], div[class*="job-item"]');
                     for (var i = 0; i < tiles.length; i++) {
                         var tile = tiles[i];
                         var text = (tile.innerText || '').trim();
                         if (text.length < 5) continue;
                         var titleEl = tile.querySelector('span.job-title, .title-section, h3, h4, [class*="title"]');
                         var title = titleEl ? titleEl.innerText.trim() : text.split('\\n')[0].trim();
-                        var linkEl = tile.querySelector('a[href*="jobDetails"]');
+                        var linkEl = tile.querySelector('a[href*="jobDetails"], a[href*="/careers/"]');
                         var url = linkEl ? linkEl.href : '';
                         if (title.length >= 3 && title !== 'View and Apply' && !seen[url || title]) {
                             seen[url || title] = true;
-                            results.push({title: title, url: url, location: '', experience: '', employment_type: ''});
+
+                            var lines = text.split('\\n');
+                            var location = '';
+                            var experience = '';
+                            var employment_type = '';
+                            for (var j = 0; j < lines.length; j++) {
+                                var line = lines[j].trim();
+                                if (line.match(/India|Haryana|Gujarat|Maharashtra|Karnataka|Delhi|Tamil Nadu|Rajasthan|Chennai|Bengaluru|Mumbai|Hyderabad|Pune/i)) {
+                                    location = line;
+                                }
+                                if (line.includes('Years') || line.includes('years')) {
+                                    experience = line;
+                                }
+                                if (line === 'Permanent' || line === 'Contract' || line === 'Full Time' || line === 'Part Time') {
+                                    employment_type = line;
+                                }
+                            }
+
+                            results.push({title: title, url: url, location: location, experience: experience, employment_type: employment_type});
                         }
                     }
                 }
-
-                // Fallback 2: v1 pattern - /ms/candidate/careers/{hash}
-                if (results.length === 0) {
-                    var allLinks = document.querySelectorAll('a[href]');
-                    for (var i = 0; i < allLinks.length; i++) {
-                        var link = allLinks[i];
-                        var href = link.href || '';
-                        var match = href.match(/\\/ms\\/candidate\\/careers\\/([a-f0-9]{10,})/);
-                        if (!match) continue;
-                        if (href.includes('/others')) continue;
-                        var title = (link.innerText || '').trim().split('\\n')[0].trim();
-                        if (title.length < 3 || title === 'View and Apply' || title === 'Apply') continue;
-                        if (seen[href]) continue;
-                        seen[href] = true;
-                        results.push({title: title, url: href, location: '', experience: '', employment_type: ''});
-                    }
-                }
-
                 return results;
             """)
 
@@ -237,6 +351,9 @@ class GoDigitScraper:
                     job_id = f"godigit_{idx}"
                     if url and 'jobDetails/' in url:
                         job_id = url.split('jobDetails/')[-1].split('?')[0]
+                    elif url and '/careers/' in url:
+                        # Extract the hash from v1 URL /careers/{hash}
+                        job_id = url.split('/careers/')[-1].split('?')[0]
                     elif url:
                         job_id = hashlib.md5(url.encode()).hexdigest()[:12]
 
