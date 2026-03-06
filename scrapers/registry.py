@@ -562,6 +562,37 @@ from scrapers.bonngroup_scraper import BonnGroupScraper
 # Batch 16 - Custom API (1)
 from scrapers.makemytrip_scraper import MakeMyTripScraper
 
+# Batch 17 - SAP SuccessFactors (3)
+from scrapers.firstsource_scraper import FirstsourceScraper
+from scrapers.yash_scraper import YashScraper
+from scrapers.gainwell_scraper import GainwellScraper
+# Batch 17 - Static HTML / Embedded Data (4)
+from scrapers.granulesindia_scraper import GranulesScraper
+from scrapers.jkbank_scraper import JKBankScraper
+from scrapers.pncinfratech_scraper import PNCInfratechScraper
+from scrapers.ramcosystems_scraper import RamcoSystemsScraper
+# Batch 17 - Recruitee API (1)
+from scrapers.gac_scraper import GACScraper
+# Batch 17 - Selenium SPA scrapers (8)
+from scrapers.tataadvancedsystems_scraper import TataAdvancedSystemsScraper
+from scrapers.xiaomi_scraper import XiaomiScraper
+from scrapers.dcbbank_scraper import DCBBankScraper
+from scrapers.esafbank_scraper import ESAFBankScraper
+from scrapers.hyundaimobis_scraper import HyundaiMobisScraper
+from scrapers.lodha_scraper import LodhaScraper
+from scrapers.waaree_scraper import WaareeScraper
+from scrapers.lucastvs_scraper import LucasTVSScraper
+# Batch 17 - Custom/Complex scrapers (9)
+from scrapers.finolex_scraper import FinolexScraper
+from scrapers.ifb_scraper import IFBScraper
+from scrapers.amnsindia_scraper import AMNSIndiaScraper
+from scrapers.ayefinance_scraper import AyeFinanceScraper
+from scrapers.shriramfinance_scraper import ShriramFinanceScraper
+from scrapers.impetus_scraper import ImpetusScraper
+from scrapers.saudiaramco_scraper import SaudiAramcoScraper
+from scrapers.centuryply_scraper import CenturyPlyScraper
+from scrapers.tvscredit_scraper import TVSCreditScraper
+
 
 # Map of company names to their scraper classes
 SCRAPER_MAP = {
@@ -1166,6 +1197,56 @@ SCRAPER_MAP = {
     'bonn group of industries': BonnGroupScraper,
     # Batch 16 - Custom API (1)
     'makemytrip': MakeMyTripScraper,
+    # Batch 17 - SAP SuccessFactors (3)
+    'firstsource': FirstsourceScraper,
+    'firstsource solutions': FirstsourceScraper,
+    'yash technologies': YashScraper,
+    'yash': YashScraper,
+    'gainwell technologies': GainwellScraper,
+    'gainwell': GainwellScraper,
+    # Batch 17 - Static HTML (4)
+    'granules india': GranulesScraper,
+    'granules': GranulesScraper,
+    'jammu and kashmir bank': JKBankScraper,
+    'j&k bank': JKBankScraper,
+    'jk bank': JKBankScraper,
+    'pnc infratech': PNCInfratechScraper,
+    'ramco systems': RamcoSystemsScraper,
+    'ramco': RamcoSystemsScraper,
+    # Batch 17 - Recruitee API (1)
+    'gac': GACScraper,
+    'gulf agency company': GACScraper,
+    # Batch 17 - Selenium SPA (8)
+    'tata advanced systems': TataAdvancedSystemsScraper,
+    'tasl': TataAdvancedSystemsScraper,
+    'xiaomi': XiaomiScraper,
+    'dcb bank': DCBBankScraper,
+    'esaf small finance bank': ESAFBankScraper,
+    'esaf bank': ESAFBankScraper,
+    'hyundai mobis': HyundaiMobisScraper,
+    'lodha group': LodhaScraper,
+    'lodha': LodhaScraper,
+    'waaree energies': WaareeScraper,
+    'waaree': WaareeScraper,
+    'lucas tvs': LucasTVSScraper,
+    # Batch 17 - Custom/Complex (9)
+    'finolex': FinolexScraper,
+    'finolex group': FinolexScraper,
+    'ifb': IFBScraper,
+    'ifb home appliances': IFBScraper,
+    'amns india': AMNSIndiaScraper,
+    'nippon steel': AMNSIndiaScraper,
+    'aye finance': AyeFinanceScraper,
+    'shriram finance': ShriramFinanceScraper,
+    'shriram group': ShriramFinanceScraper,
+    'impetus': ImpetusScraper,
+    'impetus technologies': ImpetusScraper,
+    'saudi aramco': SaudiAramcoScraper,
+    'aramco': SaudiAramcoScraper,
+    'century plyboards': CenturyPlyScraper,
+    'century ply': CenturyPlyScraper,
+    'tvs credit': TVSCreditScraper,
+    'tvs credit services': TVSCreditScraper,
 }
 
 ALL_COMPANY_CHOICES = [
@@ -1315,4 +1396,16 @@ ALL_COMPANY_CHOICES = [
     'Epson', 'Bonn Group',
     # Batch 16 - Custom API (1)
     'MakeMyTrip',
+    # Batch 17 - SAP SuccessFactors (3)
+    'Firstsource Solutions', 'YASH Technologies', 'Gainwell Technologies',
+    # Batch 17 - Static HTML (4)
+    'Granules India', 'Jammu and Kashmir Bank', 'PNC Infratech', 'Ramco Systems',
+    # Batch 17 - Recruitee API (1)
+    'GAC',
+    # Batch 17 - Selenium SPA (8)
+    'Tata Advanced Systems', 'Xiaomi', 'DCB Bank', 'ESAF Small Finance Bank',
+    'Hyundai Mobis', 'Lodha Group', 'Waaree Energies', 'Lucas TVS',
+    # Batch 17 - Custom/Complex (9)
+    'Finolex', 'IFB', 'AMNS India', 'Aye Finance', 'Shriram Finance',
+    'Impetus Technologies', 'Saudi Aramco', 'Century Plyboards', 'TVS Credit',
 ]
