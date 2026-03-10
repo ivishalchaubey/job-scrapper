@@ -6,11 +6,9 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 import hashlib
 import time
-from datetime import datetime
-from pathlib import Path
-
 from core.logging import setup_logger
 from config.scraper import SCRAPE_TIMEOUT, HEADLESS_MODE, FETCH_FULL_JOB_DETAILS, MAX_PAGES_TO_SCRAPE
+from scrapers.csv_url_resolver import get_company_url
 
 logger = setup_logger('amazon_scraper')
 
@@ -19,7 +17,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 class AmazonScraper:
     def __init__(self):
         self.company_name = "Amazon"
-        self.url = "https://www.amazon.jobs/en/search?base_query=&loc_query=India&type=area&longitude=77.21676&latitude=28.63141&country=IND"
+        default_url = "https://www.amazon.jobs/en/search?base_query=&loc_query=India&type=area&longitude=77.21676&latitude=28.63141&country=IND"
+        self.url = get_company_url(self.company_name, default_url)
     
     def setup_driver(self):
         """Set up Chrome driver with options"""
@@ -451,17 +450,18 @@ class AmazonScraper:
             # Create job data from job_info_map
             for job_id, job_info in job_info_map.items():
                 location = location_map.get(job_id, '')
-                city, state, _ = self.parse_location(location) if location else ('', '', 'India')
+                city, state, country = self.parse_location(location) if location else ('', '', '')
                 
                 job_data = {
                     'external_id': self.generate_external_id(job_id, self.company_name),
+                    'job_id': job_id,
                     'company_name': self.company_name,
                     'title': job_info['title'],
                     'description': '',
                     'location': location,
                     'city': city,
                     'state': state,
-                    'country': 'India',
+                    'country': country,
                     'employment_type': '',
                     'department': '',
                     'apply_url': job_info['apply_url'],
@@ -472,6 +472,14 @@ class AmazonScraper:
                     'remote_type': '',
                     'status': 'active'
                 }
+
+                if job_info['apply_url']:
+                    try:
+                        full_details = self._fetch_job_details(driver, job_info['apply_url'])
+                        if full_details:
+                            job_data.update(full_details)
+                    except Exception as e:
+                        logger.warning(f"Could not fetch full details for job {job_id}: {str(e)}")
                 
                 jobs.append(job_data)
             
@@ -590,13 +598,14 @@ class AmazonScraper:
                     
                     job_data = {
                         'external_id': self.generate_external_id(job_id, self.company_name),
+                        'job_id': job_id,
                         'company_name': self.company_name,
                         'title': job_title,
                         'description': '',
                         'location': location,
                         'city': city,
                         'state': state,
-                        'country': 'India',
+                        'country': '',
                         'employment_type': '',
                         'department': department,
                         'apply_url': job_link if job_link else self.url,
@@ -660,13 +669,14 @@ class AmazonScraper:
                     
                     job_data = {
                         'external_id': self.generate_external_id(job_id, self.company_name),
+                        'job_id': job_id,
                         'company_name': self.company_name,
                         'title': text.split('\n')[0].strip(),
                         'description': '',
                         'location': '',
                         'city': '',
                         'state': '',
-                        'country': 'India',
+                        'country': '',
                         'employment_type': '',
                         'department': '',
                         'apply_url': href,
@@ -700,30 +710,33 @@ class AmazonScraper:
             driver.get(job_url)
             time.sleep(3)
             
-            # Extract description - try multiple selectors
+            # Extract full description sections from the detail body.
             try:
-                # Try to find the Description heading and get all following text
-                desc_section = driver.find_element(By.XPATH, "//h2[contains(text(), 'Description')]/parent::div")
-                details['description'] = desc_section.text.strip()[:2000]  # Limit to 2000 chars
-            except:
-                try:
-                    # Fallback: look for description div
-                    desc_elem = driver.find_element(By.CSS_SELECTOR, 'div[class*="description"]')
-                    details['description'] = desc_elem.text.strip()[:2000]
-                except:
+                section_blocks = driver.find_elements(By.CSS_SELECTOR, "#job-detail-body .content .section")
+                section_texts = []
+                for block in section_blocks:
+                    heading = ''
+                    body = ''
                     try:
-                        # Last resort: get the main content area
-                        main_content = driver.find_element(By.CSS_SELECTOR, 'main, div[role="main"]')
-                        # Get text after Description heading
-                        full_text = main_content.text
-                        if 'Description' in full_text:
-                            desc_start = full_text.index('Description') + len('Description')
-                            # Get text until next major heading or end
-                            desc_text = full_text[desc_start:].split('\n\n')[0]
-                            details['description'] = desc_text.strip()[:2000]
-                    except:
+                        heading = block.find_element(By.TAG_NAME, 'h2').text.strip()
+                    except Exception:
                         pass
-            
+                    try:
+                        body = block.text.strip()
+                        if heading and body.startswith(heading):
+                            body = body[len(heading):].strip()
+                    except Exception:
+                        body = ''
+                    if body:
+                        if heading:
+                            section_texts.append(f"{heading}:\n{body}")
+                        else:
+                            section_texts.append(body)
+                if section_texts:
+                    details['description'] = '\n\n'.join(section_texts)[:15000]
+            except Exception:
+                pass
+
             # Extract department from Job details section
             try:
                 # Look for department link (e.g., "Fulfillment & Operations Management")
@@ -731,23 +744,32 @@ class AmazonScraper:
                 details['department'] = dept_elem.text.strip()
             except:
                 try:
-                    # Fallback: look for link containing "category" anywhere
-                    dept_elem = driver.find_element(By.XPATH, "//a[contains(@href, 'category')]")
+                    dept_elem = driver.find_element(By.CSS_SELECTOR, 'a[href*="/job_categories/"]')
                     details['department'] = dept_elem.text.strip()
                 except:
                     try:
-                        # Last resort: look in Job details section specifically
-                        dept_elem = driver.find_element(By.XPATH, "//*[contains(text(), 'Job details')]/following-sibling::*//a")
+                        # Fallback: look for link containing "category" anywhere
+                        dept_elem = driver.find_element(By.XPATH, "//a[contains(@href, 'category')]")
                         details['department'] = dept_elem.text.strip()
                     except:
-                        pass
+                        try:
+                            # Last resort: look in Job details section specifically
+                            dept_elem = driver.find_element(By.XPATH, "//*[contains(text(), 'Job details')]/following-sibling::*//a")
+                            details['department'] = dept_elem.text.strip()
+                        except:
+                            pass
             
             # Extract precise location from Job details section  
             try:
-                # Look for location text (e.g., "IND, TS, Hyderabad")
-                location_elem = driver.find_element(By.XPATH, "//*[contains(text(), 'IND,')]")
-                details['location'] = location_elem.text.strip()
-            except:
+                location_elem = driver.find_element(By.CSS_SELECTOR, "#job-detail-body .association.location-icon li")
+                location_text = location_elem.text.strip()
+                if location_text:
+                    details['location'] = location_text
+                    city, state, country = self.parse_location(location_text)
+                    details['city'] = city
+                    details['state'] = state
+                    details['country'] = country
+            except Exception:
                 pass
             
             # Close tab and return to search results
@@ -769,7 +791,7 @@ class AmazonScraper:
     def parse_location(self, location_str):
         """Parse location string into city, state, country"""
         if not location_str:
-            return '', '', 'India'
+            return '', '', ''
         
         # Clean up the location string
         location_str = location_str.strip()
@@ -779,46 +801,30 @@ class AmazonScraper:
         
         # Split by comma or pipe
         if '|' in location_str:
-            parts = [p.strip() for p in location_str.split('|')[0].split(',')]
+            parts = [p.strip() for p in location_str.split('|')[0].split(',') if p.strip()]
         else:
-            parts = [p.strip() for p in location_str.split(',')]
-        
+            parts = [p.strip() for p in location_str.split(',') if p.strip()]
+
         city = ''
         state = ''
-        
-        # Parse based on number of parts
-        if len(parts) >= 3:
-            # Format: "City, State, Country" or "City, State Code, Country"
+        country = ''
+
+        # Amazon job details often use "IND, KA, Bengaluru"
+        if len(parts) == 3 and parts[0].upper() == 'IND':
+            country = 'India'
+            state = parts[1]
+            city = parts[2]
+        elif len(parts) >= 3:
             city = parts[0]
             state = parts[1]
+            country = parts[2]
         elif len(parts) == 2:
-            # Format: "City, State" or "City, Country"
             city = parts[0]
-            # Check if second part is likely a state or country
-            if parts[1] in ['IND', 'IN', 'India']:
-                state = ''
-            else:
-                state = parts[1]
+            state = parts[1]
         elif len(parts) == 1:
-            # Just city name
             city = parts[0]
-        
-        # Clean up state codes (e.g., "TS" -> "Telangana", "KA" -> "Karnataka")
-        state_mapping = {
-            'TS': 'Telangana',
-            'KA': 'Karnataka',
-            'MH': 'Maharashtra',
-            'DL': 'Delhi',
-            'TN': 'Tamil Nadu',
-            'HR': 'Haryana',
-            'UP': 'Uttar Pradesh',
-            'WB': 'West Bengal',
-            'GJ': 'Gujarat',
-            'RJ': 'Rajasthan',
-            'PB': 'Punjab',
-        }
-        
-        if state in state_mapping:
-            state = state_mapping[state]
-        
-        return city, state, 'India'
+
+        if not country and ('India' in location_str or 'IND' in location_str):
+            country = 'India'
+
+        return city, state, country
