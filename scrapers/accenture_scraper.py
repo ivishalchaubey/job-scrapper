@@ -5,12 +5,14 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 import hashlib
+import html
+import json
+import re
 import time
-from datetime import datetime
-from pathlib import Path
 
 from core.logging import setup_logger
 from config.scraper import SCRAPE_TIMEOUT, HEADLESS_MODE, MAX_PAGES_TO_SCRAPE, FETCH_FULL_JOB_DETAILS
+from scrapers.csv_url_resolver import get_company_url
 
 logger = setup_logger('accenture_scraper')
 
@@ -19,7 +21,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 class AccentureScraper:
     def __init__(self):
         self.company_name = "Accenture"
-        self.url = "https://www.accenture.com/in-en/careers/jobsearch?ct=Ahmedabad%7CBengaluru%7CBhubaneswar%7CChennai%7CCoimbatore%7CGandhinagar%7CGurugram%7CHyderabad%7CIndore%7CJaipur%7CKochi%7CKolkata%7CMumbai%7CNagpur%7CNavi%20Mumbai%7CNew%20Delhi%7CNoida%7CPune%7CThiruvananthapuram"
+        default_url = "https://www.accenture.com/in-en/careers/jobsearch?ct=Ahmedabad%7CBengaluru%7CBhubaneswar%7CChennai%7CCoimbatore%7CGandhinagar%7CGurugram%7CHyderabad%7CIndore%7CJaipur%7CKochi%7CKolkata%7CMumbai%7CNagpur%7CNavi%20Mumbai%7CNew%20Delhi%7CNoida%7CPune%7CThiruvananthapuram"
+        self.url = get_company_url(self.company_name, default_url)
     
     def setup_driver(self):
         """Set up Chrome driver with options"""
@@ -67,6 +70,15 @@ class AccentureScraper:
         """Generate stable external ID"""
         unique_string = f"{company}_{job_id}"
         return hashlib.md5(unique_string.encode()).hexdigest()
+
+    def _normalize_text(self, value):
+        """Normalize escaped unicode fragments like '\\u002D' and HTML entities."""
+        if not value:
+            return ''
+        text = html.unescape(str(value)).strip()
+        text = re.sub(r'\\u([0-9a-fA-F]{4})', lambda m: chr(int(m.group(1), 16)), text)
+        text = re.sub(r'\s+', ' ', text).strip()
+        return text
     
     def scrape(self, max_pages=MAX_PAGES_TO_SCRAPE):
         """Scrape jobs from Accenture careers page with pagination support"""
@@ -232,6 +244,13 @@ class AccentureScraper:
                         job_number = job_num_elem.text.strip()
                     except:
                         pass
+
+                if job_number.endswith('_en'):
+                    job_number = job_number[:-3]
+
+                if not job_number:
+                    logger.warning(f"Skipping job without scraped job_id: {job_title}")
+                    continue
                 
                 # Extract location
                 location = ""
@@ -261,28 +280,24 @@ class AccentureScraper:
                     pass
                 
                 # Generate external ID
-                if job_number:
-                    external_id = self.generate_external_id(job_number, self.company_name)
-                else:
-                    external_id = self.generate_external_id(f"accenture_{hashlib.md5(job_title.encode()).hexdigest()[:12]}", self.company_name)
+                external_id = self.generate_external_id(job_number, self.company_name)
                 
                 # If no job link, construct one
-                if not job_link and job_number:
-                    job_link = f"https://www.accenture.com/in-en/careers/jobdetails?id={job_number}&title={job_title.replace(' ', '+')}"
-                elif not job_link:
+                if not job_link:
                     job_link = self.url
                 
                 logger.info(f"Found job: '{job_title}' (ID: {job_number})")
                 
                 job_data = {
                     'external_id': external_id,
+                    'job_id': job_number,
                     'company_name': self.company_name,
                     'title': job_title,
                     'description': '',
                     'location': location,
                     'city': city,
                     'state': state,
-                    'country': 'India',
+                    'country': '',
                     'employment_type': employment_type,
                     'department': '',
                     'apply_url': job_link,
@@ -294,9 +309,12 @@ class AccentureScraper:
                     'status': 'active'
                 }
                 
-                # Fetch full details if enabled
-                if FETCH_FULL_JOB_DETAILS and job_link and job_link != self.url:
+                # Open detail page and scrape full content directly.
+                if job_link and job_link != self.url:
                     full_details = self._fetch_job_details(driver, job_link)
+                    if full_details.get('job_id'):
+                        job_data['job_id'] = full_details['job_id']
+                        job_data['external_id'] = self.generate_external_id(full_details['job_id'], self.company_name)
                     job_data.update(full_details)
                 
                 jobs.append(job_data)
@@ -311,112 +329,160 @@ class AccentureScraper:
         return jobs
     
     def _fetch_job_details(self, driver, job_url):
-        """Fetch full job details by visiting the job page"""
+        """Open job detail page and scrape full description/sections from DOM."""
         details = {}
-        
         try:
-            # Open job in new tab
             original_window = driver.current_window_handle
             driver.execute_script("window.open('');")
             driver.switch_to.window(driver.window_handles[-1])
-            
             driver.get(job_url)
-            time.sleep(4)
-            
-            # Try to click the accordion/read more button for job description
-            try:
-                # Look for accordion button or "Read more" link
-                accordion_selectors = [
-                    (By.XPATH, "//button[contains(@class, 'rad-accordion-atom__title')]"),
-                    (By.XPATH, "//button[contains(text(), 'Read more')]"),
-                    (By.XPATH, "//button[contains(text(), 'Read full job description')]"),
-                    (By.XPATH, "//a[contains(text(), 'Read more')]"),
-                ]
-                
-                for selector_type, selector_value in accordion_selectors:
+
+            wait = WebDriverWait(driver, SCRAPE_TIMEOUT)
+            wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "div.rad-job-details__wrapper")))
+
+            # Expand all collapsed sections to ensure full text is available.
+            for _ in range(3):
+                toggles = driver.find_elements(
+                    By.CSS_SELECTOR,
+                    "button.rad-accordion-atom__toggle[aria-expanded='false']",
+                )
+                if not toggles:
+                    break
+                for btn in toggles:
                     try:
-                        accordion_button = driver.find_element(selector_type, selector_value)
-                        driver.execute_script("arguments[0].scrollIntoView();", accordion_button)
-                        time.sleep(1)
-                        driver.execute_script("arguments[0].click();", accordion_button)
-                        time.sleep(2)
-                        logger.info("Clicked accordion/read more button")
+                        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", btn)
+                        time.sleep(0.1)
+                        driver.execute_script("arguments[0].click();", btn)
+                        time.sleep(0.1)
+                    except Exception:
+                        continue
+
+            wrapper = driver.find_element(By.CSS_SELECTOR, "div.rad-job-details__wrapper")
+            raw_job_id = self._normalize_text(wrapper.get_attribute("data-jobid") or "")
+            if raw_job_id:
+                details["job_id"] = raw_job_id.replace("_en", "")
+
+            raw_location = self._normalize_text(wrapper.get_attribute("data-joblocation") or "")
+            if raw_location:
+                details["location"] = raw_location
+                city, state, country = self.parse_location(raw_location)
+                if city:
+                    details["city"] = city
+                if state:
+                    details["state"] = state
+                if country:
+                    details["country"] = country
+
+            emp_type = self._normalize_text(wrapper.get_attribute("data-employeetype") or "")
+            if emp_type:
+                details["employment_type"] = emp_type
+
+            job_func = self._normalize_text(wrapper.get_attribute("data-jobfunction") or "")
+            if job_func:
+                details["job_function"] = job_func
+
+            business_area = self._normalize_text(wrapper.get_attribute("data-businessarea") or "")
+            if business_area:
+                details["department"] = business_area
+
+            years_exp = self._normalize_text(wrapper.get_attribute("data-jobyearsofexperience") or "")
+            if years_exp:
+                details["experience_level"] = years_exp
+
+            # Build full description from DOM using textContent to include hidden accordion content.
+            full_detail_text = driver.execute_script("""
+                const wrapper = document.querySelector('div.rad-job-details__wrapper');
+                if (!wrapper) return '';
+                const sectionTexts = [];
+                const sections = wrapper.querySelectorAll('div.rad-accordion-atom');
+                sections.forEach((section) => {
+                    const heading = (section.querySelector('h2.rad-accordion-atom__toggle-title') || {}).textContent || '';
+                    const contentNode = section.querySelector('div.rad-accordion-atom__content');
+                    const content = contentNode ? ((contentNode.innerText || contentNode.textContent || '')) : '';
+                    const h = heading.trim();
+                    const c = content.replace(/\\r/g, '').replace(/\\n{3,}/g, '\\n\\n').trim();
+                    if (c) {
+                        sectionTexts.push(h ? `${h}:\\n${c}` : c);
+                    }
+                });
+                if (sectionTexts.length) return sectionTexts.join('\\n\\n');
+                const fallback = (wrapper.textContent || '').replace(/\\s+/g, ' ').trim();
+                return fallback;
+            """)
+            if full_detail_text:
+                details["description"] = full_detail_text[:15000]
+
+            # Pull structured metadata from JSON-LD scripts via DOM, avoiding regex truncation.
+            payload = None
+            jsonld_scripts = driver.execute_script("""
+                return Array.from(document.querySelectorAll('script[type="application/ld+json"]'))
+                  .map((s) => s.textContent || '');
+            """)
+            if isinstance(jsonld_scripts, list):
+                for raw in jsonld_scripts:
+                    if not raw:
+                        continue
+                    try:
+                        candidate = json.loads(raw)
+                    except Exception:
+                        continue
+                    if isinstance(candidate, dict) and candidate.get("@type") == "JobPosting":
+                        payload = candidate
                         break
-                    except:
-                        continue
-            except Exception as e:
-                logger.debug(f"No accordion button found: {str(e)}")
-            
-            # Extract job description from accordion content
-            try:
-                desc_elem = None
-                selectors = [
-                    # Target the specific accordion content wrapper
-                    (By.CSS_SELECTOR, "div.rad-accordion-atom__content-wrapper.rad-accordion-atom__content-wrapper--open div.rad-accordion-atom__content"),
-                    (By.CSS_SELECTOR, "div.rad-accordion-atom__content"),
-                    (By.CSS_SELECTOR, "div[id*='job-description-content'] div.rad-accordion-atom__content"),
-                    # Fallback selectors
-                    (By.XPATH, "//div[contains(@class, 'job-description')]"),
-                    (By.XPATH, "//*[contains(text(), 'Job description')]/following-sibling::div"),
-                    (By.XPATH, "//h2[contains(text(), 'Job Description')]//following::div[1]"),
-                ]
-                
-                for selector_type, selector_value in selectors:
-                    try:
-                        desc_elem = driver.find_element(selector_type, selector_value)
-                        if desc_elem and desc_elem.text.strip():
-                            details['description'] = desc_elem.text.strip()[:2000]
-                            logger.debug(f"Extracted description using selector: {selector_value}")
+                    if isinstance(candidate, list):
+                        for item in candidate:
+                            if isinstance(item, dict) and item.get("@type") == "JobPosting":
+                                payload = item
+                                break
+                        if payload:
                             break
-                    except:
-                        continue
-                
-                if not details.get('description'):
-                    logger.debug("Could not extract description from any selector")
-            except Exception as e:
-                logger.debug(f"Error extracting description: {str(e)}")
-            
-            # Extract locations
-            try:
-                loc_elem = driver.find_element(By.XPATH, "//*[contains(text(), 'Location')]//following::div[1] | //h2[contains(text(), 'Locations')]//following::div[1]")
-                location_text = loc_elem.text.strip()
-                if location_text:
-                    # Take first location if multiple
-                    first_location = location_text.split('\n')[0]
-                    details['location'] = first_location
-                    city, state, _ = self.parse_location(first_location)
-                    if city:
-                        details['city'] = city
-                    if state:
-                        details['state'] = state
-                    logger.debug(f"Extracted location: {first_location}")
-            except:
-                pass
-            
-            # Close tab and return to search results
+            if payload:
+                date_posted = str(payload.get("datePosted", "")).strip()
+                if date_posted:
+                    details["posted_date"] = date_posted.split("T")[0]
+
+                if not details.get("job_id"):
+                    identifier = payload.get("identifier") or {}
+                    if isinstance(identifier, dict):
+                        id_val = str(identifier.get("value", "")).strip()
+                        if id_val:
+                            details["job_id"] = id_val
+
+                # If accordion extraction fails, fallback to JSON-LD description.
+                if not details.get("description"):
+                    description_html = payload.get("description", "")
+                    if description_html:
+                        text = html.unescape(description_html)
+                        text = re.sub(r"<br\\s*/?>", "\n", text, flags=re.IGNORECASE)
+                        text = re.sub(r"<[^>]+>", " ", text)
+                        text = re.sub(r"\\s+", " ", text).strip()
+                        details["description"] = text[:15000]
+
             driver.close()
             driver.switch_to.window(original_window)
-            time.sleep(1)
-            
+
         except Exception as e:
-            logger.error(f"Error fetching job details: {str(e)}")
-            # Make sure we return to original window
+            logger.debug(f"Error fetching job details from {job_url}: {str(e)}")
             try:
                 if len(driver.window_handles) > 1:
                     driver.close()
                     driver.switch_to.window(driver.window_handles[0])
-            except:
+            except Exception:
                 pass
-        
         return details
     
     def parse_location(self, location_str):
         """Parse location string into city, state, country"""
         if not location_str:
-            return '', '', 'India'
-        
-        parts = [p.strip() for p in location_str.split(',')]
+            return '', '', ''
+
+        raw = location_str.strip()
+        if '/' in raw:
+            first = raw.split('/')[0].strip()
+            return first, '', ''
+
+        parts = [p.strip() for p in raw.split(',') if p.strip()]
         city = parts[0] if len(parts) > 0 else ''
         state = parts[1] if len(parts) > 1 else ''
-        
-        return city, state, 'India'
+        country = parts[2] if len(parts) > 2 else ''
+        return city, state, country
