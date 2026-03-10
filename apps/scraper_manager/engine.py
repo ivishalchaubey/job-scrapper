@@ -113,6 +113,7 @@ def _scrape_single(company_name, max_pages=1):
             for job_data in jobs:
                 job_service.upsert_job({
                     'external_id': job_data['external_id'],
+                    'job_id': job_data.get('job_id', ''),
                     'company_name': job_data.get('company_name', company_name),
                     'title': job_data.get('title', ''),
                     'description': job_data.get('description', ''),

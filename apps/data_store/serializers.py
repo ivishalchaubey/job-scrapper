@@ -4,6 +4,7 @@ from rest_framework import serializers
 class JobSerializer(serializers.Serializer):
     id = serializers.CharField(read_only=True)
     external_id = serializers.CharField()
+    job_id = serializers.CharField(allow_blank=True, default='')
     company_name = serializers.CharField()
     title = serializers.CharField()
     description = serializers.CharField(allow_blank=True, default='')
@@ -27,6 +28,7 @@ class JobSerializer(serializers.Serializer):
 class JobListSerializer(serializers.Serializer):
     id = serializers.CharField(read_only=True)
     external_id = serializers.CharField()
+    job_id = serializers.CharField(allow_blank=True, default='')
     company_name = serializers.CharField()
     title = serializers.CharField()
     location = serializers.CharField(allow_blank=True, default='')
