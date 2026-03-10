@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class TataAIGScraper:
     def __init__(self):
-        self.company_name = 'Tata AIG Insurance'
-        self.url = 'https://careers.tataaig.com/search/?createNewAlert=false&q=&locationsearch='
+        self.company_name = "Tata AIG Insurance"
+        self.url = "https://careers.tataaig.com/search/?createNewAlert=false&q=&locationsearch="
 
     def setup_driver(self):
         chrome_options = Options()

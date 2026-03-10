@@ -25,8 +25,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class R1RcmScraper:
     def __init__(self):
-        self.company_name = 'R1 RCM'
-        self.url = 'https://r1rcm.wd1.myworkdayjobs.com/R1RCM?Location_Country=c4f78be1a8f14da0ab49ce1162348a5e'
+        self.company_name = "R1 RCM"
+        self.url = "https://r1rcm.wd1.myworkdayjobs.com/R1RCM?Location_Country=c4f78be1a8f14da0ab49ce1162348a5e"
         self.api_url = 'https://r1rcm.wd1.myworkdayjobs.com/wday/cxs/r1rcm/R1RCM/jobs'
         self.base_job_url = 'https://r1rcm.wd1.myworkdayjobs.com/R1RCM'
 

@@ -8,8 +8,8 @@ logger = setup_logger('blueyonder_scraper')
 
 class BlueYonderScraper:
     def __init__(self):
-        self.company_name = 'Blue Yonder'
-        self.url = 'https://jda.wd5.myworkdayjobs.com/JDA_Careers?locationCountry=c4f78be1a8f14da0ab49ce1162348a5e'
+        self.company_name = "Blue Yonder"
+        self.url = "https://careers.blueyonder.com/us/en/search-results?keywords=India"
         self.api_url = 'https://jda.wd5.myworkdayjobs.com/wday/cxs/jda/JDA_Careers/jobs'
         self.base_job_url = 'https://jda.wd5.myworkdayjobs.com/JDA_Careers'
 

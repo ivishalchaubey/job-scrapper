@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class DisneyScraper:
     def __init__(self):
-        self.company_name = 'Disney'
-        self.url = 'https://www.disneycareers.com/en/location/india-jobs/391/1269750/2'
+        self.company_name = "The Walt Disney Company"
+        self.url = "https://www.disneycareers.com/en/location/india-jobs/391/1269750/2"
         self.base_url = 'https://www.disneycareers.com'
 
     def setup_driver(self):

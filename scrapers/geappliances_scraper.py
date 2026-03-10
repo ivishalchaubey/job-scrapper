@@ -11,8 +11,8 @@ logger = setup_logger('geappliances_scraper')
 
 class GEAppliancesScraper:
     def __init__(self):
-        self.company_name = 'GE Appliances'
-        self.url = 'https://haier.wd3.myworkdayjobs.com/GE_Appliances?locationCountry=c4f78be1a8f14da0ab49ce1162348a5e'
+        self.company_name = "GE Appliances"
+        self.url = "https://haier.wd3.myworkdayjobs.com/GE_Appliances?locationCountry=c4f78be1a8f14da0ab49ce1162348a5e"
         self.api_url = 'https://haier.wd3.myworkdayjobs.com/wday/cxs/haier/GE_Appliances/jobs'
         self.base_job_url = 'https://haier.wd3.myworkdayjobs.com/GE_Appliances'
 

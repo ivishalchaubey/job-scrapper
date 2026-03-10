@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class CiplaScraper:
     def __init__(self):
-        self.company_name = 'Cipla'
-        self.url = 'https://www.cipla.com/careers'
+        self.company_name = "Cipla"
+        self.url = "https://careers.cipla.com/search/?createNewAlert=false&q=&locationsearch=&optionsFacetsDD_location=&optionsFacetsDD_dept=&optionsFacetsDD_country="
     
     def setup_driver(self):
         """Set up Chrome driver with options"""

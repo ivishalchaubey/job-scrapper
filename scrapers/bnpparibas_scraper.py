@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class BNPParibasScraper:
     def __init__(self):
-        self.company_name = 'BNP Paribas'
-        self.url = 'https://group.bnpparibas/en/careers/all-job-offers/india'
+        self.company_name = "BNP Paribas"
+        self.url = "https://group.bnpparibas/en/careers/all-job-offers/india"
         self.base_url = 'https://group.bnpparibas'
 
     def setup_driver(self):

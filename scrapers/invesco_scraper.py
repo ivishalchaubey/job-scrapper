@@ -11,8 +11,8 @@ logger = setup_logger('invesco_scraper')
 
 class InvescoScraper:
     def __init__(self):
-        self.company_name = 'Invesco'
-        self.url = 'https://invesco.wd1.myworkdayjobs.com/IVZ?locationCountry=c4f78be1a8f14da0ab49ce1162348a5e'
+        self.company_name = "Invesco"
+        self.url = "https://invesco.wd1.myworkdayjobs.com/en-GB/IVZ?locations=1804888b7f5a100128e426fb60bc0000"
         self.api_url = 'https://invesco.wd1.myworkdayjobs.com/wday/cxs/invesco/IVZ/jobs'
         self.base_job_url = 'https://invesco.wd1.myworkdayjobs.com/IVZ'
 

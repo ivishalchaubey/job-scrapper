@@ -8,8 +8,8 @@ logger = setup_logger('blackrock_scraper')
 
 class BlackRockScraper:
     def __init__(self):
-        self.company_name = 'BlackRock'
-        self.url = 'https://blackrock.wd1.myworkdayjobs.com/BlackRock_Professional'
+        self.company_name = "BlackRock"
+        self.url = "https://careers.blackrock.com/location/gurgaon-jobs/45831/1269750-1270260-1270642/4"
         self.api_url = 'https://blackrock.wd1.myworkdayjobs.com/wday/cxs/blackrock/BlackRock_Professional/jobs'
         self.base_job_url = 'https://blackrock.wd1.myworkdayjobs.com/BlackRock_Professional'
 

@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class BayerScraper:
     def __init__(self):
-        self.company_name = 'Bayer'
-        self.url = 'https://talent.bayer.com/careers?location=any&pid=562949975473181'
+        self.company_name = "Bayer"
+        self.url = "https://talent.bayer.com/careers?location=any&pid=562949975473181&job%20type=student&job%20type=professional&job%20type=job%20starter&domain=bayer.com&sort_by=relevance&triggerGoButton=false"
         self.base_url = 'https://talent.bayer.com'
 
     def setup_driver(self):

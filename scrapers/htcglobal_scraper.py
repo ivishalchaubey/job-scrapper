@@ -9,7 +9,7 @@ logger = setup_logger('htcglobal_scraper')
 
 class HTCGlobalScraper:
     def __init__(self):
-        self.company_name = 'HTC Global'
+        self.company_name = "HTC Global"
         self.api_url = 'https://www.htcinc.com/wp-content/themes/himalayas-child/job-api-proxy.php'
         self.base_url = 'https://www.htcinc.com'
         self.headers = {

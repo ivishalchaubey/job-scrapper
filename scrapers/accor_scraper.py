@@ -8,8 +8,8 @@ logger = setup_logger('accor_scraper')
 
 class AccorScraper:
     def __init__(self):
-        self.company_name = 'Accor'
-        self.url = 'https://careers.smartrecruiters.com/AccorHotel'
+        self.company_name = "Accor"
+        self.url = "https://careers.accor.com/global/en/jobs?options=502%2C502&page=1&ln=&la=0&lo=0&lr=1&li="
         self.api_url = 'https://api.smartrecruiters.com/v1/companies/AccorHotel/postings'
 
     def generate_external_id(self, job_id, company):

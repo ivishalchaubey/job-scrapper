@@ -19,8 +19,8 @@ logger = setup_logger('marico_scraper')
 
 class MaricoScraper:
     def __init__(self):
-        self.company_name = 'Marico'
-        self.url = 'https://marico.sensehq.com/careers'
+        self.company_name = "Marico"
+        self.url = "https://marico.sensehq.com/careers"
 
     def setup_driver(self):
         chrome_options = Options()

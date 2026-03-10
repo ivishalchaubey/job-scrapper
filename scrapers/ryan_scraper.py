@@ -11,8 +11,8 @@ logger = setup_logger('ryan_scraper')
 
 class RyanScraper:
     def __init__(self):
-        self.company_name = 'Ryan'
-        self.url = 'https://ryan.wd1.myworkdayjobs.com/RyanCareers?locationCountry=c4f78be1a8f14da0ab49ce1162348a5e'
+        self.company_name = "Ryan"
+        self.url = "https://ryan.wd1.myworkdayjobs.com/RyanCareers?locations=9c5ef1aaea1c1050c0d408f2350b94c3&locations=7cb141a2f2641001ebada432a0870000&locations=313eb71192a51001a581d3bde5ea0000"
         self.api_url = 'https://ryan.wd1.myworkdayjobs.com/wday/cxs/ryan/RyanCareers/jobs'
         self.base_job_url = 'https://ryan.wd1.myworkdayjobs.com/RyanCareers'
 

@@ -8,8 +8,8 @@ logger = setup_logger('caterpillar_scraper')
 
 class CaterpillarScraper:
     def __init__(self):
-        self.company_name = 'Caterpillar'
-        self.url = 'https://cat.wd5.myworkdayjobs.com/CaterpillarCareers?locationCountry=c4f78be1a8f14da0ab49ce1162348a5e'
+        self.company_name = "Caterpillar Inc."
+        self.url = "https://careers.caterpillar.com/en/jobs/?search=&country=India#results"
         self.api_url = 'https://cat.wd5.myworkdayjobs.com/wday/cxs/cat/CaterpillarCareers/jobs'
         self.base_job_url = 'https://cat.wd5.myworkdayjobs.com/CaterpillarCareers'
 

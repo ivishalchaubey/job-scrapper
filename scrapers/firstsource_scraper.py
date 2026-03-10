@@ -10,7 +10,7 @@ logger = setup_logger('firstsource_scraper')
 
 class FirstsourceScraper:
     def __init__(self):
-        self.company_name = 'Firstsource'
+        self.company_name = "Firstsource"
         self.base_url = 'https://careers.firstsource.com'
         self.search_url = 'https://careers.firstsource.com/search/?createNewAlert=false&q=&locationsSearch=India&startrow={offset}'
         self.headers = {

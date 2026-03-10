@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class MuthootFinanceScraper:
     def __init__(self):
-        self.company_name = 'Muthoot Finance'
-        self.url = 'https://www.muthootfinance.com/careers'
+        self.company_name = "Muthoot Finance"
+        self.url = "https://career.muthootfinance.com/Pages/CareerPortal/frmApplicantJobSearch.aspx?d37c3bb0038bd55ea687d5e911208273"
     
     def setup_driver(self):
         """Set up Chrome driver with options"""

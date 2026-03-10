@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class TargetScraper:
     def __init__(self):
-        self.company_name = 'Target Corporation'
-        self.url = 'https://indiajobs.target.com/search-jobs?k=india&fl=1269750'
+        self.company_name = "Target Corporation"
+        self.url = "https://indiajobs.target.com/search-jobs?k=india&fl=1269750"
         self.base_url = 'https://indiajobs.target.com'
 
     def setup_driver(self):

@@ -22,8 +22,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class SaintGobainScraper:
     def __init__(self):
-        self.company_name = 'Saint-Gobain'
-        self.url = 'https://joinus.saint-gobain.com/en'
+        self.company_name = "Saint-Gobain"
+        self.url = "https://saintgobain.turbohire.co/dashboardv2?orgId=18b62a1d-bdb3-4bfc-a33b-be896e18431d&type=0"
         self.base_url = 'https://joinus.saint-gobain.com'
         # Search URL filtered to India (country code 'ind')
         self._search_url = 'https://joinus.saint-gobain.com/en/search-offers?query=&country=ind'

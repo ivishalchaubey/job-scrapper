@@ -19,9 +19,9 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class HCLTechScraper:
     def __init__(self):
-        self.company_name = 'HCLTech'
+        self.company_name = "HCLTech"
         # SuccessFactors-based career portal (actual job listing page)
-        self.url = 'https://careers.hcltech.com/go/India/9553955/'
+        self.url = "https://careers.hcltech.com/go/NonTPDemand/9558355/"
 
     def setup_driver(self):
         chrome_options = Options()

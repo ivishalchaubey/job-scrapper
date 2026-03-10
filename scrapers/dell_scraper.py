@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class DellScraper:
     def __init__(self):
-        self.company_name = 'Dell Technologies'
-        self.url = 'https://jobs.dell.com/search-jobs/india'
+        self.company_name = "Dell Technologies"
+        self.url = "https://jobs.dell.com/en/location/india-jobs/375/1269750/2"
     
     def setup_driver(self):
         """Set up Chrome driver with options"""

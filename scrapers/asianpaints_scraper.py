@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class AsianPaintsScraper:
     def __init__(self):
-        self.company_name = 'Asian Paints'
-        self.url = 'https://www.asianpaints.com/careers.aspx'
+        self.company_name = "Asian Paints"
+        self.url = "https://careers.asianpaints.com/search/?createNewAlert=false&q=&locationsearch=India"
     
     def setup_driver(self):
         """Set up Chrome driver with options"""

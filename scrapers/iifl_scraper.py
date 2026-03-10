@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class IIFLScraper:
     def __init__(self):
-        self.company_name = 'India Infoline (IIFL)'
-        self.url = 'https://www.iifl.com/careers'
+        self.company_name = "India Infoline (IIFL)"
+        self.url = "https://iifl.darwinbox.in/ms/candidatev2/main/careers/allJobs"
     
     def setup_driver(self):
         """Set up Chrome driver with options"""

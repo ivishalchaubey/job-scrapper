@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class SunPharmaScraper:
     def __init__(self):
-        self.company_name = 'Sun Pharma'
-        self.url = 'https://sunpharma.com/careers'
+        self.company_name = "Sun Pharma"
+        self.url = "https://careers.sunpharma.com/search/?createNewAlert=false&q=&locationsearch=India&optionsFacetsDD_customfield2="
         self.fallback_url = 'https://www.sunpharma.com/careers'
     
     def setup_driver(self):

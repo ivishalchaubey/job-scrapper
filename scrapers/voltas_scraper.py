@@ -19,8 +19,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class VoltasScraper:
     def __init__(self):
-        self.company_name = 'Voltas'
-        self.url = 'https://voltas.talentrecruit.com/career-page'
+        self.company_name = "Voltas"
+        self.url = "https://voltas.talentrecruit.com/career-page"
 
     def setup_driver(self):
         chrome_options = Options()

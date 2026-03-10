@@ -23,8 +23,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class AtlassianScraper:
     def __init__(self):
-        self.company_name = 'Atlassian'
-        self.url = 'https://www.atlassian.com/company/careers/all-jobs?team=&location=India&search='
+        self.company_name = "Atlassian"
+        self.url = "https://www.atlassian.com/company/careers/all-jobs?team=&location=India&search="
         self.base_url = 'https://www.atlassian.com'
 
     def setup_driver(self):

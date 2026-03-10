@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class DBSBankScraper:
     def __init__(self):
-        self.company_name = 'DBS Bank'
-        self.url = 'https://www.dbs.com/careers/jobs.page?market=India'
+        self.company_name = "DBS Bank"
+        self.url = "https://www.dbs.com/careers/jobs.page?market=India"
         self.base_url = 'https://www.dbs.com'
 
     def setup_driver(self):

@@ -8,8 +8,8 @@ logger = setup_logger('capco_scraper')
 
 class CapcoScraper:
     def __init__(self):
-        self.company_name = 'Capco'
-        self.url = 'https://boards.greenhouse.io/capco'
+        self.company_name = "Capco"
+        self.url = "https://www.capco.com/Careers/Job-Search"
         self.api_url = 'https://boards-api.greenhouse.io/v1/boards/capco/jobs'
 
     def generate_external_id(self, job_id, company):

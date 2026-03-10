@@ -9,8 +9,8 @@ logger = setup_logger('coursera_scraper')
 
 class CourseraScraper:
     def __init__(self):
-        self.company_name = 'Coursera'
-        self.url = 'https://boards.greenhouse.io/coursera'
+        self.company_name = "Coursera"
+        self.url = "https://careers.coursera.com/jobs/search?page=1&query=&country_codes%5B%5D=IN"
         self.api_url = 'https://boards-api.greenhouse.io/v1/boards/coursera/jobs'
 
     def generate_external_id(self, job_id, company):

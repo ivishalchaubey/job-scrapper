@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class HPScraper:
     def __init__(self):
-        self.company_name = 'HP Inc'
-        self.url = 'https://careers.hpe.com/jobs/india'
+        self.company_name = "HP Inc."
+        self.url = "https://apply.hp.com/careers?start=0&location=India&pid=39061145&sort_by=distance&filter_include_remote=1"
     
     def setup_driver(self):
         """Set up Chrome driver with options"""

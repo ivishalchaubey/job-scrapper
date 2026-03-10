@@ -24,9 +24,9 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class StarbucksScraper:
     def __init__(self):
-        self.company_name = 'Starbucks'
+        self.company_name = "Starbucks"
         # Use the search page directly -- the homepage only has nav links, not job listings
-        self.url = 'https://careers.starbucks.in/search/?createNewAlert=false&q=&optionsFacetsDD_department=&optionsFacetsDD_customfield3=&optionsFacetsDD_country='
+        self.url = "https://careers.starbucks.in/search/?createNewAlert=false&q=&locationsearch=India"
 
     def setup_driver(self):
         """Set up Chrome driver with options"""

@@ -18,9 +18,9 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class HSBCScraper:
     def __init__(self):
-        self.company_name = 'HSBC'
+        self.company_name = "HSBC"
         # Use the broader job search URL, not just students-and-graduates
-        self.url = 'https://mycareer.hsbc.com/en_GB/external/SearchJobs?8=7710'
+        self.url = "https://portal.careers.hsbc.com/careers?location=India"
     
     def setup_driver(self):
         """Set up Chrome driver with options"""

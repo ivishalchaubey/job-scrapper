@@ -11,8 +11,8 @@ logger = setup_logger('broadridge_scraper')
 
 class BroadridgeScraper:
     def __init__(self):
-        self.company_name = 'Broadridge'
-        self.url = 'https://broadridge.wd5.myworkdayjobs.com/Careers?locationCountry=c4f78be1a8f14da0ab49ce1162348a5e'
+        self.company_name = "Broadridge Financial Solutions"
+        self.url = "https://broadridge.wd5.myworkdayjobs.com/en-GB/Careers?Location_Country=c4f78be1a8f14da0ab49ce1162348a5e"
         self.api_url = 'https://broadridge.wd5.myworkdayjobs.com/wday/cxs/broadridge/Careers/jobs'
         self.base_job_url = 'https://broadridge.wd5.myworkdayjobs.com/Careers'
 

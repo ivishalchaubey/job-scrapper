@@ -9,8 +9,8 @@ logger = setup_logger('anthropic_scraper')
 
 class AnthropicScraper:
     def __init__(self):
-        self.company_name = 'Anthropic'
-        self.url = 'https://boards.greenhouse.io/anthropic'
+        self.company_name = "Anthropic"
+        self.url = "https://www.anthropic.com/careers/jobs?office=4051957008"
         self.api_url = 'https://boards-api.greenhouse.io/v1/boards/anthropic/jobs'
 
     def generate_external_id(self, job_id, company):

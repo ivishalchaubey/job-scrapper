@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class PanasonicScraper:
     def __init__(self):
-        self.company_name = 'Panasonic'
-        self.url = 'https://careers.na.panasonic.com/jobs'
+        self.company_name = "Panasonic"
+        self.url = "https://careers.na.panasonic.com/jobs?location=India&woe=12&regionCode=IN&stretchUnit=MILES&stretch=50&page=1"
         self.base_url = 'https://careers.na.panasonic.com'
 
     def setup_driver(self):

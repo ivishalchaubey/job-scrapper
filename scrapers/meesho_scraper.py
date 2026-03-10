@@ -19,8 +19,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class MeeshoScraper:
     def __init__(self):
-        self.company_name = 'Meesho'
-        self.url = 'https://careers.meesho.com/'
+        self.company_name = "Meesho"
+        self.url = "https://www.meesho.io/jobs"
 
     def setup_driver(self):
         """Set up Chrome driver with anti-detection options"""

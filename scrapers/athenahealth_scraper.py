@@ -8,8 +8,8 @@ logger = setup_logger('athenahealth_scraper')
 
 class AthenaScraper:
     def __init__(self):
-        self.company_name = 'Athenahealth'
-        self.url = 'https://athenahealth.wd1.myworkdayjobs.com/External?locationCountry=c4f78be1a8f14da0ab49ce1162348a5e'
+        self.company_name = "Athenahealth"
+        self.url = "https://careers.athenahealth.com/us/en/search-results"
         self.api_url = 'https://athenahealth.wd1.myworkdayjobs.com/wday/cxs/athenahealth/External/jobs'
         self.base_job_url = 'https://athenahealth.wd1.myworkdayjobs.com/External'
 

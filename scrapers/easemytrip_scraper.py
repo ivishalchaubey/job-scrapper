@@ -10,8 +10,8 @@ logger = setup_logger('easemytrip_scraper')
 
 class EaseMyTripScraper:
     def __init__(self):
-        self.company_name = 'EaseMyTrip'
-        self.url = 'https://www.easemytrip.com/career.html'
+        self.company_name = "EaseMyTrip"
+        self.url = "https://www.easemytrip.com/career.html#work"
         self.base_url = 'https://www.easemytrip.com'
         self.headers = {
             'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',

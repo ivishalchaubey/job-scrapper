@@ -19,8 +19,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class HexawareTechnologiesScraper:
     def __init__(self):
-        self.company_name = 'Hexaware Technologies'
-        self.url = 'https://jobs.hexaware.com/#en/sites/CX_1/jobs?mode=location'
+        self.company_name = "Hexaware Technologies"
+        self.url = "https://jobs.hexaware.com/#en/sites/CX_1/jobs?mode=location"
         self.job_detail_base_url = 'https://jobs.hexaware.com/#en/sites/CX_1/job'
 
     def setup_driver(self):

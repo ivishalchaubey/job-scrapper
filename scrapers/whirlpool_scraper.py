@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class WhirlpoolScraper:
     def __init__(self):
-        self.company_name = 'Whirlpool'
-        self.url = 'https://jobs.whirlpool.com/careers'
+        self.company_name = "Whirlpool Corporation"
+        self.url = "https://jobs.whirlpool.com/careers?start=0&pid=34398234860&sort_by=hot&filter_location_country=IND"
         self.base_url = 'https://jobs.whirlpool.com'
 
     def setup_driver(self):

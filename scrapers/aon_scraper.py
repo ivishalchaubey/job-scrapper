@@ -13,8 +13,8 @@ logger = setup_logger('aon_scraper')
 
 class AonScraper:
     def __init__(self):
-        self.company_name = 'Aon'
-        self.url = 'https://jobs.aon.com/jobs?location=India'
+        self.company_name = "Aon"
+        self.url = "https://jobs.aon.com/jobs?locations=Bangalore,Karnataka,India%7CBengaluru,Karnataka,India%7CGreater%20Noida,Uttar%20Pradesh,India%7CGurgaon,Haryana,India%7CGurugram,Haryana,India%7CMumbai,Maharashtra,India%7CNOIDA,Uttar%20Pradesh,India&page=1"
         self.base_url = 'https://jobs.aon.com'
         self.api_url = 'https://jobs.aon.com/api/jobs'
 

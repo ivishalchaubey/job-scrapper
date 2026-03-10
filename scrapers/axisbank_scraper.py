@@ -15,8 +15,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class AxisBankScraper:
     def __init__(self):
-        self.company_name = 'Axis Bank'
-        self.url = 'https://axisbankarise.hirepro.in/'
+        self.company_name = "Axis Bank"
+        self.url = "https://axisbank.ripplehire.com/candidate/?token=WIXhCuz0XRZ7H0GZCwjJ&source=CAREERSITE#list"
 
     def setup_driver(self):
         """Set up Chrome driver with options"""

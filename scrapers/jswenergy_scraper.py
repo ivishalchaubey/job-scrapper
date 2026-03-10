@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class JSWEnergyScraper:
     def __init__(self):
-        self.company_name = 'JSW Energy'
-        self.url = 'https://www.jsw.in/careers'
+        self.company_name = "JSW Energy"
+        self.url = "https://jswgroup.turbohire.co/dashboardv2?orgId=9b510aa7-a9f2-46a7-aeb7-8853d81bcf10&type=0"
 
     def setup_driver(self):
         """Set up Chrome driver with options"""

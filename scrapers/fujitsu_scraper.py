@@ -12,8 +12,8 @@ PAGE_SIZE = 10  # SuccessFactors RMK API returns 10 per page
 
 class FujitsuScraper:
     def __init__(self):
-        self.company_name = 'Fujitsu'
-        self.url = 'https://www.jobs.global.fujitsu.com/search/?q=&locationsearch=India&searchResultView=LIST'
+        self.company_name = "Fujitsu"
+        self.url = "https://www.jobs.global.fujitsu.com/search/?q=&locationsearch=&searchResultView=LIST&markerViewed=&carouselIndex=&facetFilters=%7B%22jobLocationCountry%22%3A%5B%22India%22%5D%7D&pageNumber=0"
         self.base_url = 'https://www.jobs.global.fujitsu.com'
         self.api_url = 'https://www.jobs.global.fujitsu.com/services/recruiting/v1/jobs'
         self.session = requests.Session()

@@ -19,8 +19,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class DelhiveryScraper:
     def __init__(self):
-        self.company_name = 'Delhivery'
-        self.url = 'https://www.delhivery.com/careers/'
+        self.company_name = "Delhivery"
+        self.url = "https://delhivery.darwinbox.in/ms/candidatev2/main/careers/allJobs"
 
     def setup_driver(self):
         """Set up Chrome driver with anti-detection options"""

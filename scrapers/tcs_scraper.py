@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class TCSScraper:
     def __init__(self):
-        self.company_name = 'TCS'
-        self.url = 'https://ibegin.tcsapps.com/candidate/'
+        self.company_name = "Tata Consultancy Services"
+        self.url = "https://ibegin.tcsapps.com/candidate/jobs/search"
         self.alt_url = 'https://www.tcs.com/careers/india'
 
     def setup_driver(self):

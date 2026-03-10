@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class AngelOneScraper:
     def __init__(self):
-        self.company_name = 'Angel One'
-        self.url = 'https://www.angelone.in/careers'
+        self.company_name = "Angel One"
+        self.url = "https://www.angelone.in/careers"
     
     def setup_driver(self):
         """Set up Chrome driver with options"""

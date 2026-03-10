@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class BioconScraper:
     def __init__(self):
-        self.company_name = 'Biocon'
-        self.url = 'https://career10.successfactors.com/career?company=bioconlimi&career_ns=job_listing_summary&navBarLevel=JOB_SEARCH'
+        self.company_name = "Biocon"
+        self.url = "https://career10.successfactors.com/career?company=bioconlimi&career%5fns=job%5flisting%5fsummary&navBarLevel=JOB%5fSEARCH&_s.crb=SzYOaazR54t4YB1PCctUttlb8GdDqA7LIeSnVs4uNqg%3d"
         self.base_url = 'https://career10.successfactors.com'
 
     def setup_driver(self):

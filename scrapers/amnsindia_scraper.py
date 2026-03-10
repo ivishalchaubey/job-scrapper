@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class AMNSIndiaScraper:
     def __init__(self):
-        self.company_name = 'AMNS India'
-        self.url = 'https://ace.amns.in/CANDMICROSITE/'
+        self.company_name = "Nippon Steel"
+        self.url = "https://www.amns.in/careers/join_us"
         self.alt_url = 'https://www.amns.in/careers/join_us'
         self.base_url = 'https://ace.amns.in'
 

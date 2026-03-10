@@ -18,9 +18,9 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class JLLScraper:
     def __init__(self):
-        self.company_name = 'JLL'
+        self.company_name = "JLL"
         # Using JLL Workday careers page
-        self.url = 'https://jll.wd1.myworkdayjobs.com/en-GB/jllcareers'
+        self.url = "google.com/url?q=https://jll.wd1.myworkdayjobs.com/en-GB/jllcareers?locationCountry%3Dc4f78be1a8f14da0ab49ce1162348a5e&source=gmail&ust=1768368690364000&usg=AOvVaw0nLkd3piPITRCNiGSTjFdC"
     
     def setup_driver(self):
         """Set up Chrome driver with options"""

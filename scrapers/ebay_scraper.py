@@ -8,8 +8,8 @@ logger = setup_logger('ebay_scraper')
 
 class EbayScraper:
     def __init__(self):
-        self.company_name = 'eBay'
-        self.url = 'https://ebay.wd5.myworkdayjobs.com/apply'
+        self.company_name = "eBay Inc."
+        self.url = "https://jobs.ebayinc.com/us/en/jobs-in-india"
         self.api_url = 'https://ebay.wd5.myworkdayjobs.com/wday/cxs/ebay/apply/jobs'
         self.base_job_url = 'https://ebay.wd5.myworkdayjobs.com/apply'
 

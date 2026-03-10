@@ -21,9 +21,9 @@ logger = setup_logger('bain_scraper')
 
 class BainScraper:
     def __init__(self):
-        self.company_name = 'Bain'
+        self.company_name = "Bain & Company"
         # Original URL (Cloudflare-blocked, kept for reference)
-        self.url = 'https://www.bain.com/careers/find-a-role/?filters=offices(275,276,274)%7C'
+        self.url = "https://www.bain.com/careers/find-a-role/?filters=offices(275,276,274)|"
         # Internal API endpoint (requires Cloudflare bypass via cloudscraper)
         self._api_url = 'https://www.bain.com/en/api/jobsearch/keyword/get'
         self._job_detail_base = 'https://www.bain.com/careers/find-a-role/position/'

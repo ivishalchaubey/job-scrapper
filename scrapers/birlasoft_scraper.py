@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class BirlasoftScraper:
     def __init__(self):
-        self.company_name = 'Birlasoft'
-        self.url = 'https://jobs.birlasoft.com/go/India/684744/'
+        self.company_name = "Birlasoft"
+        self.url = "https://jobs.birlasoft.com/go/India/684744/"
         self.base_url = 'https://jobs.birlasoft.com'
 
     def setup_driver(self):

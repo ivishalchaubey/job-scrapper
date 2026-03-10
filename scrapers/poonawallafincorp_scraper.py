@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class PoonawallaFincorpScraper:
     def __init__(self):
-        self.company_name = 'Poonawalla Fincorp'
-        self.url = 'https://career.poonawallafincorp.com/'
+        self.company_name = "Poonawalla Fincorp"
+        self.url = "https://career.poonawallafincorp.com/"
         self.base_url = 'https://career.poonawallafincorp.com'
 
     def setup_driver(self):

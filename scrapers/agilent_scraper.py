@@ -25,8 +25,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class AgilentScraper:
     def __init__(self):
-        self.company_name = 'Agilent Technologies'
-        self.url = 'https://agilent.wd5.myworkdayjobs.com/en-GB/Agilent_Careers?locationCountry=c4f78be1a8f14da0ab49ce1162348a5e'
+        self.company_name = "Agilent Technologies"
+        self.url = "https://agilent.wd5.myworkdayjobs.com/en-GB/Agilent_Careers?locationCountry=c4f78be1a8f14da0ab49ce1162348a5e"
         self.api_url = 'https://agilent.wd5.myworkdayjobs.com/wday/cxs/agilent/Agilent_Careers/jobs'
         self.base_job_url = 'https://agilent.wd5.myworkdayjobs.com/Agilent_Careers'
 

@@ -8,7 +8,7 @@ logger = setup_logger('openai_scraper')
 
 class OpenAIScraper:
     def __init__(self):
-        self.company_name = 'OpenAI'
+        self.company_name = "OpenAI"
         self.api_url = 'https://api.ashbyhq.com/posting-api/job-board/openai'
 
     def generate_external_id(self, job_id, company):

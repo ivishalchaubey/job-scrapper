@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class AirIndiaScraper:
     def __init__(self):
-        self.company_name = 'Air India'
-        self.url = 'https://careers.airindia.com/search/?createNewAlert=false&q=&locationsearch='
+        self.company_name = "Air India"
+        self.url = "https://careers.airindia.com/search/?createNewAlert=false&q=&locationsearch="
 
     def setup_driver(self):
         chrome_options = Options()

@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class EricssonScraper:
     def __init__(self):
-        self.company_name = 'Ericsson'
-        self.url = 'https://jobs.ericsson.com/careers?page=1&jobPipeline=careersite&utm_source=ericsson.com&utm_medium=referral&utm_campaign=search_widget&start=0&pid=563121774185158&sort_by=hot'
+        self.company_name = "Ericsson"
+        self.url = "https://jobs.ericsson.com/careers?page=1&jobPipeline=careersite&utm_source=ericsson.com&utm_medium=referral&utm_campaign=search_widget&start=0&pid=563121774185158&sort_by=hot"
         self.base_url = 'https://jobs.ericsson.com'
 
     def setup_driver(self):

@@ -26,9 +26,9 @@ FRESH_CHROMEDRIVER = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.
 
 class MorganStanleyScraper:
     def __init__(self):
-        self.company_name = 'Morgan Stanley'
+        self.company_name = "Morgan Stanley"
         # Eightfold AI platform
-        self.url = 'https://morganstanley.eightfold.ai/careers?query=&location=India&pid=549795398771&sort_by=relevance'
+        self.url = "https://morganstanley.eightfold.ai/careers?source=mscom&start=0&pid=549795398771&sort_by=timestamp&filter_city=Mumbai%2CBengaluru"
 
     def setup_driver(self):
         chrome_options = Options()

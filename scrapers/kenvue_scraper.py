@@ -8,8 +8,8 @@ logger = setup_logger('kenvue_scraper')
 
 class KenvueScraper:
     def __init__(self):
-        self.company_name = 'Kenvue'
-        self.url = 'https://kenvue.wd5.myworkdayjobs.com/Kenvue?locationCountry=c4f78be1a8f14da0ab49ce1162348a5e'
+        self.company_name = "Kenvue"
+        self.url = "https://jobs.kenvue.com/?filter%5Bcountry%5D%5B0%5D=India"
         self.api_url = 'https://kenvue.wd5.myworkdayjobs.com/wday/cxs/kenvue/Kenvue/jobs'
         self.base_job_url = 'https://kenvue.wd5.myworkdayjobs.com/Kenvue'
 

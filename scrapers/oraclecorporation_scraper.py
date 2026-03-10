@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class OracleCorporationScraper:
     def __init__(self):
-        self.company_name = 'Oracle Corporation'
-        self.url = 'https://careers.oracle.com/jobs/#en/sites/jobsearch/requisitions?location=India'
+        self.company_name = "Oracle Corporation"
+        self.url = "https://careers.oracle.com/en/sites/jobsearch/jobs?location=India&locationId=300000000106947"
     
     def setup_driver(self):
         """Set up Chrome driver with options"""

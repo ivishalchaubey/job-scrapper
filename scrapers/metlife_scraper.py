@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class MetLifeScraper:
     def __init__(self):
-        self.company_name = 'MetLife'
-        self.url = 'https://jobs.metlife.com/search/?q=&locationsearch=India'
+        self.company_name = "MetLife"
+        self.url = "https://www.metlifecareers.com/en_US/ml/SearchJobs/?12310=%5B116642%5D&12310_format=9873&listFilterMode=1&jobRecordsPerPage=6&"
     
     def setup_driver(self):
         """Set up Chrome driver with anti-detection options"""

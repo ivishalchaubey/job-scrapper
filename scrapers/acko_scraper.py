@@ -23,8 +23,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class AckoScraper:
     def __init__(self):
-        self.company_name = 'Acko'
-        self.url = 'https://www.acko.com/careers/jobs/'
+        self.company_name = "Acko"
+        self.url = "https://www.acko.com/careers/jobs/"
         self.kula_url = 'https://careers.kula.ai/acko?jobs=true'
 
     def setup_driver(self):

@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class PhilipsScraper:
     def __init__(self):
-        self.company_name = 'Philips'
-        self.url = 'https://www.careers.philips.com/in/en/search-results'
+        self.company_name = "Philips"
+        self.url = "https://www.careers.philips.com/in/en/search-results"
         self.base_url = 'https://www.careers.philips.com'
 
     def setup_driver(self):

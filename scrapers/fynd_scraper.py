@@ -9,7 +9,7 @@ logger = setup_logger('fynd_scraper')
 
 class FyndScraper:
     def __init__(self):
-        self.company_name = 'Fynd'
+        self.company_name = "Fynd"
         self.careers_url = 'https://www.fynd.com/careers'
         self.session = requests.Session()
         self.session.headers.update({

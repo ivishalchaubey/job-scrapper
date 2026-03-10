@@ -11,8 +11,8 @@ logger = setup_logger('granulesindia_scraper')
 
 class GranulesScraper:
     def __init__(self):
-        self.company_name = 'Granules India'
-        self.url = 'https://granulesindia.com/careers/current-openings/'
+        self.company_name = "Granules India"
+        self.url = "https://granulesindia.com/careers/current-openings/"
         self.headers = {
             'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
         }

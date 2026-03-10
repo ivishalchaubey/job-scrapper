@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class IntuitScraper:
     def __init__(self):
-        self.company_name = 'Intuit'
-        self.url = 'https://jobs.intuit.com/location/india-jobs/27595/1269750/2'
+        self.company_name = "Intuit"
+        self.url = "https://jobs.intuit.com/location/india-jobs/27595/1269750/2?cid=evt_tc_gen_IN_SWE-FY23_TC_EB-Emp-Jobs-Banner_TC_intuit-talentmktg#form-sw"
         self.base_url = 'https://jobs.intuit.com'
 
     def setup_driver(self):

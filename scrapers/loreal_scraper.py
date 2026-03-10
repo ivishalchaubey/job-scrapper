@@ -20,9 +20,9 @@ logger = setup_logger('loreal_scraper')
 
 class LorealScraper:
     def __init__(self):
-        self.company_name = "L'Oreal"
+        self.company_name = "L'Or\u00e9al"
         # India filter: 3_110_3=18031
-        self.url = 'https://careers.loreal.com/en_US/jobs/SearchJobs/?3_110_3=18031'
+        self.url = "https://careers.loreal.com/en_US/jobs/SearchJobs/?3_110_3=18031"
 
     def setup_driver(self):
         chrome_options = Options()

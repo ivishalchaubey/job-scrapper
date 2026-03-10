@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class WalmartScraper:
     def __init__(self):
-        self.company_name = 'Walmart'
-        self.url = 'https://careers.walmart.com/results?q=&page=1&sort=rank&jobState=IN'
+        self.company_name = "Walmart"
+        self.url = "https://www.linkedin.com/jobs/search/?currentJobId=4331584754&f_C=9390173&geoId=92000000&origin=COMPANY_PAGE_JOBS_CLUSTER_EXPANSION&originToLandingJobPostings=4331584754%2C4350824998%2C4351943096%2C4313350910%2C4352509573%2C4347323413%2C4340033998%2C4255737177%2C4346223869"
     
     def setup_driver(self):
         """Set up Chrome driver with options"""

@@ -17,8 +17,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class CARS24Scraper:
     def __init__(self):
-        self.company_name = 'CARS24'
-        self.url = 'https://careers.cars24.com/'
+        self.company_name = "CARS24"
+        self.url = "https://careers.cars24.com/"
         self.base_url = 'https://careers.cars24.com'
 
     def setup_driver(self):

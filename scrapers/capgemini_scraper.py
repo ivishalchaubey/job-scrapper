@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class CapgeminiScraper:
     def __init__(self):
-        self.company_name = 'Capgemini'
-        self.url = 'https://www.capgemini.com/in-en/careers/job-search/'
+        self.company_name = "Capgemini"
+        self.url = "https://www.capgemini.com/in-en/careers/join-capgemini/job-search/?page=1&size=11&country_code=in-en"
     
     def setup_driver(self):
         """Set up Chrome driver with options"""

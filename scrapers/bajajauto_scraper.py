@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class BajajAutoScraper:
     def __init__(self):
-        self.company_name = 'Bajaj Auto'
-        self.url = 'https://www.bajajauto.com/career'
+        self.company_name = "Bajaj Auto"
+        self.url = "https://www.bajajauto.com/careers/search-result"
     
     def setup_driver(self):
         """Set up Chrome driver with options"""

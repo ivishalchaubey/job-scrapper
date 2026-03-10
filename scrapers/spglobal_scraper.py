@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class SPGlobalScraper:
     def __init__(self):
-        self.company_name = 'S&P Global'
-        self.url = 'https://careers.spglobal.com/jobs'
+        self.company_name = "S&P Global"
+        self.url = "https://careers.spglobal.com/jobs?locations=Ahmedabad,Gujar%C4%81t,India%7CBangalore,Karn%C4%81taka,India%7CBengaluru,Karn%C4%81taka,India%7CChennai,Tamil%20N%C4%81du,India%7CGurgaon,Hary%C4%81na,India%7CGurugram,Hary%C4%81na,India%7CHyderabad,Telang%C4%81na,India%7CMumbai,Mah%C4%81r%C4%81shtra,India%7CNoida,Uttar%20Pradesh,India%7CVirtual~%20Gurgaon,Hary%C4%81na,India%7CAhmedabad,,India%7CBengaluru,,India%7CChennai,,India%7CMumbai,,India%7CVirtual,,India&page=1"
         self.base_url = 'https://careers.spglobal.com'
 
     def setup_driver(self):

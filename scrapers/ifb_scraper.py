@@ -22,8 +22,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class IFBScraper:
     def __init__(self):
-        self.company_name = 'IFB'
-        self.url = 'https://www.ifbindustries.com/career.php'
+        self.company_name = "IFB Home Appliances"
+        self.url = "https://www.ifbappliances.com/career-jobs?srsltid=AfmBOorzq8AZxtkwNBpLChYD39mxFPk6pMMORPbmsa8slLvkLa-oARFQ#react-careers-listing-page"
         self.base_url = 'https://www.ifbindustries.com'
         self.headers = {
             'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',

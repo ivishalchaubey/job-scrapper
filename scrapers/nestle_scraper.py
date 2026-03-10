@@ -12,9 +12,9 @@ logger = setup_logger('nestle_scraper')
 
 class NestleScraper:
     def __init__(self):
-        self.company_name = 'Nestle'
+        self.company_name = "Nestl\u00e9"
         # Original URL (Cloudflare-blocked, kept for reference)
-        self.url = 'https://www.nestle.in/jobs/search-jobs?keyword=&country=IN'
+        self.url = "https://www.nestle.in/jobs/search-jobs?keyword=&country=IN"
         # SuccessFactors API URL that bypasses Cloudflare
         self._api_base = 'https://jobdetails.nestle.com'
         self._search_url = f'{self._api_base}/job/search'

@@ -11,8 +11,8 @@ logger = setup_logger('threeem_scraper')
 
 class ThreeEmScraper:
     def __init__(self):
-        self.company_name = '3M'
-        self.url = 'https://3m.wd1.myworkdayjobs.com/Search?locationCountry=c4f78be1a8f14da0ab49ce1162348a5e'
+        self.company_name = "3M"
+        self.url = "https://3m.wd1.myworkdayjobs.com/en-US/Search?Location_Country=c4f78be1a8f14da0ab49ce1162348a5e"
         self.api_url = 'https://3m.wd1.myworkdayjobs.com/wday/cxs/3m/Search/jobs'
         self.base_job_url = 'https://3m.wd1.myworkdayjobs.com/Search'
 

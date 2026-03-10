@@ -8,8 +8,8 @@ logger = setup_logger('airbnb_scraper')
 
 class AirbnbScraper:
     def __init__(self):
-        self.company_name = 'Airbnb'
-        self.url = 'https://boards.greenhouse.io/airbnb'
+        self.company_name = "Airbnb"
+        self.url = "https://careers.airbnb.com/positions/?_where_you_work=india%2Cbangalore-india-75876%2Cgurugram-india-75875"
         self.api_url = 'https://boards-api.greenhouse.io/v1/boards/airbnb/jobs'
 
     def generate_external_id(self, job_id, company):

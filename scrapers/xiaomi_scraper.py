@@ -19,8 +19,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class XiaomiScraper:
     def __init__(self):
-        self.company_name = 'Xiaomi'
-        self.url = 'https://xiaomi.app.param.ai/jobs/'
+        self.company_name = "Xiaomi"
+        self.url = "https://www.linkedin.com/company/xiaomi-india/jobs/?viewAsMember=true"
 
     def setup_driver(self):
         chrome_options = Options()

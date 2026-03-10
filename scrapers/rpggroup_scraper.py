@@ -10,8 +10,8 @@ logger = setup_logger('rpggroup_scraper')
 
 class RPGGroupScraper:
     def __init__(self):
-        self.company_name = 'RPG Group'
-        self.url = 'https://jobs.rpggroup.com/search/'
+        self.company_name = "RPG Group"
+        self.url = "https://jobs.rpggroup.com/search/?createNewAlert=false&q="
         self.base_url = 'https://jobs.rpggroup.com'
         self.session = requests.Session()
         self.session.headers.update({

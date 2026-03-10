@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class IntelScraper:
     def __init__(self):
-        self.company_name = 'Intel'
-        self.url = 'https://jobs.intel.com/en/search-jobs/India'
+        self.company_name = "Intel"
+        self.url = "https://intel.wd1.myworkdayjobs.com/External?locations=1e4a4eb3adf101ab560f6577bf81eacf&locations=1e4a4eb3adf1015ff0865f77bf81e5cf&locations=1e4a4eb3adf101fec7c50d79bf814fd1&locations=1e4a4eb3adf101f44070f976bf8184cf"
     
     def setup_driver(self):
         """Set up Chrome driver with options"""

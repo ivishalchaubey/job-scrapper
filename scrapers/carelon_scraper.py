@@ -11,8 +11,8 @@ logger = setup_logger('carelon_scraper')
 
 class CarelonScraper:
     def __init__(self):
-        self.company_name = 'Carelon Global Solutions'
-        self.url = 'https://elevancehealth.wd1.myworkdayjobs.com/carelonglobal_in?locationCountry=c4f78be1a8f14da0ab49ce1162348a5e'
+        self.company_name = "Carelon Global Solutions"
+        self.url = "https://elevancehealth.wd1.myworkdayjobs.com/en-US/carelonglobal_in"
         self.api_url = 'https://elevancehealth.wd1.myworkdayjobs.com/wday/cxs/elevancehealth/carelonglobal_in/jobs'
         self.base_job_url = 'https://elevancehealth.wd1.myworkdayjobs.com/carelonglobal_in'
 

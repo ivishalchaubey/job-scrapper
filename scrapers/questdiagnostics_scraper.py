@@ -11,7 +11,7 @@ logger = setup_logger('questdiagnostics_scraper')
 
 class QuestDiagnosticsScraper:
     def __init__(self):
-        self.company_name = 'Quest Diagnostics'
+        self.company_name = "Quest Diagnostics"
         self.base_url = 'https://indiacareers.questdiagnostics.com'
         self.search_url = f'{self.base_url}/search-jobs/results'
         self.location_url = f'{self.base_url}/location/india-jobs/38852/1269750/2'

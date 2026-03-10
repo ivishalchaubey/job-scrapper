@@ -11,9 +11,9 @@ logger = setup_logger('jkbank_scraper')
 
 class JKBankScraper:
     def __init__(self):
-        self.company_name = 'Jammu and Kashmir Bank'
+        self.company_name = "Jammu and Kashmir Bank"
         # The bank migrated to jkb.bank.in; old domains redirect here
-        self.url = 'https://jkb.bank.in/career'
+        self.url = "https://jkb.bank.in/career?title=&field_job_location_target_id=1405"
         self.alt_urls = [
             'https://www.jkbank.com/career',
         ]

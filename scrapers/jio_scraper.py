@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class JioScraper:
     def __init__(self):
-        self.company_name = 'Jio'
-        self.url = 'https://careers.jio.com/'
+        self.company_name = "Jio"
+        self.url = "https://careers.jio.com/frmJobCategories.aspx?func=w+cpdiT6wL4=&loc=/wASbQn4xyQ=&expreq=/wASbQn4xyQ=&flag=/wASbQn4xyQ=&poston=6JCGsKeGvVZx6Lxy4pI54VzntXOmB1aj"
     
     def setup_driver(self):
         """Set up Chrome driver with options"""

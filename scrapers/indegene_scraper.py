@@ -10,7 +10,7 @@ logger = setup_logger('indegene_scraper')
 
 class IndegeneScraper:
     def __init__(self):
-        self.company_name = 'Indegene'
+        self.company_name = "Indegene"
         self.base_url = 'https://careers.indegene.com'
         self.search_url = 'https://careers.indegene.com/search/?q=&locationsearch=&optionsFacetsDD_location=&optionsFacetsDD_country=IN&startrow={offset}'
         self.headers = {

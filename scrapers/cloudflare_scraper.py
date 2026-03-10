@@ -9,7 +9,7 @@ logger = setup_logger('cloudflare_scraper')
 
 class CloudflareScraper:
     def __init__(self):
-        self.company_name = 'Cloudflare'
+        self.company_name = "Cloudflare"
         self.api_url = 'https://boards-api.greenhouse.io/v1/boards/cloudflare/jobs'
         self.headers = {
             'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',

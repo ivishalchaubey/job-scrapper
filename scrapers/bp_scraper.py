@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class BPScraper:
     def __init__(self):
-        self.company_name = 'BP'
-        self.url = 'https://careers.bp.com/listing?production_bp_jobs%5BrefinementList%5D%5Blocation_list%5D%5B0%5D=India'
+        self.company_name = "BP"
+        self.url = "https://careers.bp.com/listing?production_bp_jobs%5BrefinementList%5D%5Blocation_list%5D%5B0%5D=India"
         self.base_url = 'https://careers.bp.com'
 
     def setup_driver(self):

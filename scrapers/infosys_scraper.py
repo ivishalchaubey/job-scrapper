@@ -23,8 +23,8 @@ CHROMEDRIVER_PATH = os.path.expanduser(
 
 class InfosysScraper:
     def __init__(self):
-        self.company_name = 'Infosys'
-        self.url = 'https://career.infosys.com/jobs?companyhiringtype=IL&countrycode=IN'
+        self.company_name = "Infosys"
+        self.url = "https://career.infosys.com/jobs?companyhiringtype=IL&countrycode=IN"
 
     def setup_driver(self):
         """Set up Chrome driver with options"""

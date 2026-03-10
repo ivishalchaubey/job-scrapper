@@ -8,7 +8,7 @@ logger = setup_logger('notion_scraper')
 
 class NotionScraper:
     def __init__(self):
-        self.company_name = 'Notion'
+        self.company_name = "Notion"
         self.api_url = 'https://api.ashbyhq.com/posting-api/job-board/notion'
 
     def generate_external_id(self, job_id, company):

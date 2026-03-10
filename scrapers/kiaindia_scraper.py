@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class KiaIndiaScraper:
     def __init__(self):
-        self.company_name = 'Kia India'
-        self.url = 'https://career.kiaindia.net/kiaindia/'
+        self.company_name = "Kia"
+        self.url = "https://career.kiaindia.net/kiaindia/"
         self.base_url = 'https://career.kiaindia.net'
 
     def setup_driver(self):

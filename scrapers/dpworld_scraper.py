@@ -10,8 +10,8 @@ logger = setup_logger('dpworld_scraper')
 
 class DPWorldScraper:
     def __init__(self):
-        self.company_name = 'DP World'
-        self.url = 'https://ehpv.fa.em2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/jobs'
+        self.company_name = "DP World"
+        self.url = "https://ehpv.fa.em2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/jobs?location=India&locationId=300000000273955&locationLevel=country&mode=location"
         self.api_url = 'https://ehpv.fa.em2.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions'
         self.site_number = 'CX_1'
         self.india_location_ids = '300000000273955'

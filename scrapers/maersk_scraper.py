@@ -8,8 +8,8 @@ logger = setup_logger('maersk_scraper')
 
 class MaerskScraper:
     def __init__(self):
-        self.company_name = 'Maersk'
-        self.url = 'https://maersk.wd3.myworkdayjobs.com/Maersk_Careers'
+        self.company_name = "Maersk"
+        self.url = "https://www.maersk.com/careers/vacancies?searchText=&city="
         self.api_url = 'https://maersk.wd3.myworkdayjobs.com/wday/cxs/maersk/Maersk_Careers/jobs'
         self.base_job_url = 'https://maersk.wd3.myworkdayjobs.com/Maersk_Careers'
 

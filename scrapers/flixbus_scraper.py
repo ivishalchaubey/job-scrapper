@@ -8,8 +8,8 @@ logger = setup_logger('flixbus_scraper')
 
 class FlixBusScraper:
     def __init__(self):
-        self.company_name = 'FlixBus'
-        self.url = 'https://boards.greenhouse.io/flix'
+        self.company_name = "FlixBus"
+        self.url = "https://flix.careers/jobs/"
         self.api_url = 'https://boards-api.greenhouse.io/v1/boards/flix/jobs'
 
     def generate_external_id(self, job_id, company):

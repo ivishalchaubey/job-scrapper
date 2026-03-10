@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class HCCScraper:
     def __init__(self):
-        self.company_name = 'HCC'
-        self.url = 'https://www.hccindia.com/career/current-opening'
+        self.company_name = "HCC"
+        self.url = "https://www.hccindia.com/career/current-opening"
         self.base_url = 'https://www.hccindia.com'
 
     def setup_driver(self):

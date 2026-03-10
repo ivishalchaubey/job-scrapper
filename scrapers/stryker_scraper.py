@@ -8,8 +8,8 @@ logger = setup_logger('stryker_scraper')
 
 class StrykerScraper:
     def __init__(self):
-        self.company_name = 'Stryker'
-        self.url = 'https://stryker.wd1.myworkdayjobs.com/StrykerCareers?Location_Country=c4f78be1a8f14da0ab49ce1162348a5e'
+        self.company_name = "Stryker Corporation"
+        self.url = "https://careers.stryker.com/jobs?location_type=4&location_name=India"
         self.api_url = 'https://stryker.wd1.myworkdayjobs.com/wday/cxs/stryker/StrykerCareers/jobs'
         self.base_job_url = 'https://stryker.wd1.myworkdayjobs.com/StrykerCareers'
 

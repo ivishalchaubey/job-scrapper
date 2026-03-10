@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class GoogleScraper:
     def __init__(self):
-        self.company_name = 'Google'
-        self.url = 'https://careers.google.com/jobs/results/?location=India'
+        self.company_name = "Google"
+        self.url = "https://www.google.com/about/careers/applications/jobs/results?location=India"
     
     def setup_driver(self):
         """Set up Chrome driver with options"""

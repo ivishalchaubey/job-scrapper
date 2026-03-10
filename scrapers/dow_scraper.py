@@ -8,8 +8,8 @@ logger = setup_logger('dow_scraper')
 
 class DowScraper:
     def __init__(self):
-        self.company_name = 'Dow'
-        self.url = 'https://dow.wd1.myworkdayjobs.com/ExternalCareers'
+        self.company_name = "Dow Inc."
+        self.url = "https://corporate.dow.com/en-us/careers/jobs.html#sort=relevancy&f:Job_Location=[Europe%2C%20Middle%20East%2C%20Africa%2C%20India,India]"
         self.api_url = 'https://dow.wd1.myworkdayjobs.com/wday/cxs/dow/ExternalCareers/jobs'
         self.base_job_url = 'https://dow.wd1.myworkdayjobs.com/ExternalCareers'
 

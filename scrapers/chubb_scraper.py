@@ -10,8 +10,8 @@ logger = setup_logger('chubb_scraper')
 
 class ChubbScraper:
     def __init__(self):
-        self.company_name = 'Chubb'
-        self.url = 'https://fa-ewgu-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_2001/jobs'
+        self.company_name = "Chubb"
+        self.url = "https://fa-ewgu-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_2001/jobs?lastSelectedFacet=LOCATIONS&selectedLocationsFacet=300000000467203%3B100000051386521%3B100000051386506%3B100000051401035"
         self.api_url = 'https://fa-ewgu-saasfaprod1.fa.ocs.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions'
         self.site_number = 'CX_2001'
         self.india_location_ids = '300000000467203'

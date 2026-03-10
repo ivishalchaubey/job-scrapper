@@ -9,8 +9,8 @@ logger = setup_logger('cred_scraper')
 
 class CREDScraper:
     def __init__(self):
-        self.company_name = 'CRED'
-        self.url = 'https://jobs.lever.co/cred'
+        self.company_name = "CRED"
+        self.url = "https://careers.cred.club/openings"
         self.api_url = 'https://api.lever.co/v0/postings/cred?mode=json'
 
     def generate_external_id(self, job_id, company):

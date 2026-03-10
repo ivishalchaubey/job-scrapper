@@ -18,9 +18,9 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class HindalcoScraper:
     def __init__(self):
-        self.company_name = 'Hindalco Industries'
+        self.company_name = "Hindalco Industries"
         # Hindalco jobs are listed on Aditya Birla Group's careers portal under Metals
-        self.url = 'https://careers.adityabirla.com/nf-metals'
+        self.url = "https://careers.adityabirla.com/job-search"
 
     def setup_driver(self):
         """Set up Chrome driver with options"""

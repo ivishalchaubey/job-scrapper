@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class SynopsysScraper:
     def __init__(self):
-        self.company_name = 'Synopsys'
-        self.url = 'https://careers.synopsys.com/search-jobs'
+        self.company_name = "Synopsys"
+        self.url = "https://careers.synopsys.com/search-jobs"
         self.fallback_url = 'https://synopsys.avature.net/careers/SearchJobs'
 
     def setup_driver(self):

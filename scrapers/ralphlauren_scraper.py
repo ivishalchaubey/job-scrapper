@@ -12,7 +12,7 @@ logger = setup_logger('ralphlauren_scraper')
 
 class RalphLaurenScraper:
     def __init__(self):
-        self.company_name = 'Ralph Lauren'
+        self.company_name = "Ralph Lauren Corporation"
         self.base_url = 'https://careers.ralphlauren.com'
         # 3413=3312571 is the country filter for India in Avature
         self.search_url = f'{self.base_url}/CareersCorporate/SearchJobsCorporate/'

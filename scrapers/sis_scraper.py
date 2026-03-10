@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class SISScraper:
     def __init__(self):
-        self.company_name = 'SIS'
-        self.url = 'https://sisindia.com/jobs/'
+        self.company_name = "SIS"
+        self.url = "https://sisindia.com/jobs/"
         self.base_url = 'https://sisindia.com'
 
     def setup_driver(self):

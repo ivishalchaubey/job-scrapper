@@ -11,8 +11,8 @@ logger = setup_logger('firstamerican_scraper')
 
 class FirstAmericanScraper:
     def __init__(self):
-        self.company_name = 'First American'
-        self.url = 'https://firstam.wd1.myworkdayjobs.com/faicareers?locationCountry=c4f78be1a8f14da0ab49ce1162348a5e'
+        self.company_name = "First American"
+        self.url = "https://firstam.wd1.myworkdayjobs.com/en-US/faicareers"
         self.api_url = 'https://firstam.wd1.myworkdayjobs.com/wday/cxs/firstam/faicareers/jobs'
         self.base_job_url = 'https://firstam.wd1.myworkdayjobs.com/faicareers'
 

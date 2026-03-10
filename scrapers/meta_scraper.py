@@ -19,8 +19,8 @@ logger = setup_logger('meta_scraper')
 
 class MetaScraper:
     def __init__(self):
-        self.company_name = 'Meta'
-        self.url = 'https://www.metacareers.com/jobs?offices[0]=Mumbai%2C%20India&offices[1]=Gurgaon%2C%20India&offices[2]=Bangalore%2C%20India'
+        self.company_name = "Meta"
+        self.url = "https://www.metacareers.com/jobsearch?offices[0]=Mumbai%2C%20India&offices[1]=Gurgaon%2C%20India&offices[2]=Bangalore%2C%20India&offices[3]=Hyderabad%2C%20India&offices[4]=New%20Delhi%2C%20India"
 
     def setup_driver(self):
         chrome_options = Options()

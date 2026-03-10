@@ -25,9 +25,9 @@ INDIA_KEYWORDS = ['india', 'mumbai', 'delhi', 'bangalore', 'bengaluru', 'hyderab
 
 class AbbVieScraper:
     def __init__(self):
-        self.company_name = 'AbbVie'
+        self.company_name = "AbbVie"
         # Attrax platform - /en/jobs is the working URL (not /en/search-jobs)
-        self.url = 'https://careers.abbvie.com/en/jobs'
+        self.url = "https://careers.abbvie.com/en/jobs?q=&options=&page=1&ln=India&lr=100&li=IN"
         self.base_url = 'https://careers.abbvie.com'
 
     def setup_driver(self):

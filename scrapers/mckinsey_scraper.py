@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class McKinseyScraper:
     def __init__(self):
-        self.company_name = 'McKinsey & Company'
-        self.url = 'https://www.mckinsey.com/careers/search-jobs'
+        self.company_name = "McKinsey & Company"
+        self.url = "https://www.mckinsey.com/careers/search-jobs?countries=India"
     
     def setup_driver(self):
         """Set up Chrome driver with options"""

@@ -14,8 +14,8 @@ logger = setup_logger('bluestar_scraper')
 
 class BlueStarScraper:
     def __init__(self):
-        self.company_name = 'Blue Star'
-        self.url = 'https://bluestar.workline.hr/CPortal/GeneralOpening.aspx'
+        self.company_name = "Blue Star"
+        self.url = "https://bluestar.workline.hr/CPortal/GeneralOpening.aspx?DetailCode=1"
         self.base_url = 'https://bluestar.workline.hr'
         self.api_url = 'https://bluestar.workline.hr/CPortal/GeneralOpening.aspx/GetCurrentopening'
 

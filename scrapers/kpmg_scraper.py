@@ -19,8 +19,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class KPMGScraper:
     def __init__(self):
-        self.company_name = 'KPMG'
-        self.url = 'https://home.kpmg/in/en/home/careers/job-search.html'
+        self.company_name = "KPMG"
+        self.url = "https://ejgk.fa.em2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/jobs?mode=location"
     
     def setup_driver(self):
         """Set up Chrome driver with options"""

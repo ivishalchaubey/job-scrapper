@@ -26,9 +26,9 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class NvidiaScraper:
     def __init__(self):
-        self.company_name = 'Nvidia'
+        self.company_name = "Nvidia"
         # Workday platform
-        self.url = 'https://nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite?Location_Country=bc33aa3152ec42d4995f4791a106ed09'
+        self.url = "https://nvidia.eightfold.ai/careers?start=0&location=India&pid=893392494148&sort_by=distance&filter_include_remote=0"
         self.api_url = 'https://nvidia.wd5.myworkdayjobs.com/wday/cxs/nvidia/NVIDIAExternalCareerSite/jobs'
         self.base_job_url = 'https://nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite'
 

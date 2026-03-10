@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class CventScraper:
     def __init__(self):
-        self.company_name = 'Cvent'
-        self.url = 'https://careers.cvent.com/jobs?limit=100&page=1&location=India'
+        self.company_name = "Cvent"
+        self.url = "https://careers.cvent.com/jobs?limit=100&page=1&location=India&stretch=10&stretchUnit=MILES"
         self.base_url = 'https://careers.cvent.com'
 
     def setup_driver(self):

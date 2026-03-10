@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class GlencoreScraper:
     def __init__(self):
-        self.company_name = 'Glencore'
-        self.url = 'https://www.glencore.com/careers/jobs'
+        self.company_name = "Glencore"
+        self.url = "https://www.glencore.com/careers/jobs"
         self.base_url = 'https://www.glencore.com'
 
     def setup_driver(self):

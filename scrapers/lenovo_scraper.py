@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class LenovoScraper:
     def __init__(self):
-        self.company_name = 'Lenovo'
-        self.url = 'https://jobs.lenovo.com/en_US/careers/SearchJobs/'
+        self.company_name = "Lenovo"
+        self.url = "https://jobs.lenovo.com/en_US/careers/SearchJobs/?13042=%5B12016672%5D&13042_format=6627&listFilterMode=1&jobRecordsPerPage=10&"
         self.base_url = 'https://jobs.lenovo.com'
 
     def setup_driver(self):

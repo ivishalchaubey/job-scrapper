@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class KotakMahindraBankScraper:
     def __init__(self):
-        self.company_name = 'Kotak Mahindra Bank'
-        self.url = 'https://kotak.darwinbox.in/ms/candidate/careers'
+        self.company_name = "Kotak Mahindra Bank"
+        self.url = "https://hcbt.fa.em2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX/jobs?mode=location"
 
     def setup_driver(self):
         """Set up Chrome driver with anti-detection options"""

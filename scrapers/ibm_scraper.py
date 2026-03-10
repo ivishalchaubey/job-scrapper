@@ -28,9 +28,9 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class IBMScraper:
     def __init__(self):
-        self.company_name = 'IBM'
+        self.company_name = "IBM"
         # IBM careers portal with India filter
-        self.url = 'https://careers.ibm.com/job-search/?search=india'
+        self.url = "https://www.ibm.com/in-en/careers/search?field_keyword_05[0]=India"
         # IBM uses an Elasticsearch-based search API on www-api.ibm.com
         self.api_url = 'https://www-api.ibm.com/search/api/v2'
         self.base_job_url = 'https://careers.ibm.com/careers/JobDetail'

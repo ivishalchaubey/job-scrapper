@@ -18,8 +18,8 @@ logger = setup_logger('adp_scraper')
 
 class ADPScraper:
     def __init__(self):
-        self.company_name = 'ADP'
-        self.url = 'https://jobs.adp.com/en/jobs/?orderby=0&pagesize=20&page=1&mylocation=India'
+        self.company_name = "ADP"
+        self.url = "https://jobs.adp.com/en/jobs/?orderby=0&pagesize=20&page=1&mylocation=India&radius=100&rType=0"
         self.base_url = 'https://jobs.adp.com'
 
     def setup_driver(self):

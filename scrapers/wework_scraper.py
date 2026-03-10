@@ -9,8 +9,8 @@ logger = setup_logger('wework_scraper')
 
 class WeWorkScraper:
     def __init__(self):
-        self.company_name = 'WeWork India'
-        self.url = 'https://jsapi.recruiterbox.com/v1/openings'
+        self.company_name = "WeWork"
+        self.url = "https://weworkindia.hire.trakstar.com/"
         self.session = requests.Session()
         self.session.headers.update({
             'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',

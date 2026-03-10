@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class SiemensEnergyScraper:
     def __init__(self):
-        self.company_name = 'Siemens Energy'
-        self.url = 'https://jobs.siemens-energy.com/en_US/jobs/Jobs'
+        self.company_name = "Siemens Energy"
+        self.url = "https://jobs.siemens.com/en_US/externaljobs/SearchJobs/siemens%20energy%20india%20limited?listFilterMode=1&folderRecordsPerPage=6&"
         self.base_url = 'https://jobs.siemens-energy.com'
 
     def setup_driver(self):

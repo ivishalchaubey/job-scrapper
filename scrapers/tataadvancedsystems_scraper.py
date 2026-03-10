@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class TataAdvancedSystemsScraper:
     def __init__(self):
-        self.company_name = 'Tata Advanced Systems'
-        self.url = 'https://chroma.tcsapps.com/webhcm/tslt/careers'
+        self.company_name = "Tata Advanced Systems"
+        self.url = "https://chroma.tcsapps.com/webhcm/tslt/careers"
 
     def setup_driver(self):
         chrome_options = Options()

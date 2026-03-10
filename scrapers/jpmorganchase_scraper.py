@@ -11,8 +11,8 @@ logger = setup_logger('jpmorganchase_scraper')
 
 class JPMorganChaseScraper:
     def __init__(self):
-        self.company_name = 'JPMorgan Chase'
-        self.url = 'https://jpmc.fa.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/requisitions?location=India'
+        self.company_name = "JPMorgan Chase"
+        self.url = "https://jpmc.fa.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/jobs?location=India&locationId=300000000289360&locationLevel=country&mode=location"
         self.api_url = 'https://jpmc.fa.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions'
         self.site_number = 'CX_1001'
         self.page_size = 25

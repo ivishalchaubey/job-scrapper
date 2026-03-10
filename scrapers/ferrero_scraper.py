@@ -9,8 +9,8 @@ logger = setup_logger('ferrero_scraper')
 
 class FerreroScraper:
     def __init__(self):
-        self.company_name = 'Ferrero'
-        self.url = 'https://www.ferrerocareers.com/int/en/jobs'
+        self.company_name = "Ferrero"
+        self.url = "https://www.ferrerocareers.com/int/en/jobs?search_country=Ind&country[India]=India"
         self.base_url = 'https://www.ferrerocareers.com'
         self.session = requests.Session()
         self.session.headers.update({

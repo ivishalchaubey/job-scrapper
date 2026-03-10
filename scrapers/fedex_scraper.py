@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class FedExScraper:
     def __init__(self):
-        self.company_name = 'FedEx'
-        self.url = 'https://careers.fedex.com/fedex/jobs?location=India'
+        self.company_name = "FedEx"
+        self.url = "https://careers.fedex.com/jobs?location_name=India&location_type=4"
     
     def setup_driver(self):
         """Set up Chrome driver with options"""

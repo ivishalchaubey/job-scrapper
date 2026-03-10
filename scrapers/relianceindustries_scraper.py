@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class RelianceIndustriesScraper:
     def __init__(self):
-        self.company_name = 'Reliance Industries'
-        self.url = 'https://careers.ril.com/search-jobs'
+        self.company_name = "Reliance Industries"
+        self.url = "https://careers.ril.com/rilcareers/frmJobSearch.aspx?func=w+cpdiT6wL4=&loc=/wASbQn4xyQ=&expreq=/wASbQn4xyQ=&flag=/wASbQn4xyQ="
 
     def setup_driver(self):
         """Set up Chrome driver with anti-detection options"""

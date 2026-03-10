@@ -8,8 +8,8 @@ logger = setup_logger('gartner_scraper')
 
 class GartnerScraper:
     def __init__(self):
-        self.company_name = 'Gartner'
-        self.url = 'https://gartner.wd5.myworkdayjobs.com/EXT?locationCountry=c4f78be1a8f14da0ab49ce1162348a5e'
+        self.company_name = "Gartner"
+        self.url = "https://jobs.gartner.com/jobs/?search=&country=India&pagesize=20"
         self.api_url = 'https://gartner.wd5.myworkdayjobs.com/wday/cxs/gartner/EXT/jobs'
         self.base_job_url = 'https://gartner.wd5.myworkdayjobs.com/EXT'
 

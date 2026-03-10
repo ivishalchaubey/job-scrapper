@@ -20,9 +20,9 @@ logger = setup_logger('bcg_scraper')
 
 class BCGScraper:
     def __init__(self):
-        self.company_name = 'BCG'
+        self.company_name = "Boston Consulting Group"
         # Filter for India locations
-        self.url = 'https://careers.bcg.com/global/en/search-results?rk=page-targeted-jobs-page54-prod-ds-Nusa6pGk&sortBy=Most%20relevant'
+        self.url = "https://careers.bcg.com/global/en/search-results?rk=page-targeted-jobs-page54-prod-ds-Nusa6pGk&sortBy=Most%20relevant"
 
     def setup_driver(self):
         """Set up Chrome driver with options"""

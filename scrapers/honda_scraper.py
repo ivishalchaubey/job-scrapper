@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class HondaScraper:
     def __init__(self):
-        self.company_name = 'Honda'
-        self.url = 'https://www.hondacarindia.com/careers'
+        self.company_name = "Honda Cars India"
+        self.url = "https://www.hondacarindia.com/careers"
         self.base_url = 'https://www.hondacarindia.com'
 
     def setup_driver(self):

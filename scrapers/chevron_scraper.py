@@ -8,8 +8,8 @@ logger = setup_logger('chevron_scraper')
 
 class ChevronScraper:
     def __init__(self):
-        self.company_name = 'Chevron'
-        self.url = 'https://chevron.wd5.myworkdayjobs.com/jobs'
+        self.company_name = "Chevron"
+        self.url = "https://careers.chevron.com/search-jobs?acm=ALL&alrpm=1269750&ascf=[%7B%22key%22:%22ALL%22,%22value%22:%22%22%7D]"
         self.api_url = 'https://chevron.wd5.myworkdayjobs.com/wday/cxs/chevron/jobs/jobs'
         self.base_job_url = 'https://chevron.wd5.myworkdayjobs.com/jobs'
 

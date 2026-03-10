@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class ATTScraper:
     def __init__(self):
-        self.company_name = 'AT&T'
-        self.url = 'https://att.jobs/search-jobs/India'
+        self.company_name = "AT&T"
+        self.url = "https://www.att.jobs/location/india-jobs/117/1269750/2"
     
     def setup_driver(self):
         """Set up Chrome driver with options"""

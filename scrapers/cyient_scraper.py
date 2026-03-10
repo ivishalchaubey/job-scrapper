@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class CyientScraper:
     def __init__(self):
-        self.company_name = 'Cyient'
-        self.url = 'https://www.cyient.com/careers'
+        self.company_name = "Cyient"
+        self.url = "https://careers.cyient.com/cyient/"
     
     def setup_driver(self):
         """Set up Chrome driver with options"""

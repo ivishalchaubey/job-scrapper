@@ -21,9 +21,9 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class MahindraScraper:
     def __init__(self):
-        self.company_name = 'Mahindra'
+        self.company_name = "Mahindra & Mahindra"
         # SuccessFactors-based career portal
-        self.url = 'https://jobs.mahindracareers.com/search/?createNewAlert=false&q=&locationsearch='
+        self.url = "https://jobs.mahindracareers.com/search/?createNewAlert=false&q=&locationsearch=&optionsFacetsDD_shifttype=&optionsFacetsDD_facility=&optionsFacetsDD_customfield1="
 
     def setup_driver(self):
         chrome_options = Options()

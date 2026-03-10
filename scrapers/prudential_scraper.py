@@ -11,8 +11,8 @@ logger = setup_logger('prudential_scraper')
 
 class PrudentialScraper:
     def __init__(self):
-        self.company_name = 'Prudential Financial'
-        self.url = 'https://prudential.wd3.myworkdayjobs.com/prudential?locationCountry=c4f78be1a8f14da0ab49ce1162348a5e'
+        self.company_name = "Prudential Financial"
+        self.url = "https://prudential.wd3.myworkdayjobs.com/prudential?locationHierarchy1=c4f78be1a8f14da0ab49ce1162348a5e"
         self.api_url = 'https://prudential.wd3.myworkdayjobs.com/wday/cxs/prudential/prudential/jobs'
         self.base_job_url = 'https://prudential.wd3.myworkdayjobs.com/prudential'
 

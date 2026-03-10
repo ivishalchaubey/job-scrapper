@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class ABBScraper:
     def __init__(self):
-        self.company_name = 'ABB'
-        self.url = 'https://careers.abb/global/en/search-results'
+        self.company_name = "ABB"
+        self.url = "https://careers.abb/global/en/search-results"
         self.base_url = 'https://careers.abb'
 
     def setup_driver(self):

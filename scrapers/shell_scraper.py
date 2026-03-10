@@ -25,8 +25,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class ShellScraper:
     def __init__(self):
-        self.company_name = 'Shell'
-        self.url = 'https://shell.wd3.myworkdayjobs.com/en-GB/shellcareers?source=APPLICANT_SOURCE_India_Local_Page&locationCountry=c4f78be1a8f14da0ab49ce1162348a5e'
+        self.company_name = "Shell"
+        self.url = "https://shell.wd3.myworkdayjobs.com/en-GB/shellcareers?source=APPLICANT_SOURCE_India_Local_Page&locationCountry=c4f78be1a8f14da0ab49ce1162348a5e"
         self.api_url = 'https://shell.wd3.myworkdayjobs.com/wday/cxs/shell/shellcareers/jobs'
         self.base_job_url = 'https://shell.wd3.myworkdayjobs.com/shellcareers'
 

@@ -8,8 +8,8 @@ logger = setup_logger('mastercard_scraper')
 
 class MastercardScraper:
     def __init__(self):
-        self.company_name = 'Mastercard'
-        self.url = 'https://mastercard.wd1.myworkdayjobs.com/CorporateCareers'
+        self.company_name = "Mastercard"
+        self.url = "https://careers.mastercard.com/us/en/search-results"
         self.api_url = 'https://mastercard.wd1.myworkdayjobs.com/wday/cxs/mastercard/CorporateCareers/jobs'
         self.base_job_url = 'https://mastercard.wd1.myworkdayjobs.com/CorporateCareers'
 

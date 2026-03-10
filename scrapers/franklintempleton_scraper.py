@@ -11,8 +11,8 @@ logger = setup_logger('franklintempleton_scraper')
 
 class FranklinTempletonScraper:
     def __init__(self):
-        self.company_name = 'Franklin Templeton'
-        self.url = 'https://franklintempleton.wd5.myworkdayjobs.com/Primary-External-1?locationCountry=c4f78be1a8f14da0ab49ce1162348a5e'
+        self.company_name = "Franklin Templeton"
+        self.url = "https://franklintempleton.wd5.myworkdayjobs.com/Primary-External-1?_gl=1*q7f5r8*_ga*Njg1MzEyNTU5LjE3NzIxMDQxNjM.*_ga_15V8ZZDP8Z*czE3NzIxMDQxNjIkbzEkZzAkdDE3NzIxMDQxOTgkajI0JGwwJGgw&locationCountry=c4f78be1a8f14da0ab49ce1162348a5e"
         self.api_url = 'https://franklintempleton.wd5.myworkdayjobs.com/wday/cxs/franklintempleton/Primary-External-1/jobs'
         self.base_job_url = 'https://franklintempleton.wd5.myworkdayjobs.com/Primary-External-1'
 

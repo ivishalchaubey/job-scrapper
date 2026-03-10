@@ -10,8 +10,8 @@ logger = setup_logger('adanigroup_scraper')
 
 class AdaniGroupScraper:
     def __init__(self):
-        self.company_name = 'Adani Group'
-        self.url = 'https://eibd.fa.em2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/jobs'
+        self.company_name = "Adani Group"
+        self.url = "https://www.adani.com/opportunity/#en/sites/CX_1/jobs"
         self.api_url = 'https://eibd.fa.em2.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions'
         self.site_number = 'CX_1'
         self.page_size = 25

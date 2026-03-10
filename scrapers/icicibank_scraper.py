@@ -18,9 +18,9 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class ICICIBankScraper:
     def __init__(self):
-        self.company_name = 'ICICI Bank'
+        self.company_name = "ICICI Bank"
         # Point to actual job search/listings page
-        self.url = 'https://www.icicicareers.com/Find-A-Career'
+        self.url = "https://www.linkedin.com/jobs/search/?currentJobId=4344909707&f_C=2967&geoId=92000000&origin=COMPANY_PAGE_JOBS_CLUSTER_EXPANSION&originToLandingJobPostings=4344909707%2C4344687209%2C4358932424%2C4344909715%2C4344510067%2C4344776459%2C4344450623%2C4338202809%2C4344341030"
 
     def setup_driver(self):
         """Set up Chrome driver with anti-detection"""

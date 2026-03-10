@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class BASFScraper:
     def __init__(self):
-        self.company_name = 'BASF'
-        self.url = 'https://basf.jobs/?currentPage=1&pageSize=10&addresses%2Fcountry=India'
+        self.company_name = "BASF"
+        self.url = "https://basf.jobs/?currentPage=1&pageSize=10&addresses%2Fcountry=India"
         self.base_url = 'https://basf.jobs'
 
     def setup_driver(self):

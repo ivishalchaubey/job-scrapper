@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class ParleAgroScraper:
     def __init__(self):
-        self.company_name = 'Parle Agro'
-        self.url = 'https://www.parleagro.com/careers'
+        self.company_name = "Parle Agro"
+        self.url = "https://paplconnectplus.darwinbox.in/ms/candidatev2/main/careers/allJobs"
 
     def setup_driver(self):
         """Set up Chrome driver with options"""

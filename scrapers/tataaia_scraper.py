@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class TataAIAScraper:
     def __init__(self):
-        self.company_name = 'Tata AIA Life Insurance'
-        self.url = 'https://tataaia.ripplehire.com/candidate/?token=sHL2jO0rtOvpftwOGDCp&source=CAREERSITE#list'
+        self.company_name = "Tata AIA Life Insurance"
+        self.url = "https://tataaia.ripplehire.com/candidate/?token=sHL2jO0rtOvpftwOGDCp&source=CAREERSITE#list"
 
     def setup_driver(self):
         chrome_options = Options()

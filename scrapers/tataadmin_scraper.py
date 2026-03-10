@@ -21,8 +21,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class TataAdminScraper:
     def __init__(self):
-        self.company_name = 'Tata Administrative Services'
-        self.url = 'https://www.tata.com/careers/jobs/joblisting'
+        self.company_name = "Tata Administrative Services"
+        self.url = "https://www.tata.com/careers/jobs/joblisting"
         self.base_url = 'https://www.tata.com'
 
     def setup_driver(self):

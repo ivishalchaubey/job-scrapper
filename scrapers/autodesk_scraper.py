@@ -11,8 +11,8 @@ logger = setup_logger('autodesk_scraper')
 
 class AutodeskScraper:
     def __init__(self):
-        self.company_name = 'Autodesk'
-        self.url = 'https://autodesk.wd1.myworkdayjobs.com/Ext?locationCountry=c4f78be1a8f14da0ab49ce1162348a5e'
+        self.company_name = "Autodesk"
+        self.url = "https://autodesk.wd1.myworkdayjobs.com/Ext?_gl=1*1oqsxil*_gcl_au*MTgxNzc2NTUxMy4xNzcxNDk3MzE0*_ga*MTUyMTAyMzU2MC4xNzcxNDk3MzEz*_ga_NZSJ72N6RX*czE3NzE0OTczMTMkbzEkZzEkdDE3NzE0OTczMTMkajYwJGwwJGgw&State_Region=701eb5584934425d930bc84b9e8b04eb&State_Region=a3c37012f51642f4a7b3dafc8ac37801"
         self.api_url = 'https://autodesk.wd1.myworkdayjobs.com/wday/cxs/autodesk/Ext/jobs'
         self.base_job_url = 'https://autodesk.wd1.myworkdayjobs.com/Ext'
 

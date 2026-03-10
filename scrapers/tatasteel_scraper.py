@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class TataSteelScraper:
     def __init__(self):
-        self.company_name = 'Tata Steel'
-        self.url = 'https://www.tatasteel.com/careers/work-with-us/tata-steel-india-careers/'
+        self.company_name = "Tata Steel"
+        self.url = "https://tatasteel.ripplehire.com/candidate/?token=kYAz91uy1lFDi6FeSiRZ&lang=en&source=CAREERSITE#list"
     
     def setup_driver(self):
         """Set up Chrome driver with options"""

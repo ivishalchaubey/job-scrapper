@@ -17,8 +17,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class UltraTechCementScraper:
     def __init__(self):
-        self.company_name = 'UltraTech Cement'
-        self.url = 'https://abgcareers.peoplestrong.com/job/joblist'
+        self.company_name = "UltraTech Cement"
+        self.url = "https://abgcareers.peoplestrong.com/job/joblist\nOrg Unit: Cement"
         self.base_url = 'https://abgcareers.peoplestrong.com'
 
     def setup_driver(self):

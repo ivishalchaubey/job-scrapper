@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class CiscoScraper:
     def __init__(self):
-        self.company_name = 'Cisco'
-        self.url = 'https://jobs.cisco.com/jobs/SearchJobs/india'
+        self.company_name = "Cisco"
+        self.url = "https://careers.cisco.com/global/en/search-results"
     
     def setup_driver(self):
         """Set up Chrome driver with options"""

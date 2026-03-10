@@ -26,9 +26,9 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class SamsungScraper:
     def __init__(self):
-        self.company_name = 'Samsung'
+        self.company_name = "Samsung"
         # Workday platform - India locations
-        self.url = 'https://sec.wd3.myworkdayjobs.com/Samsung_Careers?locations=0c974e8c1228010867596ab21b3c3469'
+        self.url = "https://sec.wd3.myworkdayjobs.com/Samsung_Careers?locations=0c974e8c1228010867596ab21b3c3469&locations=189767dd6c9201004b83aa89a5295a80"
         self.api_url = 'https://sec.wd3.myworkdayjobs.com/wday/cxs/sec/Samsung_Careers/jobs'
         self.base_job_url = 'https://sec.wd3.myworkdayjobs.com/Samsung_Careers'
 

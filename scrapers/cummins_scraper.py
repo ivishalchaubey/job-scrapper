@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class CumminsScraper:
     def __init__(self):
-        self.company_name = 'Cummins'
-        self.url = 'https://careers.cummins.com/search-jobs/India'
+        self.company_name = "Cummins"
+        self.url = "https://cummins.jobs/jobs/?location=India"
     
     def setup_driver(self):
         """Set up Chrome driver with anti-detection options"""

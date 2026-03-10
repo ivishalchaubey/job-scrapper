@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class ProcterGambleScraper:
     def __init__(self):
-        self.company_name = 'Procter & Gamble'
-        self.url = 'https://www.pgcareers.com/search-jobs/India/403/1/2/6252001/19x9434/-2x2371/50/2'
+        self.company_name = "Procter & Gamble"
+        self.url = "https://www.pgcareers.com/in/en/search-results?m=3"
     
     def setup_driver(self):
         """Set up Chrome driver with anti-detection options"""

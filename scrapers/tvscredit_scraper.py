@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class TVSCreditScraper:
     def __init__(self):
-        self.company_name = 'TVS Credit'
-        self.url = 'https://tvscredit.talentrecruit.com/career-page'
+        self.company_name = "TVS Credit"
+        self.url = "https://tvscredit.talentrecruit.com/career-page"
         self.alt_url = 'https://www.tvscredit.com/careers/current-openings/'
         self.base_url = 'https://tvscredit.talentrecruit.com'
 

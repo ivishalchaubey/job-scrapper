@@ -8,8 +8,8 @@ logger = setup_logger('hpe_scraper')
 
 class HPEScraper:
     def __init__(self):
-        self.company_name = 'Hewlett Packard Enterprise'
-        self.url = 'https://hpe.wd5.myworkdayjobs.com/Jobsathpe'
+        self.company_name = "Hewlett Packard Enterprise"
+        self.url = "https://careers.hpe.com/us/en/search-results?keywords=India"
         self.api_url = 'https://hpe.wd5.myworkdayjobs.com/wday/cxs/hpe/Jobsathpe/jobs'
         self.base_job_url = 'https://hpe.wd5.myworkdayjobs.com/Jobsathpe'
 

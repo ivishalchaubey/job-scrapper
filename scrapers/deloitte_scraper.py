@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class DeloitteScraper:
     def __init__(self):
-        self.company_name = 'Deloitte'
-        self.url = 'https://apply.deloitte.com/careers/SearchJobs/india'
+        self.company_name = "Deloitte"
+        self.url = "https://usijobs.deloitte.com/en_US/careersusi"
     
     def setup_driver(self):
         """Set up Chrome driver with options"""

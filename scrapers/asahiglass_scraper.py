@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class AsahiGlassScraper:
     def __init__(self):
-        self.company_name = 'Asahi India Glass'
-        self.url = 'https://ais.darwinbox.in/ms/candidatev2/main/careers/allJobs'
+        self.company_name = "Asahi India Glass"
+        self.url = "https://ais.darwinbox.in/ms/candidatev2/main/careers/allJobs"
 
     def setup_driver(self):
         """Set up Chrome driver with anti-detection options"""

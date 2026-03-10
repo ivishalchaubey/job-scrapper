@@ -23,8 +23,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class HashedInScraper:
     def __init__(self):
-        self.company_name = 'HashedIn'
-        self.url = 'https://hashedin.com/careers'
+        self.company_name = "HashedIn"
+        self.url = "https://hashedin.com/careers"
 
     def setup_driver(self):
         chrome_options = Options()

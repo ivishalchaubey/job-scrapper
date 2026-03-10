@@ -10,8 +10,8 @@ logger = setup_logger('deutschebahn_scraper')
 
 class DeutscheBahnScraper:
     def __init__(self):
-        self.company_name = 'Deutsche Bahn'
-        self.url = 'https://db.jobs/service/search/en-en/5379744'
+        self.company_name = "Deutsche Bahn"
+        self.url = "https://db.jobs/service/search/en-en/5379744?query=International%20Jobs%20DB%20E.C.O.%20Group%20Deutsche%20bahn%20international%20operations%20gmbh&location_awe=&qli=true&sort=pubExternalDate_tdt"
         self.base_url = 'https://db.jobs'
         self.headers = {
             'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',

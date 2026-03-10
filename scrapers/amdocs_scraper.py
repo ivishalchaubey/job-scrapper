@@ -24,8 +24,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class AmdocsScraper:
     def __init__(self):
-        self.company_name = 'Amdocs'
-        self.url = 'https://jobs.amdocs.com/careers?location=India&domain=amdocs.com'
+        self.company_name = "Amdocs"
+        self.url = "https://jobs.amdocs.com/careers?_gl=1*15dwam3*_gcl_au*MTYwNTkzMTc1OS4xNzcyMDE2OTU3*_ga*MTg3Nzg4OTE0LjE3NzIwMTY5NTY.*_ga_EVYPKWJHSE*czE3NzIwMTY5NTYkbzEkZzEkdDE3NzIwMTY5NTYkajYwJGwwJGgw&start=0&location=IN&pid=563431012320217&sort_by=distance&filter_include_remote=1"
         self.api_domain = 'amdocs.com'
         self.api_base = 'https://jobs.amdocs.com'
 

@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class TrentScraper:
     def __init__(self):
-        self.company_name = 'Trent Limited'
-        self.url = 'https://careers.trentlimited.com/search/?createNewAlert=false&q=&locationsearch=&optionsFacetsDD_dept=&optionsFacetsDD_customfield1='
+        self.company_name = "Trent Limited"
+        self.url = "https://careers.trentlimited.com/search/?createNewAlert=false&q=&locationsearch=&optionsFacetsDD_dept=&optionsFacetsDD_customfield1="
 
     def setup_driver(self):
         chrome_options = Options()

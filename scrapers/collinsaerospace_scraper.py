@@ -8,8 +8,8 @@ logger = setup_logger('collinsaerospace_scraper')
 
 class CollinsAerospaceScraper:
     def __init__(self):
-        self.company_name = 'Collins Aerospace'
-        self.url = 'https://globalhr.wd5.myworkdayjobs.com/REC_RTX_Ext_Gateway'
+        self.company_name = "Collins Aerospace"
+        self.url = "https://careers.rtx.com/global/en/collins-aerospace-search-results-general"
         self.api_url = 'https://globalhr.wd5.myworkdayjobs.com/wday/cxs/globalhr/REC_RTX_Ext_Gateway/jobs'
         self.base_job_url = 'https://globalhr.wd5.myworkdayjobs.com/REC_RTX_Ext_Gateway'
 

@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class MercedesBenzScraper:
     def __init__(self):
-        self.company_name = 'Mercedes-Benz'
-        self.url = 'https://jobs.mercedes-benz.com/en'
+        self.company_name = "Mercedes-Benz"
+        self.url = "https://jobs.mercedes-benz.com/en?en=&PositionLocation.Country=%5B390%5D"
         self.base_url = 'https://jobs.mercedes-benz.com'
 
     def setup_driver(self):

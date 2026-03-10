@@ -10,7 +10,7 @@ logger = setup_logger('mcdonalds_scraper')
 
 class McDonaldsScraper:
     def __init__(self):
-        self.company_name = "McDonald's India"
+        self.company_name = "McDonald's"
         self.api_url = 'https://prod-warmachine.talent500.co/api/jobs/'
         self.company_slug = 'mcdonaldsindia'
         self.base_url = 'https://talent500.com/jobs/mcdonaldsindia/'

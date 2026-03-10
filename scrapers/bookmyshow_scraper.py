@@ -19,9 +19,9 @@ logger = setup_logger('bookmyshow_scraper')
 
 class BookMyShowScraper:
     def __init__(self):
-        self.company_name = 'BookMyShow'
+        self.company_name = "BookMyShow"
         # Trakstar Hire platform
-        self.url = 'https://bookmyshow.hire.trakstar.com/'
+        self.url = "https://bookmyshow.hire.trakstar.com/"
 
     def setup_driver(self):
         chrome_options = Options()

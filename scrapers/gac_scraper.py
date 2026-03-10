@@ -10,7 +10,7 @@ logger = setup_logger('gac_scraper')
 
 class GACScraper:
     def __init__(self):
-        self.company_name = 'GAC'
+        self.company_name = "Guangzhou Automobile Group"
         self.api_url = 'https://career.gac.com/api/offers/'
         self.headers = {
             'Accept': 'application/json',

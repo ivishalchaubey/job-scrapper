@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class HeroFinCorpScraper:
     def __init__(self):
-        self.company_name = 'Hero FinCorp'
-        self.url = 'https://www.herofincorp.com/careers'
+        self.company_name = "Hero FinCorp"
+        self.url = "https://www.herofincorp.com/career#explore_job_section"
 
     def setup_driver(self):
         """Set up Chrome driver with options"""

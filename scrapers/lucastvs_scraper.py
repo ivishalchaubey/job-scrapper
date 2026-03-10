@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class LucasTVSScraper:
     def __init__(self):
-        self.company_name = 'Lucas TVS'
-        self.url = 'https://chroma.tcsapps.com/webhcm/LTVS/careers'
+        self.company_name = "Lucas TVS"
+        self.url = "https://chroma.tcsapps.com/webhcm/LTVS/careers?jobLevelSearch=experienced"
 
     def setup_driver(self):
         chrome_options = Options()

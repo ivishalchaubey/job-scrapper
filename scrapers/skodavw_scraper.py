@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class SkodaVWScraper:
     def __init__(self):
-        self.company_name = 'Skoda Auto Volkswagen India'
-        self.url = 'https://skoda-vw.darwinbox.in/ms/candidate/careers'
+        self.company_name = "Skoda Auto Volkswagen India"
+        self.url = "https://skoda-vw.darwinbox.in/ms/candidate/careers"
 
     def setup_driver(self):
         """Set up Chrome driver with anti-detection options"""

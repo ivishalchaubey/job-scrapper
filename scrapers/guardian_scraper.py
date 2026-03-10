@@ -11,8 +11,8 @@ logger = setup_logger('guardian_scraper')
 
 class GuardianScraper:
     def __init__(self):
-        self.company_name = 'Guardian'
-        self.url = 'https://guardianlife.wd5.myworkdayjobs.com/Guardian-Life-Careers?locationCountry=c4f78be1a8f14da0ab49ce1162348a5e'
+        self.company_name = "Guardian"
+        self.url = "https://guardianlife.wd5.myworkdayjobs.com/en-GB/Guardian-Life-Careers?locationCountry=c4f78be1a8f14da0ab49ce1162348a5e"
         self.api_url = 'https://guardianlife.wd5.myworkdayjobs.com/wday/cxs/guardianlife/Guardian-Life-Careers/jobs'
         self.base_job_url = 'https://guardianlife.wd5.myworkdayjobs.com/Guardian-Life-Careers'
 

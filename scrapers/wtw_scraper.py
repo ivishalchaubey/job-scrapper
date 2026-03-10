@@ -9,7 +9,7 @@ logger = setup_logger('wtw_scraper')
 
 class WTWScraper:
     def __init__(self):
-        self.company_name = 'WTW'
+        self.company_name = "Willis Towers Watson"
         self.careers_url = 'https://careers.wtwco.com/jobs/search'
         self.base_url = 'https://careers.wtwco.com'
         self.session = requests.Session()

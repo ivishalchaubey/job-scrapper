@@ -8,8 +8,8 @@ logger = setup_logger('gehealthcare_scraper')
 
 class GEHealthCareScraper:
     def __init__(self):
-        self.company_name = 'GE HealthCare'
-        self.url = 'https://gehc.wd5.myworkdayjobs.com/GEHC_ExternalSite'
+        self.company_name = "GE HealthCare"
+        self.url = "https://careers.gehealthcare.com/global/en/india-jobs"
         self.api_url = 'https://gehc.wd5.myworkdayjobs.com/wday/cxs/gehc/GEHC_ExternalSite/jobs'
         self.base_job_url = 'https://gehc.wd5.myworkdayjobs.com/GEHC_ExternalSite'
 

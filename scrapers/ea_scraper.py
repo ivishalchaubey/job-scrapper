@@ -21,9 +21,9 @@ logger = setup_logger('ea_scraper')
 
 class EAScraper:
     def __init__(self):
-        self.company_name = 'Electronic Arts'
+        self.company_name = "Electronic Arts"
         # Avature (server-rendered) -- field 8171=10590 is India filter
-        self.url = 'https://jobs.ea.com/en_US/careers/Home/?8171=%5B10590%5D'
+        self.url = "https://jobs.ea.com/en_US/careers/Home/?8171=%5B10590%5D&8171_format=5683&listFilterMode=1&jobRecordsPerPage=20&"
         self.base_url = 'https://jobs.ea.com'
 
     def setup_driver(self):

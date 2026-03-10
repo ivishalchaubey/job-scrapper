@@ -11,8 +11,8 @@ logger = setup_logger('motorolasolutions_scraper')
 
 class MotorolaSolutionsScraper:
     def __init__(self):
-        self.company_name = 'Motorola Solutions'
-        self.url = 'https://motorolasolutions.wd5.myworkdayjobs.com/Careers?locationCountry=c4f78be1a8f14da0ab49ce1162348a5e'
+        self.company_name = "Motorola Solutions"
+        self.url = "https://motorolasolutions.wd5.myworkdayjobs.com/Careers?timeType=14bb6aa2c25e4a218b2a3faaa951e44c&locationCountry=c4f78be1a8f14da0ab49ce1162348a5e"
         self.api_url = 'https://motorolasolutions.wd5.myworkdayjobs.com/wday/cxs/motorolasolutions/Careers/jobs'
         self.base_job_url = 'https://motorolasolutions.wd5.myworkdayjobs.com/Careers'
 

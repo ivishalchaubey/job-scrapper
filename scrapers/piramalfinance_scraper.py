@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class PiramalFinanceScraper:
     def __init__(self):
-        self.company_name = 'Piramal Finance'
-        self.url = 'https://piramalgroup.darwinbox.in/ms/candidate/careers'
+        self.company_name = "Piramal Finance"
+        self.url = "https://piramalgroup.darwinbox.in/ms/candidate/careers"
 
     def setup_driver(self):
         """Set up Chrome driver with anti-detection options"""

@@ -18,11 +18,11 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class AppleScraper:
     def __init__(self):
-        self.company_name = 'Apple'
+        self.company_name = "Apple Inc."
         # NOTE: The en-in locale auto-filters for India jobs.
         # Do NOT add ?location=india — that param format doesn't match
         # Apple's internal location IDs and returns 0 results.
-        self.url = 'https://jobs.apple.com/en-in/search'
+        self.url = "https://jobs.apple.com/en-in/search?location=india-INDC&page=2"
 
     def setup_driver(self):
         """Set up Chrome driver with options"""

@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class KalyanJewellersScraper:
     def __init__(self):
-        self.company_name = 'Kalyan Jewellers'
-        self.url = 'https://careers.kalyanjewellers.company/explore/INDIA'
+        self.company_name = "Kalyan Jewellers"
+        self.url = "https://careers.kalyanjewellers.company/explore/INDIA"
         self.base_url = 'https://careers.kalyanjewellers.company'
 
     def setup_driver(self):

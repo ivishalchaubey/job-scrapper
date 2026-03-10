@@ -19,8 +19,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class MotilalOswalScraper:
     def __init__(self):
-        self.company_name = 'Motilal Oswal'
-        self.url = 'https://motilaloswal.turbohire.co/dashboardv2?orgId=0f6e3a76-85ff-4b66-8bfa-4cd4fede4ffa&type=0'
+        self.company_name = "Motilal Oswal Financial Services"
+        self.url = "https://motilaloswal.turbohire.co/dashboardv2?orgId=0f6e3a76-85ff-4b66-8bfa-4cd4fede4ffa&type=0"
 
     def setup_driver(self):
         chrome_options = Options()

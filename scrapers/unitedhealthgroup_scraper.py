@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class UnitedHealthGroupScraper:
     def __init__(self):
-        self.company_name = 'UnitedHealth Group'
-        self.url = 'https://careers.unitedhealthgroup.com/job-search-results/'
+        self.company_name = "UnitedHealth Group"
+        self.url = "https://careers.unitedhealthgroup.com/job-search-results/?location=India&country=IN&radius=25&src=NGP-22510"
         self.base_url = 'https://careers.unitedhealthgroup.com'
 
     def setup_driver(self):

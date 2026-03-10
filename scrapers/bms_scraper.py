@@ -8,8 +8,8 @@ logger = setup_logger('bms_scraper')
 
 class BMSScraper:
     def __init__(self):
-        self.company_name = 'Bristol-Myers Squibb'
-        self.url = 'https://bristolmyerssquibb.wd5.myworkdayjobs.com/BMS'
+        self.company_name = "Bristol Myers Squibb"
+        self.url = "https://jobs.bms.com/careers?domain=bms.com&start=0&location=India&pid=137466878822&sort_by=distance&filter_include_remote=1"
         self.api_url = 'https://bristolmyerssquibb.wd5.myworkdayjobs.com/wday/cxs/bristolmyerssquibb/BMS/jobs'
         self.base_job_url = 'https://bristolmyerssquibb.wd5.myworkdayjobs.com/BMS'
 

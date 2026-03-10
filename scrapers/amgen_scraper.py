@@ -8,8 +8,8 @@ logger = setup_logger('amgen_scraper')
 
 class AmgenScraper:
     def __init__(self):
-        self.company_name = 'Amgen'
-        self.url = 'https://amgen.wd1.myworkdayjobs.com/Careers?locationCountry=c4f78be1a8f14da0ab49ce1162348a5e'
+        self.company_name = "Amgen"
+        self.url = "https://careers.amgen.com/en/location/india-jobs/87/1269750/2"
         self.api_url = 'https://amgen.wd1.myworkdayjobs.com/wday/cxs/amgen/Careers/jobs'
         self.base_job_url = 'https://amgen.wd1.myworkdayjobs.com/Careers'
 

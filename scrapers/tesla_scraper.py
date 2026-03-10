@@ -26,9 +26,9 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class TeslaScraper:
     def __init__(self):
-        self.company_name = 'Tesla'
+        self.company_name = "Tesla"
         # Tesla uses Akamai Bot Manager which blocks headless Chrome aggressively
-        self.url = 'https://www.tesla.com/careers/search/?country=IN'
+        self.url = "https://hire-r1.mokahr.com/social-recruitment/tesla/100004142#/jobs?page=1&anchorName=jobsList"
 
     def setup_driver(self):
         """Set up Chrome driver with maximum anti-detection for Akamai bypass."""

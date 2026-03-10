@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class UnitedAirlinesScraper:
     def __init__(self):
-        self.company_name = 'United Airlines'
-        self.url = 'https://careers.united.com/us/en/search-results?keywords=India'
+        self.company_name = "United Airlines"
+        self.url = "https://careers.united.com/us/en/search-results?keywords=India"
         self.base_url = 'https://careers.united.com'
 
     def setup_driver(self):

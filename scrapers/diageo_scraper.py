@@ -25,8 +25,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class DiageoScraper:
     def __init__(self):
-        self.company_name = 'Diageo'
-        self.url = 'https://diageo.wd3.myworkdayjobs.com/Diageo_Careers'
+        self.company_name = "Diageo"
+        self.url = "https://www.linkedin.com/company/diageo-india/jobs/?viewAsMember=true"
         self.api_url = 'https://diageo.wd3.myworkdayjobs.com/wday/cxs/diageo/Diageo_Careers/jobs'
         self.base_job_url = 'https://diageo.wd3.myworkdayjobs.com/Diageo_Careers'
 

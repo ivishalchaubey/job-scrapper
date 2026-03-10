@@ -30,8 +30,8 @@ INDIA_CITIES = ['india', 'mumbai', 'bangalore', 'bengaluru', 'delhi', 'hyderabad
 
 class SalesforceScraper:
     def __init__(self):
-        self.company_name = 'Salesforce'
-        self.url = 'https://salesforce.wd12.myworkdayjobs.com/en-US/External_Career_Site?locationCountry=bc33aa3152ec42d4995f4791a106ed09'
+        self.company_name = "Salesforce"
+        self.url = "https://careers.salesforce.com/en/jobs/?search=&country=India&pagesize=20#results"
         self.api_url = 'https://salesforce.wd12.myworkdayjobs.com/wday/cxs/salesforce/External_Career_Site/jobs'
         self.base_job_url = 'https://salesforce.wd12.myworkdayjobs.com/en-US/External_Career_Site'
 

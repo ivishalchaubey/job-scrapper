@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class VolvoScraper:
     def __init__(self):
-        self.company_name = 'Volvo'
-        self.url = 'https://jobs.volvogroup.com/'
+        self.company_name = "Volvo"
+        self.url = "https://jobs.volvogroup.com/"
         self.base_url = 'https://jobs.volvogroup.com'
 
     def setup_driver(self):

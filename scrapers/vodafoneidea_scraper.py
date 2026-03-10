@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class VodafoneIdeaScraper:
     def __init__(self):
-        self.company_name = 'Vodafone Idea'
-        self.url = 'https://careers.vodafoneidea.com/go/All-Current-Job-Opportunities/4268701/'
+        self.company_name = "Vodafone Idea"
+        self.url = "https://careers.vodafoneidea.com/go/All-Current-Job-Opportunities/4268701/?q=&sortColumn=referencedate&sortDirection=desc"
         self.base_url = 'https://careers.vodafoneidea.com'
 
     def setup_driver(self):

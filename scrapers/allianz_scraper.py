@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class AllianzScraper:
     def __init__(self):
-        self.company_name = 'Allianz'
-        self.url = 'https://careers.allianz.com/global/en/search-results?p=ChIJkbeSa_BfYzARphNChaFPjNc&location=India'
+        self.company_name = "Allianz"
+        self.url = "https://careers.allianz.com/global/en/search-results?p=ChIJkbeSa_BfYzARphNChaFPjNc&location=India"
         self.base_url = 'https://careers.allianz.com'
 
     def setup_driver(self):

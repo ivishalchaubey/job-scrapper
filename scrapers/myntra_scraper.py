@@ -21,8 +21,8 @@ PAGE_SIZE = 20
 
 class MyntraScraper:
     def __init__(self):
-        self.company_name = 'Myntra'
-        self.url = 'https://jobs.myntra.com/home'  # kept for reference / apply_url fallback
+        self.company_name = "Myntra"
+        self.url = "https://jobs.myntra.com/home"  # kept for reference / apply_url fallback
         self.api_search_url = f'{API_BASE}/requisition/_search'
         self.api_count_url = f'{API_BASE}/requisition/_count'
         self.headers = {

@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class ReckittScraper:
     def __init__(self):
-        self.company_name = 'Reckitt'
-        self.url = 'https://www.reckitt.com/careers/'
+        self.company_name = "Reckitt"
+        self.url = "https://careers.reckitt.com/search/?createNewAlert=false&q=&locationsearch=India&optionsFacetsDD_facility=&optionsFacetsDD_country="
     
     def setup_driver(self):
         """Set up Chrome driver with options"""

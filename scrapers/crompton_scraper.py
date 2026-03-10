@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class CromptonScraper:
     def __init__(self):
-        self.company_name = 'Crompton Greaves'
-        self.url = 'https://career10.successfactors.com/portalcareer?company=cromptongr'
+        self.company_name = "Crompton Greaves Consumer Electricals"
+        self.url = "https://www.crompton.co.in/pages/careers"
         self.base_url = 'https://career10.successfactors.com'
 
     def setup_driver(self):

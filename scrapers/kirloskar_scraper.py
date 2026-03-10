@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class KirloskarScraper:
     def __init__(self):
-        self.company_name = 'Kirloskar Oil Engines'
-        self.url = 'https://mhicareers.com/search/?createNewAlert=false&q=&locationsearch=IND&optionsFacetsDD_title=&optionsFacetsDD_facility='
+        self.company_name = "Kirloskar Oil Engines"
+        self.url = "https://mhicareers.com/search/?createNewAlert=false&q=&locationsearch=IND&optionsFacetsDD_title=&optionsFacetsDD_facility=&optionsFacetsDD_customfield5=&optionsFacetsDD_brand="
         self.base_url = 'https://mhicareers.com'
 
     def setup_driver(self):

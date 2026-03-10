@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class KPITTechnologiesScraper:
     def __init__(self):
-        self.company_name = 'KPIT Technologies'
-        self.url = 'https://www.kpit.com/careers/'
+        self.company_name = "KPIT Technologies"
+        self.url = "https://www.kpit.com/job-listing/?country=India&location=&exp="
     
     def setup_driver(self):
         """Set up Chrome driver with options"""

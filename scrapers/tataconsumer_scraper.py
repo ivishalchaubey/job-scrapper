@@ -21,9 +21,9 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class TataConsumerScraper:
     def __init__(self):
-        self.company_name = 'Tata Consumer Products'
+        self.company_name = "Tata Consumer Products"
         # SuccessFactors platform
-        self.url = 'https://careers.tataconsumer.com/search/?createNewAlert=false&q=&locationsearch=India&optionsFacetsDD_title='
+        self.url = "https://careers.tataconsumer.com/search/?createNewAlert=false&q=&locationsearch=India&optionsFacetsDD_title="
 
     def setup_driver(self):
         chrome_options = Options()

@@ -19,8 +19,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class VarrocScraper:
     def __init__(self):
-        self.company_name = 'Varroc'
-        self.url = 'https://varroc.sensehq.com/careers'
+        self.company_name = "Varroc"
+        self.url = "https://varroc.sensehq.com/careers"
 
     def setup_driver(self):
         chrome_options = Options()

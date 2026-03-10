@@ -19,8 +19,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class UBSGroupScraper:
     def __init__(self):
-        self.company_name = 'UBS Group'
-        self.url = 'https://jobs.ubs.com/TGnewUI/Search/home/HomeWithPreLoad?partnerid=25008&siteid=5012&PageType=searchResults&SearchType=linkquery&LinkID=6017#keyWordSearch=&locationSearch=India'
+        self.company_name = "UBS Group"
+        self.url = "https://jobs.ubs.com/TGnewUI/Search/home/HomeWithPreLoad?partnerid=25008&siteid=5012&PageType=searchResults&SearchType=linkquery&LinkID=15602#keyWordSearch=&locationSearch="
 
     def setup_driver(self):
         chrome_options = Options()

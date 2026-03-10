@@ -26,7 +26,7 @@ PARAM_AI_URL = 'https://maruti.app.param.ai/jobs/'
 
 class MarutiSuzukiScraper:
     def __init__(self):
-        self.company_name = 'Maruti Suzuki'
+        self.company_name = "Maruti Suzuki"
         self.url = CAREERS_URL
 
     def setup_driver(self):

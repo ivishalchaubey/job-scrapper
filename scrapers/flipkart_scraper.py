@@ -18,9 +18,9 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class FlipkartScraper:
     def __init__(self):
-        self.company_name = 'Flipkart'
+        self.company_name = "Flipkart"
         # Use job search page with hash routing
-        self.url = 'https://www.flipkartcareers.com/#!/job-listing'
+        self.url = "https://www.flipkartcareers.com/flipkart/jobslist"
         self.base_url = 'https://www.flipkartcareers.com'
     
     def setup_driver(self):

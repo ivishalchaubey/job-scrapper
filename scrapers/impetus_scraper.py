@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class ImpetusScraper:
     def __init__(self):
-        self.company_name = 'Impetus Technologies'
-        self.url = 'https://impetus.openings.co/'
+        self.company_name = "Impetus"
+        self.url = "https://impetus.openings.co/impetus/#!/"
         self.base_url = 'https://impetus.openings.co'
 
     def setup_driver(self):

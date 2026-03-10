@@ -17,9 +17,9 @@ logger = setup_logger('bny_scraper')
 
 class BNYScraper:
     def __init__(self):
-        self.company_name = 'BNY'
+        self.company_name = "BNY"
         # Eightfold AI PCSX platform
-        self.url = 'https://bnymellon.eightfold.ai/careers?location=India'
+        self.url = "https://bnymellon.eightfold.ai/careers?start=0&location=India&pid=40076775&sort_by=distance&filter_include_remote=1"
         self.base_url = 'https://bnymellon.eightfold.ai'
 
     def setup_driver(self):

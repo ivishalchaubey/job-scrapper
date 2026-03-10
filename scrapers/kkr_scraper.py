@@ -8,8 +8,8 @@ logger = setup_logger('kkr_scraper')
 
 class KKRScraper:
     def __init__(self):
-        self.company_name = 'KKR'
-        self.url = 'https://boards.greenhouse.io/stage'
+        self.company_name = "KKR & Co."
+        self.url = "https://www.kkr.com/careers/career-opportunities"
         self.api_url = 'https://boards-api.greenhouse.io/v1/boards/stage/jobs'
 
     def generate_external_id(self, job_id, company):

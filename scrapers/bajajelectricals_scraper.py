@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class BajajElectricalsScraper:
     def __init__(self):
-        self.company_name = 'Bajaj Electricals'
-        self.url = 'https://careers.bajajelectricals.com/search/?createNewAlert=false&q=&locationsearch='
+        self.company_name = "Bajaj Electricals"
+        self.url = "https://careers.bajajelectricals.com/search/?createNewAlert=false&q=&locationsearch="
 
     def setup_driver(self):
         chrome_options = Options()

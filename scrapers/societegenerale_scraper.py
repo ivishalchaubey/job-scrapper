@@ -8,7 +8,7 @@ logger = setup_logger('societegenerale_scraper')
 
 class SocieteGeneraleScraper:
     def __init__(self):
-        self.company_name = 'Societe Generale'
+        self.company_name = "Soci\u00e9t\u00e9 G\u00e9n\u00e9rale"
         # Algolia search backend discovered from careers.societegenerale.com main.js
         self.algolia_app_id = '1LDUTI39JZ'
         self.algolia_api_key = '2bd238230defca6327e7aae23105057d'

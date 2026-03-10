@@ -16,13 +16,13 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class ShoppersStopScraper:
     def __init__(self):
-        self.company_name = 'Shoppers Stop'
+        self.company_name = "Shoppers Stop"
         # Shoppers Stop uses DarwinBox v1 for their careers portal.
         # The old URL (shoppersstop.com/careers) returns a 404.
         # ss-people.darwinbox.in is their active DarwinBox tenant.
         # The candidatev2 URL redirects to the v1 /ms/candidate/careers page,
         # which uses a server-rendered table layout (not the v2 SPA tiles).
-        self.url = 'https://ss-people.darwinbox.in/ms/candidate/careers'
+        self.url = "https://shopperstop.preprod1.openings.co/#!/joblist"
 
     def setup_driver(self):
         """Set up Chrome driver with anti-detection options"""

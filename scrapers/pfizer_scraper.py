@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class PfizerScraper:
     def __init__(self):
-        self.company_name = 'Pfizer'
-        self.url = 'https://www.pfizer.com/about/careers/search-results?keywords=&location=India'
+        self.company_name = "Pfizer"
+        self.url = "https://www.pfizer.co.in/careers/search-results?langcode=en&region[0]=India&count=10&sort=latest"
     
     def setup_driver(self):
         """Set up Chrome driver with options"""

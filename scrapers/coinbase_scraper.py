@@ -9,8 +9,8 @@ logger = setup_logger('coinbase_scraper')
 
 class CoinbaseScraper:
     def __init__(self):
-        self.company_name = 'Coinbase'
-        self.url = 'https://boards.greenhouse.io/coinbase'
+        self.company_name = "Coinbase"
+        self.url = "https://www.coinbase.com/en-gb/careers/positions?location=remote+india\nhttps://www.coinbase.com/en-gb/careers/positions?location=hyderabad+india"
         self.api_url = 'https://boards-api.greenhouse.io/v1/boards/coinbase/jobs'
 
     def generate_external_id(self, job_id, company):

@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class CitigroupScraper:
     def __init__(self):
-        self.company_name = 'Citigroup'
-        self.url = 'https://jobs.citi.com/search-jobs/India/287/1/2/6252001/19x9434/-2x2371/50/2'
+        self.company_name = "Citigroup"
+        self.url = "https://jobs.citi.com/location/india-jobs/287/1269750/2"
     
     def setup_driver(self):
         """Set up Chrome driver with anti-detection options"""

@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class IHGScraper:
     def __init__(self):
-        self.company_name = 'IHG'
-        self.url = 'https://careers.ihg.com/en/search-and-apply/'
+        self.company_name = "IHG"
+        self.url = "https://careers.ihg.com/en/search-and-apply/?area=india&region="
         self.base_url = 'https://careers.ihg.com'
 
     def setup_driver(self):

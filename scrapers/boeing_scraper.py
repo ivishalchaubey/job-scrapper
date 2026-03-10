@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class BoeingScraper:
     def __init__(self):
-        self.company_name = 'Boeing'
-        self.url = 'https://jobs.boeing.com/search-jobs/India'
+        self.company_name = "Boeing"
+        self.url = "https://jobs.boeing.com/location/india-country-jobs/185/1269750/2"
     
     def setup_driver(self):
         """Set up Chrome driver with anti-detection options"""

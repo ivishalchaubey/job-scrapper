@@ -19,8 +19,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class ZeptoScraper:
     def __init__(self):
-        self.company_name = 'Zepto'
-        self.url = 'https://www.zeptonow.com/careers'
+        self.company_name = "Zepto"
+        self.url = "https://zepto.talentrecruit.com/career-page"
 
     def setup_driver(self):
         """Set up Chrome driver with options"""

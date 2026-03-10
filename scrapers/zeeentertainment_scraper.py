@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class ZeeEntertainmentScraper:
     def __init__(self):
-        self.company_name = 'Zee Entertainment'
-        self.url = 'https://zee.sensehq.com/careers'
+        self.company_name = "Zee Entertainment Enterprises"
+        self.url = "https://zee.sensehq.com/careers"
 
     def setup_driver(self):
         chrome_options = Options()

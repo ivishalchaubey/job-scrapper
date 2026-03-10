@@ -9,8 +9,8 @@ logger = setup_logger('axtria_scraper')
 
 class AxtriaScraper:
     def __init__(self):
-        self.company_name = 'Axtria'
-        self.url = 'https://axtriainc.applytojob.com/apply/jobs/'
+        self.company_name = "Axtria"
+        self.url = "https://www.axtria.com/axtria-careers/"
         self.base_url = 'https://axtriainc.applytojob.com'
         self.session = requests.Session()
         self.session.headers.update({

@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class NPCIScraper:
     def __init__(self):
-        self.company_name = 'NPCI'
-        self.url = 'https://career.npci.org.in/'
+        self.company_name = "National Payments Corporation of India"
+        self.url = "https://www.npci.org.in/careers"
         self.fallback_url = 'https://www.npci.org.in/careers'
 
     def setup_driver(self):

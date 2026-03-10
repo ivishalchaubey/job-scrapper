@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class EYScraper:
     def __init__(self):
-        self.company_name = 'EY'
-        self.url = 'https://careers.ey.com/ey/search/?createNewAlert=false&q=&locationsearch=India'
+        self.company_name = "EY"
+        self.url = "https://eyglobal.yello.co/job_boards/c1riT--B2O-KySgYWsZO1Q?locale=en\nhttps://careers.ey.com/ey/search/?createNewAlert=false&q=&optionsFacetsDD_customfield1=Strategy+and+Transactions&optionsFacetsDD_country=IN&optionsFacetsDD_city=\nhttps://careers.ey.com/ey/search/?createNewAlert=false&q=&optionsFacetsDD_customfield1=&optionsFacetsDD_country=IN&optionsFacetsDD_city="
     
     def setup_driver(self):
         """Set up Chrome driver with options"""

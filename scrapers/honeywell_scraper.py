@@ -11,9 +11,9 @@ logger = setup_logger('honeywell_scraper')
 
 class HoneywellScraper:
     def __init__(self):
-        self.company_name = 'Honeywell'
+        self.company_name = "Honeywell"
         # Old Phenom-based URL is dead (502/404). Honeywell migrated to Oracle Cloud.
-        self.url = 'https://careers.honeywell.com/us/en/search-results?keywords=&location=India'
+        self.url = "https://careers.honeywell.com/en/sites/Honeywell/jobs?location=India&locationId=300000000469485&locationLevel=country&mode=location"
         # Oracle Cloud REST API for Honeywell careers
         self.api_url = 'https://ibqbjb.fa.ocs.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions'
         self.site_number = 'CX_1'

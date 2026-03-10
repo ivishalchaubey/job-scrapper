@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class RoyalEnfieldScraper:
     def __init__(self):
-        self.company_name = 'Royal Enfield'
-        self.url = 'https://careers.royalenfield.com/us/en/search-results'
+        self.company_name = "Royal Enfield"
+        self.url = "https://careers.royalenfield.com/us/en"
 
     def setup_driver(self):
         """Set up Chrome driver with options"""

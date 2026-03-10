@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class WaareeScraper:
     def __init__(self):
-        self.company_name = 'Waaree Energies'
-        self.url = 'https://waaree.zohorecruit.com/jobs/careers'
+        self.company_name = "Waaree"
+        self.url = "https://www.waaree.com/careers/"
 
     def setup_driver(self):
         chrome_options = Options()

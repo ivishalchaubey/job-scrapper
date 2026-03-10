@@ -9,8 +9,8 @@ logger = setup_logger('odoo_scraper')
 
 class OdooScraper:
     def __init__(self):
-        self.company_name = 'Odoo'
-        self.url = 'https://www.odoo.com/jobs'
+        self.company_name = "Odoo"
+        self.url = "https://www.odoo.com/jobs"
         self.base_url = 'https://www.odoo.com'
         self.session = requests.Session()
         self.session.headers.update({

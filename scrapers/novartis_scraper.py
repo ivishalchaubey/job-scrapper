@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class NovartisScraper:
     def __init__(self):
-        self.company_name = 'Novartis'
-        self.url = 'https://www.novartis.com/in-en/careers/career-search?country%5B0%5D=LOC_IN&field_alternative_country%5B0%5D=LOC_IN'
+        self.company_name = "Novartis"
+        self.url = "https://www.novartis.com/in-en/careers/career-search?country%5B0%5D=LOC_IN&field_alternative_country%5B0%5D=LOC_IN"
         self.base_url = 'https://www.novartis.com'
 
     def setup_driver(self):

@@ -11,8 +11,8 @@ logger = setup_logger('ramcosystems_scraper')
 
 class RamcoSystemsScraper:
     def __init__(self):
-        self.company_name = 'Ramco Systems'
-        self.url = 'https://www.ramco.com/careers/jobs-by-locations'
+        self.company_name = "Ramco Systems"
+        self.url = "https://www.ramco.com/careers/jobs-by-locations"
         self.base_url = 'https://www.ramco.com'
         self.headers = {
             'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'

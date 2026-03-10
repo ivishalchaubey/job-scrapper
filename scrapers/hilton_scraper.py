@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class HiltonScraper:
     def __init__(self):
-        self.company_name = 'Hilton'
-        self.url = 'https://jobs.hilton.com/apac/en/india-jobs'
+        self.company_name = "Hilton"
+        self.url = "https://jobs.hilton.com/apac/en/india-jobs"
 
     def setup_driver(self):
         chrome_options = Options()

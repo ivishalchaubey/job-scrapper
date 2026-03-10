@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class EicherMotorsScraper:
     def __init__(self):
-        self.company_name = 'Eicher Motors'
-        self.url = 'https://careers.vecv.in/search/?createNewAlert=false&q=&locationsearch=India'
+        self.company_name = "Eicher Motors"
+        self.url = "https://careers.vecv.in/search/?createNewAlert=false&q=&locationsearch=&optionsFacetsDD_location=&optionsFacetsDD_city=&optionsFacetsDD_department=\nhttps://careers.royalenfield.com/us/en/home?_gl=1*y9ntof*_gcl_au*MjEyNTMxOTY3NC4xNzcxNTc2ODg5*_ga*MTUyNjI5NjQ3MC4xNzcxNTc2ODg5*_ga_7746PERT32*czE3NzE1NzY4ODkkbzEkZzEkdDE3NzE1NzY5MjAkajI5JGwwJGgw"
         self.base_url = 'https://careers.vecv.in'
 
     def setup_driver(self):

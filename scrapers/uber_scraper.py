@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class UberScraper:
     def __init__(self):
-        self.company_name = 'Uber'
-        self.url = 'https://www.uber.com/in/en/careers/list/?query=&location=IND-Karnataka-Bangalore'
+        self.company_name = "Uber"
+        self.url = "https://www.uber.com/in/en/careers/list/?location=IND-Haryana-Gurgaon&location=IND-Karn%C4%81taka-Bangalore&location=IND-Telang%C4%81na-Hyderabad&location=IND-Andhra%20Pradesh-Visakhapatnam&location=IND-Hary%C4%81na-Gurgaon"
     
     def setup_driver(self):
         """Set up Chrome driver with options"""

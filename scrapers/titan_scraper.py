@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class TitanScraper:
     def __init__(self):
-        self.company_name = 'Titan Company'
-        self.url = 'https://careers.titan.in/in/en/search-results'
+        self.company_name = "Titan Company"
+        self.url = "https://careers.titan.in/in/en/search-results"
         self.base_url = 'https://careers.titan.in'
 
     def setup_driver(self):

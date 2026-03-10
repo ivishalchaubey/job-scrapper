@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class UflexScraper:
     def __init__(self):
-        self.company_name = 'Uflex'
-        self.url = 'https://aa193.taleo.net/careersection/ex/jobsearch.ftl?lang=en&portal=101430233'
+        self.company_name = "Uflex"
+        self.url = "https://aa193.taleo.net/careersection/ex/jobsearch.ftl?lang=en&portal=101430233"
         self.base_url = 'https://aa193.taleo.net'
 
     def setup_driver(self):

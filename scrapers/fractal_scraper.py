@@ -11,8 +11,8 @@ logger = setup_logger('fractal_scraper')
 
 class FractalScraper:
     def __init__(self):
-        self.company_name = 'Fractal'
-        self.url = 'https://fractal.wd1.myworkdayjobs.com/Careers?locationCountry=c4f78be1a8f14da0ab49ce1162348a5e'
+        self.company_name = "Fractal"
+        self.url = "https://fractal.wd1.myworkdayjobs.com/Careers"
         self.api_url = 'https://fractal.wd1.myworkdayjobs.com/wday/cxs/fractal/Careers/jobs'
         self.base_job_url = 'https://fractal.wd1.myworkdayjobs.com/Careers'
 

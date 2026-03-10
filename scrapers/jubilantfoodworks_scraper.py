@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class JubilantFoodWorksScraper:
     def __init__(self):
-        self.company_name = 'Jubilant FoodWorks'
-        self.url = 'https://www.jubilantfoodworks.com/careers'
+        self.company_name = "Jubilant FoodWorks"
+        self.url = "https://fa-exph-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/jubilant/jobs?location=India&locationId=300000000465349&locationLevel=country&mode=location"
     
     def setup_driver(self):
         """Set up Chrome driver with options"""

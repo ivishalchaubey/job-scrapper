@@ -21,8 +21,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class BritanniaScraper:
     def __init__(self):
-        self.company_name = 'Britannia Industries'
-        self.url = 'https://britannia.turbohire.co/careerpage/c143932d-0df7-4856-9dc5-0a9f1ca26dc5'
+        self.company_name = "Britannia Industries"
+        self.url = "https://britannia.turbohire.co/dashboardv2?orgId=c143932d-0df7-4856-9dc5-0a9f1ca26dc5&type=0"
         self.base_url = 'https://britannia.turbohire.co'
 
     def setup_driver(self):

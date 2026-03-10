@@ -25,8 +25,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class CadenceScraper:
     def __init__(self):
-        self.company_name = 'Cadence'
-        self.url = 'https://cadence.wd1.myworkdayjobs.com/External_Careers?Location_Country=c4f78be1a8f14da0ab49ce1162348a5e'
+        self.company_name = "Cadence"
+        self.url = "https://cadence.wd1.myworkdayjobs.com/External_Careers?Location_Country=c4f78be1a8f14da0ab49ce1162348a5e"
         self.api_url = 'https://cadence.wd1.myworkdayjobs.com/wday/cxs/cadence/External_Careers/jobs'
         self.base_job_url = 'https://cadence.wd1.myworkdayjobs.com/External_Careers'
 

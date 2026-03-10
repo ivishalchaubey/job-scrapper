@@ -10,8 +10,8 @@ logger = setup_logger('essar_scraper')
 
 class EssarGroupScraper:
     def __init__(self):
-        self.company_name = 'Essar Group'
-        self.url = 'https://ekjy.fa.em2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_3007/jobs'
+        self.company_name = "Essar Group"
+        self.url = "https://ekjy.fa.em2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_3007/jobs?mode=location"
         self.api_url = 'https://ekjy.fa.em2.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions'
         self.site_number = 'CX_3007'
         self.india_location_ids = '300000000302954'

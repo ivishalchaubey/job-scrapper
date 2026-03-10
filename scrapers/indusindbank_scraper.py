@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class IndusIndBankScraper:
     def __init__(self):
-        self.company_name = 'IndusInd Bank'
-        self.url = 'https://www.indusind.com/in/en/personal/career.html'
+        self.company_name = "IndusInd Bank"
+        self.url = "https://app1100.workline.hr/Cportal/GeneralOpening.aspx"
         self.base_url = 'https://www.indusind.com'
 
     def setup_driver(self):

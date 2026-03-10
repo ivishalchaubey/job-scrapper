@@ -8,8 +8,8 @@ logger = setup_logger('aptiv_scraper')
 
 class AptivScraper:
     def __init__(self):
-        self.company_name = 'Aptiv'
-        self.url = 'https://aptiv.wd5.myworkdayjobs.com/APTIV_CAREERS'
+        self.company_name = "Aptiv"
+        self.url = "https://www.aptiv.com/en/jobs/search?country=India"
         self.api_url = 'https://aptiv.wd5.myworkdayjobs.com/wday/cxs/aptiv/APTIV_CAREERS/jobs'
         self.base_job_url = 'https://aptiv.wd5.myworkdayjobs.com/APTIV_CAREERS'
 

@@ -8,8 +8,8 @@ logger = setup_logger('encora_scraper')
 
 class EncoraScraper:
     def __init__(self):
-        self.company_name = 'Encora'
-        self.url = 'https://boards.greenhouse.io/encora10'
+        self.company_name = "Encora"
+        self.url = "https://careers.encora.com/search"
         self.api_url = 'https://boards-api.greenhouse.io/v1/boards/encora10/jobs'
 
     def generate_external_id(self, job_id, company):

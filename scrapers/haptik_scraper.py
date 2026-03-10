@@ -10,8 +10,8 @@ logger = setup_logger('haptik_scraper')
 
 class HaptikScraper:
     def __init__(self):
-        self.company_name = 'Haptik'
-        self.url = 'https://haptik.freshteam.com/jobs'
+        self.company_name = "Haptik"
+        self.url = "https://haptik.freshteam.com/jobs?__hstc=233858945.0eecb6901547789a76a8150b48139b47.1650872173205.1656650197197.1656654941825.85&__hssc=233858945.2.1656654941825&__hsfp=&hsCtaTracking=be1d0f38-8578-466c-a65e-7dba125d958a%7C852c3dbe-26c9-4a01-a174-ad02a06686d9&_gl=1*efxtfg*_gcl_au*Nzc1MDMyODQ4LjE3NzE1OTQwMTE.*_ga*ODU2MzA1MTQ2LjE3NzE1OTQwMTA.*_ga_TL7ZLD0W5B*czE3NzE1OTQwMDkkbzEkZzAkdDE3NzE1OTQwMDkkajYwJGwwJGgw"
         self.headers = {
             'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',

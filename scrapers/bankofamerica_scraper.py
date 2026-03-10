@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class BankofAmericaScraper:
     def __init__(self):
-        self.company_name = 'Bank of America'
-        self.url = 'https://careers.bankofamerica.com/en-us/job-search?country=India'
+        self.company_name = "Bank of America"
+        self.url = "https://careers.bankofamerica.com/en-us/job-search/india?ref=search&start=0&rows=10&search=jobsByLocation&searchstring=India"
     
     def setup_driver(self):
         """Set up Chrome driver with options"""

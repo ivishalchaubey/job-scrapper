@@ -9,8 +9,8 @@ logger = setup_logger('truecaller_scraper')
 
 class TruecallerScraper:
     def __init__(self):
-        self.company_name = 'Truecaller'
-        self.url = 'https://boards.greenhouse.io/truecaller'
+        self.company_name = "Truecaller"
+        self.url = "https://www.truecaller.com/careers/jobs"
         self.api_url = 'https://boards-api.greenhouse.io/v1/boards/truecaller/jobs'
 
     def generate_external_id(self, job_id, company):

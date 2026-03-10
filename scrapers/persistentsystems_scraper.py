@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class PersistentSystemsScraper:
     def __init__(self):
-        self.company_name = 'Persistent Systems'
-        self.url = 'https://www.persistent.com/careers/'
+        self.company_name = "Persistent Systems"
+        self.url = "https://careers.persistent.com/explore-opportunities"
     
     def setup_driver(self):
         """Set up Chrome driver with options"""

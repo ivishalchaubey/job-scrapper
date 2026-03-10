@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class SapScraper:
     def __init__(self):
-        self.company_name = 'SAP'
-        self.url = 'https://jobs.sap.com/go/India/8807201/'
+        self.company_name = "SAP"
+        self.url = "https://jobs.sap.com/go/India/8807201/"
 
     def setup_driver(self):
         chrome_options = Options()

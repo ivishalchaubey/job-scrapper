@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class PwCScraper:
     def __init__(self):
-        self.company_name = 'PwC'
-        self.url = 'https://www.pwc.in/careers/experienced-jobs.html'
+        self.company_name = "PricewaterhouseCoopers (PwC)"
+        self.url = "https://www.pwc.in/careers/experienced-jobs/results.html?wdcountry=IND|BGD&wdjobsite=Global_Experienced_Careers&flds=jobreqid,title,location,jobsite,iso"
 
     def setup_driver(self):
         """Set up Chrome driver with options"""

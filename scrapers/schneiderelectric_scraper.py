@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class SchneiderElectricScraper:
     def __init__(self):
-        self.company_name = 'Schneider Electric'
-        self.url = 'https://careers.se.com/jobs?country=India&page=1'
+        self.company_name = "Schneider Electric"
+        self.url = "https://careers.se.com/jobs?country=India&page=1"
         self.base_url = 'https://careers.se.com'
 
     def setup_driver(self):

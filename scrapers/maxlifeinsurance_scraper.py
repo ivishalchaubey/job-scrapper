@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class MaxLifeInsuranceScraper:
     def __init__(self):
-        self.company_name = 'Max Life Insurance'
-        self.url = 'https://www.maxlifeinsurance.com/careers'
+        self.company_name = "Max Life Insurance"
+        self.url = "https://career.axismaxlife.com/axismaxlife/"
     
     def setup_driver(self):
         """Set up Chrome driver with options"""

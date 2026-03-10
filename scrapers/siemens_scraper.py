@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class SiemensScraper:
     def __init__(self):
-        self.company_name = 'Siemens'
-        self.url = 'https://jobs.siemens.com/en_US/externaljobs/SearchJobs/?42414=%5B812053%5D&42414_format=17570&listFilterMode=1&folderRecordsPerPage=6&'
+        self.company_name = "Siemens"
+        self.url = "https://jobs.siemens.com/en_US/externaljobs/SearchJobs/?42414=%5B812053%5D&42414_format=17570&listFilterMode=1&folderRecordsPerPage=6&"
         self.base_url = 'https://jobs.siemens.com'
 
     def setup_driver(self):

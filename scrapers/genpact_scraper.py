@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class GenpactScraper:
     def __init__(self):
-        self.company_name = 'Genpact'
-        self.url = 'https://genpact.taleo.net/careersection/sgy_external_career_section/jobsearch.ftl?lang=en'
+        self.company_name = "Genpact"
+        self.url = "https://genpact.taleo.net/careersection/sgy_external_career_section/jobsearch.ftl?lang=en&portal=44100025334&career-search="
         self.base_url = 'https://genpact.taleo.net'
 
     def setup_driver(self):

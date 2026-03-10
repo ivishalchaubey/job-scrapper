@@ -470,7 +470,7 @@
             <label class="inline-flex items-center gap-2 cursor-pointer text-sm text-gray-600 hover:text-gray-800">
                 <input type="checkbox" :checked="allSelected" @change="toggleAll()"
                        class="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
-                <span x-text="allSelected?'Deselect All':'Select All ('+filtered.length+')'"></span>
+                <span x-text="allSelected?'Deselect Visible':'Select Visible ('+paginated.length+')'"></span>
             </label>
             <span x-show="selected.length" class="text-xs text-indigo-600 font-medium bg-indigo-50 px-2 py-1 rounded-full" x-text="selected.length+' selected'"></span>
             <button x-show="selected.length" @click="selected=[]" class="text-xs text-gray-500 hover:text-red-600">Clear</button>
@@ -658,7 +658,7 @@ function scraperPanel() {
         },
         get totalPages() { return Math.ceil(this.filtered.length/this.perPage)||1; },
         get paginated() { return this.filtered.slice((this.page-1)*this.perPage, this.page*this.perPage); },
-        get allSelected() { return this.filtered.length>0 && this.filtered.every(c=>this.selected.includes(c)); },
+        get allSelected() { return this.paginated.length>0 && this.paginated.every(c=>this.selected.includes(c)); },
         get liveEntries() {
             if (!this.task?.results) return [];
             return Object.entries(this.task.results).map(([company, d]) => {
@@ -793,8 +793,8 @@ function scraperPanel() {
         // Company helpers
         toggleOne(c) { const i=this.selected.indexOf(c); i>-1?this.selected.splice(i,1):this.selected.push(c); },
         toggleAll() {
-            if(this.allSelected) this.selected=this.selected.filter(c=>!this.filtered.includes(c));
-            else this.selected=[...this.selected,...this.filtered.filter(c=>!this.selected.includes(c))];
+            if(this.allSelected) this.selected=this.selected.filter(c=>!this.paginated.includes(c));
+            else this.selected=[...this.selected,...this.paginated.filter(c=>!this.selected.includes(c))];
         },
         jobCount(c) { return this.stats[c]?.count||0; },
         lastScraped(c) { return this.stats[c]?.last ? this.ago(this.stats[c].last) : 'Never'; },

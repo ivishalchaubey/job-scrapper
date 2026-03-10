@@ -19,8 +19,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class AirtelScraper:
     def __init__(self):
-        self.company_name = 'Airtel'
-        self.url = 'https://airtel.darwinbox.in/ms/candidatev2/main/careers/allJobs'
+        self.company_name = "Airtel"
+        self.url = "https://airtel.darwinbox.in/ms/candidatev2/main/careers/allJobs"
 
     def setup_driver(self):
         """Set up Chrome driver with anti-detection options"""

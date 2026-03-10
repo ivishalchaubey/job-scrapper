@@ -11,9 +11,9 @@ logger = setup_logger('goldmansachs_scraper')
 
 class GoldmanSachsScraper:
     def __init__(self):
-        self.company_name = 'Goldman Sachs'
+        self.company_name = "Goldman Sachs"
         # Original URL (S3 Access Denied, kept for reference)
-        self.url = 'https://www.goldmansachs.com/careers/find-a-role/search-results.html?keyword=&location=India'
+        self.url = "https://higher.gs.com/results?LOCATION=Bengaluru|Hyderabad|Mumbai&page=1&sort=RELEVANCE"
         # GraphQL API endpoint (discovered via network interception on higher.gs.com)
         self._api_url = 'https://api-higher.gs.com/gateway/api/v1/graphql'
         self._page_size = 20

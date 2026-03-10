@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class ExxonMobilScraper:
     def __init__(self):
-        self.company_name = 'ExxonMobil'
-        self.url = 'https://jobs.exxonmobil.com/search-jobs/India'
+        self.company_name = "ExxonMobil"
+        self.url = "https://jobs.exxonmobil.com/search/?createNewAlert=false&q=&locationsearch=India&optionsFacetsDD_department=&optionsFacetsDD_shifttype=&optionsFacetsDD_country="
     
     def setup_driver(self):
         """Set up Chrome driver with options"""

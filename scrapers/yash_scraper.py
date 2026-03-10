@@ -10,7 +10,7 @@ logger = setup_logger('yash_scraper')
 
 class YashScraper:
     def __init__(self):
-        self.company_name = 'YASH Technologies'
+        self.company_name = "YASH Technologies"
         self.base_url = 'https://careers.yash.com'
         self.search_url = 'https://careers.yash.com/search/?createNewAlert=false&q=&locationsSearch=India&startrow={offset}'
         self.headers = {

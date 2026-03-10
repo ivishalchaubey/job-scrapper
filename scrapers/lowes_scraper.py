@@ -19,7 +19,7 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 class LowesScraper:
     def __init__(self):
         self.company_name = "Lowe's"
-        self.url = 'https://jobs.lowes.com/search-jobs/India'
+        self.url = "https://talent.lowes.com/in/en/search-results?keywords=India"
 
     def setup_driver(self):
         """Set up Chrome driver with options"""

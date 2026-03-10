@@ -10,8 +10,8 @@ logger = setup_logger('startek_scraper')
 
 class StartekScraper:
     def __init__(self):
-        self.company_name = 'Startek'
-        self.url = 'https://fa-evuf-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/jobs'
+        self.company_name = "Startek"
+        self.url = "https://fa-evuf-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/jobs?location=India&locationId=300000000471802&locationLevel=country&mode=job-location"
         self.api_url = 'https://fa-evuf-saasfaprod1.fa.ocs.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions'
         self.site_number = 'CX_1'
         self.india_location_ids = '300000000471802'

@@ -19,8 +19,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class AbbottScraper:
     def __init__(self):
-        self.company_name = 'Abbott'
-        self.url = 'https://www.jobs.abbott/us/en/search-results?qcountry=India'
+        self.company_name = "Abbott Laboratories"
+        self.url = "https://www.jobs.abbott/us/en/search-results?qcountry=India&utm_source=abbott.in&utm_campaign=.com-CTAs&utm_content=careers&utm_medium=website&lnkid=20595"
 
     def setup_driver(self):
         chrome_options = Options()

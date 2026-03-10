@@ -10,8 +10,8 @@ logger = setup_logger('experian_scraper')
 
 class ExperianScraper:
     def __init__(self):
-        self.company_name = 'Experian'
-        self.url = 'https://careers.smartrecruiters.com/Experian'
+        self.company_name = "Experian"
+        self.url = "https://careers.smartrecruiters.com/experian"
         self.api_base = 'https://api.smartrecruiters.com/v1/companies'
         self.company_id = 'Experian'
         self.page_size = 100

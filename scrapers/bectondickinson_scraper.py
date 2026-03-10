@@ -8,8 +8,8 @@ logger = setup_logger('bectondickinson_scraper')
 
 class BectonDickinsonScraper:
     def __init__(self):
-        self.company_name = 'Becton Dickinson'
-        self.url = 'https://bdx.wd1.myworkdayjobs.com/EXTERNAL_CAREER_SITE_INDIA'
+        self.company_name = "Becton Dickinson"
+        self.url = "https://jobs.bd.com/en/location/india-jobs/159/1269750/2"
         self.api_url = 'https://bdx.wd1.myworkdayjobs.com/wday/cxs/bdx/EXTERNAL_CAREER_SITE_INDIA/jobs'
         self.base_job_url = 'https://bdx.wd1.myworkdayjobs.com/EXTERNAL_CAREER_SITE_INDIA'
 

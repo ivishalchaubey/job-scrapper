@@ -10,8 +10,8 @@ logger = setup_logger('cargill_scraper')
 
 class CargillScraper:
     def __init__(self):
-        self.company_name = 'Cargill'
-        self.url = 'https://careers.cargill.com/en/search-jobs'
+        self.company_name = "Cargill"
+        self.url = "https://careers.cargill.com/en/search-jobs"
         self.base_url = 'https://careers.cargill.com'
         self.session = requests.Session()
         self.session.headers.update({

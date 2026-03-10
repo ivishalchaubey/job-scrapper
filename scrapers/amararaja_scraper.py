@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class AmaraRajaScraper:
     def __init__(self):
-        self.company_name = 'Amara Raja Group'
-        self.url = 'https://amararajacareers.peoplestrong.com/job/joblist'
+        self.company_name = "Amara Raja Group"
+        self.url = "https://amararajacareers.peoplestrong.com/job/joblist"
 
     def setup_driver(self):
         chrome_options = Options()

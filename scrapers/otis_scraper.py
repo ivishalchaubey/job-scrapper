@@ -11,8 +11,8 @@ logger = setup_logger('otis_scraper')
 
 class OtisScraper:
     def __init__(self):
-        self.company_name = 'Otis Worldwide'
-        self.url = 'https://otis.wd5.myworkdayjobs.com/REC_Ext_Gateway?locationCountry=c4f78be1a8f14da0ab49ce1162348a5e'
+        self.company_name = "Otis Worldwide"
+        self.url = "https://otis.wd5.myworkdayjobs.com/REC_Ext_Gateway?locationCountry=c4f78be1a8f14da0ab49ce1162348a5e"
         self.api_url = 'https://otis.wd5.myworkdayjobs.com/wday/cxs/otis/REC_Ext_Gateway/jobs'
         self.base_job_url = 'https://otis.wd5.myworkdayjobs.com/REC_Ext_Gateway'
 

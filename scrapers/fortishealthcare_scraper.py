@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class FortisHealthcareScraper:
     def __init__(self):
-        self.company_name = 'Fortis Healthcare'
-        self.url = 'https://www.fortishealthcare.com/careers'
+        self.company_name = "Fortis Healthcare"
+        self.url = "https://fa-ermg-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/jobs?location=India&locationId=300000000433119&locationLevel=country&mode=location"
     
     def setup_driver(self):
         """Set up Chrome driver with options"""

@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class EliLillyScraper:
     def __init__(self):
-        self.company_name = 'Eli Lilly'
-        self.url = 'https://careers.lilly.com/us/en/search-results?qcountry=India'
+        self.company_name = "Eli Lilly and Company"
+        self.url = "https://careers.lilly.com/us/en/india"
     
     def setup_driver(self):
         """Set up Chrome driver with options"""

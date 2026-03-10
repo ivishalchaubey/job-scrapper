@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class ZohoScraper:
     def __init__(self):
-        self.company_name = 'Zoho Corporation'
-        self.url = 'https://careers.zohocorp.com/jobs/Careers'
+        self.company_name = "Zoho Corporation"
+        self.url = "https://www.zoho.com/careers/#jobs"
     
     def setup_driver(self):
         """Set up Chrome driver with options"""

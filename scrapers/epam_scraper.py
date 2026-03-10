@@ -16,9 +16,9 @@ logger = setup_logger('epam_scraper')
 
 class EPAMScraper:
     def __init__(self):
-        self.company_name = 'EPAM Systems'
+        self.company_name = "EPAM Systems"
         # Next.js SPA with country filter for India
-        self.url = 'https://careers.epam.com/en/jobs?country=4060741400035606931'
+        self.url = "https://careers.epam.com/en/jobs?country=4060741400035606931"
         self.base_url = 'https://careers.epam.com'
 
     def setup_driver(self):

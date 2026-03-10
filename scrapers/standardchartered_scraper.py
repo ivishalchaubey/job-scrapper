@@ -18,9 +18,9 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class StandardCharteredScraper:
     def __init__(self):
-        self.company_name = 'Standard Chartered'
+        self.company_name = "Standard Chartered"
         # SuccessFactors job search (formerly scb.taleo.net which is now defunct)
-        self.url = 'https://jobs.standardchartered.com/search/?q=&sortColumn=referencedate&sortDirection=desc&searchby=location&d=15&lat=28.61&lon=77.23&locationsearch=India'
+        self.url = "https://jobs.standardchartered.com/go/Experienced-Professional-jobs/9783657/?feedid=363857&markerViewed=&carouselIndex=&facetFilters=%7B%22jobLocationCountry%22%3A%5B%22India%22%5D%7D&pageNumber=0"
     
     def setup_driver(self):
         """Set up Chrome driver with options"""

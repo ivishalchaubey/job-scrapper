@@ -19,8 +19,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class UnacademyScraper:
     def __init__(self):
-        self.company_name = 'Unacademy'
-        self.url = 'https://unacademy.darwinbox.in/ms/candidatev2/main/careers/allJobs'
+        self.company_name = "Unacademy"
+        self.url = "https://unacademy.darwinbox.in/ms/candidatev2/main/careers/allJobs"
 
     def setup_driver(self):
         chrome_options = Options()

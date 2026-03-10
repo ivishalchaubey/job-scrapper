@@ -10,7 +10,7 @@ logger = setup_logger('gainwell_scraper')
 
 class GainwellScraper:
     def __init__(self):
-        self.company_name = 'Gainwell Technologies'
+        self.company_name = "Gainwell Technologies"
         self.base_url = 'https://jobs.gainwelltechnologies.com'
         self.search_url = 'https://jobs.gainwelltechnologies.com/go/India-Jobs/9829400/?q=&sortColumn=most_recent&startrow={offset}'
         self.headers = {

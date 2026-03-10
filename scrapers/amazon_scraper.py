@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class AmazonScraper:
     def __init__(self):
-        self.company_name = 'Amazon'
-        self.url = 'https://www.amazon.jobs/en/search?base_query=&loc_query=India'
+        self.company_name = "Amazon"
+        self.url = "https://www.amazon.jobs/en/search?base_query=&loc_query=India&type=area&longitude=77.21676&latitude=28.63141&country=IND"
     
     def setup_driver(self):
         """Set up Chrome driver with options"""

@@ -10,9 +10,9 @@ logger = setup_logger('pncinfratech_scraper')
 
 class PNCInfratechScraper:
     def __init__(self):
-        self.company_name = 'PNC Infratech'
+        self.company_name = "PNC Infratech"
         # Primary URL and alternates in case of DNS issues
-        self.url = 'https://www.pncinfratech.com/career.html'
+        self.url = "https://www.pncinfratech.com/career.html"
         self.alt_urls = [
             'https://pncinfratech.com/career.html',
         ]

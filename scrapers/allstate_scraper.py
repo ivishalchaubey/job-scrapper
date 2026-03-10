@@ -8,8 +8,8 @@ logger = setup_logger('allstate_scraper')
 
 class AllstateScraper:
     def __init__(self):
-        self.company_name = 'Allstate'
-        self.url = 'https://allstate.wd5.myworkdayjobs.com/allstate_careers'
+        self.company_name = "Allstate"
+        self.url = "https://www.allstate.jobs/job-search-results/?compliment[]=India"
         self.api_url = 'https://allstate.wd5.myworkdayjobs.com/wday/cxs/allstate/allstate_careers/jobs'
         self.base_job_url = 'https://allstate.wd5.myworkdayjobs.com/allstate_careers'
 

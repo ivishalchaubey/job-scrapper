@@ -9,7 +9,7 @@ logger = setup_logger('snowflake_scraper')
 
 class SnowflakeScraper:
     def __init__(self):
-        self.company_name = 'Snowflake'
+        self.company_name = "Snowflake"
         self.api_url = 'https://api.ashbyhq.com/posting-api/job-board/snowflake'
 
     def generate_external_id(self, job_id, company):

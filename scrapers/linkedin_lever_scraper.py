@@ -9,8 +9,8 @@ logger = setup_logger('linkedin_lever_scraper')
 
 class LinkedInLeverScraper:
     def __init__(self):
-        self.company_name = 'LinkedIn'
-        self.url = 'https://jobs.lever.co/linkedin'
+        self.company_name = "LinkedIn"
+        self.url = "https://www.linkedin.com/jobs/search/?currentJobId=4376554774&f_C=1337%2C2587638%2C39939&f_PP=105214831&geoId=92000000&origin=JOB_SEARCH_PAGE_JOB_FILTER&sortBy=R"
         self.api_url = 'https://api.lever.co/v0/postings/linkedin?mode=json'
 
     def generate_external_id(self, job_id, company):

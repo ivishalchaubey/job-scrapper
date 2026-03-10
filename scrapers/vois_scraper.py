@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class VOISScraper:
     def __init__(self):
-        self.company_name = 'VOIS'
-        self.url = 'https://jobs.vodafone.com/careers?start=0&location=India&pid=563018693369050&sort_by=distance&filter_include_remote=1&filter_brand=vois'
+        self.company_name = "VOIS"
+        self.url = "https://jobs.vodafone.com/careers?start=0&location=India&pid=563018693369050&sort_by=distance&filter_include_remote=1&filter_brand=vois"
         self.base_url = 'https://jobs.vodafone.com'
 
     def setup_driver(self):

@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class LodhaScraper:
     def __init__(self):
-        self.company_name = 'Lodha Group'
-        self.url = 'https://lodhacareers.peoplestrong.com/'
+        self.company_name = "Lodha Group"
+        self.url = "https://www.lodhagroup.com/hr/explore-career"
 
     def setup_driver(self):
         chrome_options = Options()

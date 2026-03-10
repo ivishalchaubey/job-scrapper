@@ -16,8 +16,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class QualcommScraper:
     def __init__(self):
-        self.company_name = 'Qualcomm'
-        self.url = 'https://qualcomm.wd5.myworkdayjobs.com/External?locationCountry=bc33aa3152ec42d4995f4791a106ed09'
+        self.company_name = "Qualcomm"
+        self.url = "https://careers.qualcomm.com/careers?location=India&pid=446716281429&domain=qualcomm.com&sort_by=relevance&triggerGoButton=false&triggerGoButton=true"
         self.api_url = 'https://qualcomm.wd5.myworkdayjobs.com/wday/cxs/qualcomm/External/jobs'
         self.base_job_url = 'https://qualcomm.wd5.myworkdayjobs.com/External'
         self.india_country_id = 'bc33aa3152ec42d4995f4791a106ed09'

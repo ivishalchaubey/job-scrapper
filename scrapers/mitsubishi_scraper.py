@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class MitsubishiScraper:
     def __init__(self):
-        self.company_name = 'Mitsubishi Heavy Industries'
-        self.url = 'https://mhicareers.com/PrimetalsTechnologies/search/?createNewAlert=false&q=&locationsearch=India&optionsFacetsDD_title=&optionsFacetsDD_customfield3='
+        self.company_name = "Mitsubishi Heavy Industries"
+        self.url = "https://mhicareers.com/PrimetalsTechnologies/search/?createNewAlert=false&q=&locationsearch=India&optionsFacetsDD_title=&optionsFacetsDD_facility=&optionsFacetsDD_customfield5=&optionsFacetsDD_brand="
         self.base_url = 'https://mhicareers.com'
 
     def setup_driver(self):

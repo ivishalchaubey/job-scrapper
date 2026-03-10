@@ -26,8 +26,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class PepsiCoScraper:
     def __init__(self):
-        self.company_name = 'PepsiCo'
-        self.url = 'https://www.pepsicojobs.com/main/jobs?stretchUnit=MILES&stretch=10&location=India&woe=12&regionCode=IN'
+        self.company_name = "PepsiCo"
+        self.url = "https://www.pepsicojobs.com/main/jobs?stretchUnit=MILES&stretch=10&location=India&woe=12&regionCode=IN"
         self.api_url = 'https://www.pepsicojobs.com/api/jobs'
 
     def setup_driver(self):

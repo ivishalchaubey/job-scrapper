@@ -15,8 +15,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class HDFCBankScraper:
     def __init__(self):
-        self.company_name = 'HDFC Bank'
-        self.url = 'https://hdfcbank-onehr.darwinbox.in/ms/candidate/careers'
+        self.company_name = "HDFC Bank"
+        self.url = "https://www.linkedin.com/jobs/search/?currentJobId=4351653282&f_C=164151&geoId=92000000&origin=COMPANY_PAGE_JOBS_CLUSTER_EXPANSION&originToLandingJobPostings=4351653282%2C4351643256%2C4351703347%2C4351203296%2C4345895168%2C4350933638%2C4352539361%2C4351199103%2C4353042756"
 
     def setup_driver(self):
         chrome_options = Options()

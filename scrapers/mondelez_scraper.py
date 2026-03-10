@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class MondelezScraper:
     def __init__(self):
-        self.company_name = 'Mondelez International'
-        self.url = 'https://www.mondelezinternational.com/careers'
+        self.company_name = "Mondelez International"
+        self.url = "https://www.mondelezinternational.com/careers/jobs/?term&countrycode=IN"
     
     def setup_driver(self):
         """Set up Chrome driver with options"""

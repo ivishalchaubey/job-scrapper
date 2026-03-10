@@ -23,8 +23,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class PhonePeScraper:
     def __init__(self):
-        self.company_name = 'PhonePe'
-        self.url = 'https://www.phonepe.com/careers/'
+        self.company_name = "PhonePe"
+        self.url = "https://www.phonepe.com/careers/job-openings/"
         self.api_url = 'https://boards-api.greenhouse.io/v1/boards/phonepe/jobs'
 
     def setup_driver(self):

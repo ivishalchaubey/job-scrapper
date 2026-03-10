@@ -10,8 +10,8 @@ logger = setup_logger('generali_scraper')
 
 class GeneraliScraper:
     def __init__(self):
-        self.company_name = 'Generali'
-        self.url = 'https://www.generalicentralinsurance.com/current-openings'
+        self.company_name = "Generali"
+        self.url = "https://www.generalicentralinsurance.com/current-openings"
         self.base_url = 'https://www.generalicentralinsurance.com'
         self.api_url = 'https://www.generalicentralinsurance.com/content/futuregeneraliindiainsurancecoltd/api/mdm/job-role.json'
 

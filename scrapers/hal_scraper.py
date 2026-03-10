@@ -22,8 +22,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class HALScraper:
     def __init__(self):
-        self.company_name = 'Hindustan Aeronautics'
-        self.url = 'https://hal-india.co.in/career'
+        self.company_name = "Hindustan Aeronautics"
+        self.url = "https://hal-india.co.in/career"
         self.base_url = 'https://hal-india.co.in'
         # WordPress REST API endpoint discovered from the Angular SPA bundle
         self._api_url = 'https://hal-india.co.in/backend/wp-json/hal/v1/career'

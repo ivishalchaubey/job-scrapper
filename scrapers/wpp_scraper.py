@@ -8,8 +8,8 @@ logger = setup_logger('wpp_scraper')
 
 class WPPScraper:
     def __init__(self):
-        self.company_name = 'WPP'
-        self.url = 'https://boards.greenhouse.io/wpp'
+        self.company_name = "WPP"
+        self.url = "https://www.wpp.com/en/careers/current-opportunities"
         self.api_url = 'https://boards-api.greenhouse.io/v1/boards/wpp/jobs'
 
     def generate_external_id(self, job_id, company):

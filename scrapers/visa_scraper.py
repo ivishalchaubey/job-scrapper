@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class VisaScraper:
     def __init__(self):
-        self.company_name = 'Visa'
-        self.url = 'https://www.visa.co.in/en_in/jobs/?cities=Bangalore&cities=Mumbai'
+        self.company_name = "Visa Inc."
+        self.url = "https://www.visa.co.in/en_in/jobs/?cities=Bangalore&cities=Mumbai"
         self.base_url = 'https://www.visa.co.in'
 
     def setup_driver(self):

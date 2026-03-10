@@ -11,8 +11,8 @@ logger = setup_logger('zensar_scraper')
 
 class ZensarTechnologiesScraper:
     def __init__(self):
-        self.company_name = 'Zensar Technologies'
-        self.url = 'https://fa-etvl-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/jobs?lastSelectedFacet=LOCATIONS&selectedLocationsFacet=300000000435151%3B300000000389881%3B300000000435178%3B300000000435310%3B300000000435430'
+        self.company_name = "Zensar Technologies"
+        self.url = "https://fa-etvl-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/jobs?lastSelectedFacet=LOCATIONS&selectedLocationsFacet=300000000435151%3B300000000389881%3B300000000435178%3B300000000435310%3B300000000435430"
         self.api_url = 'https://fa-etvl-saasfaprod1.fa.ocs.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions'
         self.site_number = 'CX_1'
         self.india_location_ids = '300000000435151;300000000389881;300000000435178;300000000435310;300000000435430'

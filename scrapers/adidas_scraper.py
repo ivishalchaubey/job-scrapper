@@ -9,8 +9,8 @@ logger = setup_logger('adidas_scraper')
 
 class AdidasScraper:
     def __init__(self):
-        self.company_name = 'Adidas'
-        self.url = 'https://jobs.adidas-group.com/search/'
+        self.company_name = "Adidas"
+        self.url = "https://careers.adidas-group.com/jobs?brand=&team=&type=&keywords=&location=%5B%7B%22country%22%3A%22India%22%7D%5D&sort=&locale=en&offset=0"
         self.base_url = 'https://jobs.adidas-group.com'
         self.session = requests.Session()
         self.session.headers.update({

@@ -25,9 +25,9 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class VarunBeveragesScraper:
     def __init__(self):
-        self.company_name = 'Varun Beverages'
+        self.company_name = "Varun Beverages"
         # Oracle HCM Cloud platform
-        self.url = 'https://rjcorphcm-iacbiz.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/jobs?location=India&locationId=300000000489931&locationLevel=country&mode=location'
+        self.url = "https://rjcorphcm-iacbiz.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/jobs?location=India&locationId=300000000489931&locationLevel=country&mode=location"
 
     def setup_driver(self):
         chrome_options = Options()

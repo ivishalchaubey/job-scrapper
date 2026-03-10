@@ -11,8 +11,8 @@ logger = setup_logger('rockwellautomation_scraper')
 
 class RockwellAutomationScraper:
     def __init__(self):
-        self.company_name = 'Rockwell Automation'
-        self.url = 'https://rockwellautomation.wd1.myworkdayjobs.com/External_Rockwell_Automation?locationCountry=c4f78be1a8f14da0ab49ce1162348a5e'
+        self.company_name = "Rockwell Automation"
+        self.url = "https://rockwellautomation.wd1.myworkdayjobs.com/en-US/External_Rockwell_Automation?locationCountry=c4f78be1a8f14da0ab49ce1162348a5e"
         self.api_url = 'https://rockwellautomation.wd1.myworkdayjobs.com/wday/cxs/rockwellautomation/External_Rockwell_Automation/jobs'
         self.base_job_url = 'https://rockwellautomation.wd1.myworkdayjobs.com/External_Rockwell_Automation'
 

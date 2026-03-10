@@ -11,8 +11,8 @@ logger = setup_logger('blackbox_scraper')
 
 class BlackBoxScraper:
     def __init__(self):
-        self.company_name = 'Black Box'
-        self.url = 'https://eoje.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/jobs?location=India&locationId=300000000385390&locationLevel=country&mode=location'
+        self.company_name = "Black Box"
+        self.url = "https://eoje.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/jobs?location=India&locationId=300000000385390&locationLevel=country&mode=location"
         self.api_url = 'https://eoje.fa.us2.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions'
         self.site_number = 'CX_1001'
         self.india_location_id = '300000000385390'

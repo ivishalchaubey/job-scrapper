@@ -11,8 +11,8 @@ logger = setup_logger('workday_inc_scraper')
 
 class WorkdayIncScraper:
     def __init__(self):
-        self.company_name = 'Workday'
-        self.url = 'https://workday.wd5.myworkdayjobs.com/Workday?locationCountry=c4f78be1a8f14da0ab49ce1162348a5e'
+        self.company_name = "Workday, Inc."
+        self.url = "https://workday.wd5.myworkdayjobs.com/Workday/?source=Careers_Website&Location_Country=c4f78be1a8f14da0ab49ce1162348a5e"
         self.api_url = 'https://workday.wd5.myworkdayjobs.com/wday/cxs/workday/Workday/jobs'
         self.base_job_url = 'https://workday.wd5.myworkdayjobs.com/Workday'
 

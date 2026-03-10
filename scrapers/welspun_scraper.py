@@ -17,8 +17,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class WelspunScraper:
     def __init__(self):
-        self.company_name = 'Welspun'
-        self.url = 'https://welpro.welspun.com/careers?SiteName=jSIHd9FMCv/kd6koxIV5bVFzdqnRhv7lEcsAW5OEjUs='
+        self.company_name = "Welspun"
+        self.url = "https://welpro.welspun.com/careers?SiteName=jSIHd9FMCv/kd6koxIV5bVFzdqnRhv7lEcsAW5OEjUs="
 
     def setup_driver(self):
         chrome_options = Options()

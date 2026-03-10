@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class AstraZenecaScraper:
     def __init__(self):
-        self.company_name = 'AstraZeneca'
-        self.url = 'https://careers.astrazeneca.com/location/india-jobs/7684/1269750/2'
+        self.company_name = "AstraZeneca"
+        self.url = "https://careers.astrazeneca.com/location/india-jobs/7684/1269750/2"
 
     def setup_driver(self):
         chrome_options = Options()

@@ -22,8 +22,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class SaudiAramcoScraper:
     def __init__(self):
-        self.company_name = 'Saudi Aramco'
-        self.url = 'https://india.aramco.com/en/careers/current-openings'
+        self.company_name = "Saudi Aramco"
+        self.url = "https://india.aramco.com/en/careers/current-openings"
         self.alt_url = 'https://careers.aramco.com/'
         self.base_url = 'https://india.aramco.com'
         self.headers = {

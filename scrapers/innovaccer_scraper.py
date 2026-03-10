@@ -21,9 +21,9 @@ logger = setup_logger('innovaccer_scraper')
 
 class InnovaccerScraper:
     def __init__(self):
-        self.company_name = 'Innovaccer'
+        self.company_name = "Innovaccer"
         # Webflow + Finsweet -- CMS items are in the HTML
-        self.url = 'https://innovaccer.com/careers/jobs#view-jobs'
+        self.url = "https://innovaccer.com/careers/jobs#view-jobs"
         self.base_url = 'https://innovaccer.com'
 
     def setup_driver(self):

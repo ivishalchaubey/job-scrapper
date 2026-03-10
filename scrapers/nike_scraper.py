@@ -21,8 +21,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class NikeScraper:
     def __init__(self):
-        self.company_name = 'Nike'
-        self.url = 'https://jobs.nike.com/search-jobs/India'
+        self.company_name = "Nike"
+        self.url = "https://careers.nike.com/jobs?location_name=India&location_type=4"
 
     def setup_driver(self):
         """Set up Chrome driver with options"""

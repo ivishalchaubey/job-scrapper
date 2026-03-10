@@ -11,8 +11,8 @@ logger = setup_logger('amadeus_scraper')
 
 class AmadeusScraper:
     def __init__(self):
-        self.company_name = 'Amadeus'
-        self.url = 'https://amadeus.wd502.myworkdayjobs.com/jobs?locationCountry=c4f78be1a8f14da0ab49ce1162348a5e'
+        self.company_name = "Amadeus"
+        self.url = "https://amadeus.wd502.myworkdayjobs.com/jobs?locationCountry=c4f78be1a8f14da0ab49ce1162348a5e"
         self.api_url = 'https://amadeus.wd502.myworkdayjobs.com/wday/cxs/amadeus/jobs/jobs'
         self.base_job_url = 'https://amadeus.wd502.myworkdayjobs.com/jobs'
 

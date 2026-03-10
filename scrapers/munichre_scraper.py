@@ -25,8 +25,8 @@ INDIA_KEYWORDS = ['india', 'mumbai', 'delhi', 'bangalore', 'bengaluru', 'hyderab
 
 class MunichReScraper:
     def __init__(self):
-        self.company_name = 'Munich Re'
-        self.url = 'https://careers.munichre.com/en/search-jobs'
+        self.company_name = "Munich Re"
+        self.url = "https://careers.munichre.com/en/search-jobs?alrpm=1269750&ascf=[%7B%22Value%22:%22Munich+Re+all+companies%22,%22Key%22:%22custom_fields.Brands%22%7D]"
         self.base_url = 'https://careers.munichre.com'
 
     def setup_driver(self):

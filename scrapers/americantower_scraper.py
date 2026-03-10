@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class AmericanTowerScraper:
     def __init__(self):
-        self.company_name = 'American Tower'
-        self.url = 'https://careers.americantower.com/#en/sites/CX_1/jobs'
+        self.company_name = "American Tower"
+        self.url = "https://careers.americantower.com/#en/sites/CX_1/jobs?location=India&locationId=300000000193939&locationLevel=country&mode=location"
         self.base_url = 'https://careers.americantower.com'
 
     def setup_driver(self):

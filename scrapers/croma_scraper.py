@@ -11,8 +11,8 @@ logger = setup_logger('croma_scraper')
 
 class CromaScraper:
     def __init__(self):
-        self.company_name = 'Croma'
-        self.url = 'https://fa-eryk-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/jobs?location=India&locationId=300000000446243&locationLevel=country&mode=location'
+        self.company_name = "Croma"
+        self.url = "https://fa-eryk-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/jobs?location=India&locationId=300000000446243&locationLevel=country&mode=location"
         self.api_url = 'https://fa-eryk-saasfaprod1.fa.ocs.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions'
         self.site_number = 'CX_1001'
         self.india_location_id = '300000000446243'

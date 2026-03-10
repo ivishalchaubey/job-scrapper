@@ -8,8 +8,8 @@ logger = setup_logger('capitalone_scraper')
 
 class CapitalOneScraper:
     def __init__(self):
-        self.company_name = 'Capital One'
-        self.url = 'https://capitalone.wd12.myworkdayjobs.com/Capital_One'
+        self.company_name = "Capital One"
+        self.url = "https://www.capitalonecareers.com/search-jobs/?orgIds=234&alcpm=1269750&alcipm=1168579-1164807-11744832-7046295&ascf=%5b%7b%22Key%22%3a%22custom_fields.displaylocation%22%2c%22Value%22%3a%22ALL%22%7d%5d"
         self.api_url = 'https://capitalone.wd12.myworkdayjobs.com/wday/cxs/capitalone/Capital_One/jobs'
         self.base_job_url = 'https://capitalone.wd12.myworkdayjobs.com/Capital_One'
 

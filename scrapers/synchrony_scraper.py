@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class SynchronyScraper:
     def __init__(self):
-        self.company_name = 'Synchrony'
-        self.url = 'https://www.synchronycareers.com/job-search-results/?location=India&country=IN&radius=25'
+        self.company_name = "Synchrony"
+        self.url = "https://www.synchronycareers.com/job-search-results/?location=India&country=IN&radius=25"
         self.base_url = 'https://www.synchronycareers.com'
 
     def setup_driver(self):

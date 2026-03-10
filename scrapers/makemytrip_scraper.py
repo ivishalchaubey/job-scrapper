@@ -10,7 +10,7 @@ logger = setup_logger('makemytrip_scraper')
 
 class MakeMyTripScraper:
     def __init__(self):
-        self.company_name = 'MakeMyTrip'
+        self.company_name = "MakeMyTrip"
         self.api_url = 'https://careers.makemytrip.com/api/jobs'
         self.base_url = 'https://careers.makemytrip.com'
 

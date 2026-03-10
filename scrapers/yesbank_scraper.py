@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class YesBankScraper:
     def __init__(self):
-        self.company_name = 'Yes Bank'
-        self.url = 'https://yesforyou.darwinbox.in/ms/candidate/careers'
+        self.company_name = "Yes Bank"
+        self.url = "https://yesforyou.talentrecruit.com/career-page"
         self.base_url = 'https://yesforyou.darwinbox.in'
 
     def setup_driver(self):

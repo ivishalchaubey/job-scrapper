@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class HitachiScraper:
     def __init__(self):
-        self.company_name = 'Hitachi'
-        self.url = 'https://careers.hitachi.com/search/jobs/in/country/india'
+        self.company_name = "Hitachi"
+        self.url = "https://careers.hitachi.com/search/jobs/in/country/india"
         self.base_url = 'https://careers.hitachi.com'
 
     def setup_driver(self):

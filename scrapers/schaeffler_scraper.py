@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class SchaefflerScraper:
     def __init__(self):
-        self.company_name = 'Schaeffler India'
-        self.url = 'https://jobs.schaeffler.com/?locale=en_US'
+        self.company_name = "Schaeffler India"
+        self.url = "https://jobs.schaeffler.com/?locale=en_US&carrerEntrance=entranceReferral%3Dhttps%253A%252F%252Fwww.google.com%252F%26gtmAttTs%3D1769178311243&_gl=1*1vjlvit*_gcl_au*MTkxMTQ2NTM2Mi4xNzY5MTc4MzA4&currentPage=1&pageSize=30&addresses%2FcountryCity=India%3ABangalore&addresses%2FcountryCity=India%3AHosur&addresses%2FcountryCity=India%3APune&addresses%2FcountryCity=India%3AVadodara"
         self.base_url = 'https://jobs.schaeffler.com'
 
     def setup_driver(self):

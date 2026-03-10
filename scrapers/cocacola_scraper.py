@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class CocaColaScraper:
     def __init__(self):
-        self.company_name = 'Coca-Cola'
-        self.url = 'https://careers.coca-colacompany.com/search-jobs/India'
+        self.company_name = "The Coca-Cola Company"
+        self.url = "https://careers.coca-colacompany.com/?store_id=India"
     
     def setup_driver(self):
         """Set up Chrome driver with options"""

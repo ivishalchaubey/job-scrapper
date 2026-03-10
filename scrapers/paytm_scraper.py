@@ -23,8 +23,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class PaytmScraper:
     def __init__(self):
-        self.company_name = 'Paytm'
-        self.url = 'https://jobs.lever.co/paytm'
+        self.company_name = "Paytm"
+        self.url = "https://paytm.ripplehire.com/candidate/?token=Jrn4GUz6HCYtOdlkVCzo&lang=en&source=CAREERSITE#list/acc=Paytm"
         self.api_url = 'https://api.lever.co/v0/postings/paytm?mode=json'
 
     def setup_driver(self):

@@ -19,7 +19,7 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class ZebraTechnologiesScraper:
     def __init__(self):
-        self.company_name = 'Zebra Technologies'
+        self.company_name = "Zebra Technologies"
         self.primary_url = 'https://careers.zebra.com/careers'
         self.icims_url = 'https://jobs-zebra.icims.com/jobs/search?pr=1&searchLocation=12781--India&schession=1'
         self.icims_base = 'https://jobs-zebra.icims.com'

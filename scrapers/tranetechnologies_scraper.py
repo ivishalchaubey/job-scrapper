@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class TraneTechnologiesScraper:
     def __init__(self):
-        self.company_name = 'Trane Technologies'
-        self.url = 'https://careers.tranetechnologies.com/global/en/search-results'
+        self.company_name = "Trane Technologies"
+        self.url = "https://careers.tranetechnologies.com/global/en/search-results?keywords="
         self.base_url = 'https://careers.tranetechnologies.com'
 
     def setup_driver(self):

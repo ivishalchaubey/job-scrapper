@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class VardhmanScraper:
     def __init__(self):
-        self.company_name = 'Vardhman'
-        self.url = 'https://career5.successfactors.eu/career?company=vardhmante&career%5fns=job%5flisting%5fsummary&navBarLevel=JOB%5fSEARCH'
+        self.company_name = "Vardhman"
+        self.url = "https://career5.successfactors.eu/career?company=vardhmante&career%5fns=job%5flisting%5fsummary&navBarLevel=JOB%5fSEARCH&site=VjItNGdmd1pBUnU5MWh0a3pSeDVIR1hHUT09&_s.crb=C9eKkkvGUdCT1P%2fHtk1FtF2vgT%2fDONqx41gOQ7ckkvU%3d"
         self.base_url = 'https://career5.successfactors.eu'
 
     def setup_driver(self):

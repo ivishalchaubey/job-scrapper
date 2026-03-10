@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class GSKScraper:
     def __init__(self):
-        self.company_name = 'GSK'
-        self.url = 'https://jobs.gsk.com/india-pharma/jobs'
+        self.company_name = "GSK"
+        self.url = "https://jobs.gsk.com/india-pharma/jobs?location=india&page=1"
         self.base_url = 'https://jobs.gsk.com'
 
     def setup_driver(self):

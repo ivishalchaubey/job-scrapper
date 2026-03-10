@@ -8,8 +8,8 @@ logger = setup_logger('paypal_workday_scraper')
 
 class PayPalWorkdayScraper:
     def __init__(self):
-        self.company_name = 'PayPal'
-        self.url = 'https://paypal.wd1.myworkdayjobs.com/Jobs'
+        self.company_name = "PayPal"
+        self.url = "https://paypal.eightfold.ai/careers?domain=paypal.com&start=0&location=india&pid=274917281549&sort_by=distance&filter_include_remote=1"
         self.api_url = 'https://paypal.wd1.myworkdayjobs.com/wday/cxs/paypal/Jobs/jobs'
         self.base_job_url = 'https://paypal.wd1.myworkdayjobs.com/Jobs'
 

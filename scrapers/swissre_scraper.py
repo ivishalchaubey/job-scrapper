@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class SwissReScraper:
     def __init__(self):
-        self.company_name = 'Swiss Re'
-        self.url = 'https://www.swissre.com/careers/india.html'
+        self.company_name = "Swiss Re"
+        self.url = "https://www.swissre.com/careers/india.html"
         self.base_url = 'https://www.swissre.com'
 
     def setup_driver(self):

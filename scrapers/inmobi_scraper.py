@@ -9,8 +9,8 @@ logger = setup_logger('inmobi_scraper')
 
 class InMobiScraper:
     def __init__(self):
-        self.company_name = 'InMobi'
-        self.url = 'https://boards.greenhouse.io/inmobi'
+        self.company_name = "InMobi"
+        self.url = "https://www.inmobi.com/company/careers?country=india"
         self.api_url = 'https://boards-api.greenhouse.io/v1/boards/inmobi/jobs'
 
     def generate_external_id(self, job_id, company):

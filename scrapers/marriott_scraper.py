@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class MarriottScraper:
     def __init__(self):
-        self.company_name = 'Marriott International'
-        self.url = 'https://careers.marriott.com/jobs?location_name=India&location_type=4'
+        self.company_name = "Marriott International"
+        self.url = "https://careers.marriott.com/jobs?location_name=India&location_type=4"
 
     def setup_driver(self):
         chrome_options = Options()

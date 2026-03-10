@@ -25,9 +25,9 @@ FRESH_CHROMEDRIVER = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.
 
 class AmericanExpressScraper:
     def __init__(self):
-        self.company_name = 'American Express'
+        self.company_name = "American Express"
         # Eightfold AI platform
-        self.url = 'https://aexp.eightfold.ai/careers?location=India'
+        self.url = "https://aexp.eightfold.ai/careers?location=India&pid=39603074&domain=aexp.com&sort_by=relevance&hl=en&triggerGoButton=false"
         self.api_domain = 'aexp.com'
 
     def setup_driver(self):

@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class ColgatePalmoliveScraper:
     def __init__(self):
-        self.company_name = 'Colgate-Palmolive'
-        self.url = 'https://jobs.colgate.com/search-jobs'
+        self.company_name = "Colgate-Palmolive"
+        self.url = "https://jobs.colgate.com/go/View-All-Jobs/8506400/?markerViewed=&carouselIndex=&facetFilters=%7B%22filter1%22%3A%5B%22India%22%5D%7D&pageNumber=0"
     
     def setup_driver(self):
         """Set up Chrome driver with anti-detection options"""

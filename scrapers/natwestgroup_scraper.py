@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class NatWestGroupScraper:
     def __init__(self):
-        self.company_name = 'NatWest Group'
-        self.url = 'https://jobs.natwestgroup.com/search/jobs/in/country/india'
+        self.company_name = "NatWest Group"
+        self.url = "https://jobs.natwestgroup.com/search/jobs/in/country/india"
         self.base_url = 'https://jobs.natwestgroup.com'
 
     def setup_driver(self):

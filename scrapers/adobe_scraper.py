@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class AdobeScraper:
     def __init__(self):
-        self.company_name = 'Adobe'
-        self.url = 'https://careers.adobe.com/us/en/search-results?location=India'
+        self.company_name = "Adobe Inc."
+        self.url = "https://careers.adobe.com/us/en/search-results?qcountry=India"
         self.base_url = 'https://careers.adobe.com'
 
     def setup_driver(self):

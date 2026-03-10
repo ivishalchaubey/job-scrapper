@@ -11,8 +11,8 @@ logger = setup_logger('tatachemicals_scraper')
 
 class TataChemicalsScraper:
     def __init__(self):
-        self.company_name = 'Tata Chemicals'
-        self.url = 'https://fa-eskj-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/jobs?mode=location'
+        self.company_name = "Tata Chemicals"
+        self.url = "https://fa-eskj-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/jobs?mode=location"
         self.api_url = 'https://fa-eskj-saasfaprod1.fa.ocs.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions'
         self.site_number = 'CX_1001'
         self.page_size = 25

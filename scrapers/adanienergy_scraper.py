@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class AdaniEnergyScraper:
     def __init__(self):
-        self.company_name = 'Adani Energy Solutions'
-        self.url = 'https://www.adani.com/opportunity/#en/sites/CX_2027/jobs'
+        self.company_name = "Adani Energy Solutions"
+        self.url = "https://www.adani.com/opportunity/#en/sites/CX_2027/jobs"
         self.base_url = 'https://www.adani.com'
 
     def setup_driver(self):

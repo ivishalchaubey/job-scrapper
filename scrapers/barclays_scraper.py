@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class BarclaysScraper:
     def __init__(self):
-        self.company_name = 'Barclays'
-        self.url = 'https://search.jobs.barclays/search-jobs/India/13015/2/1269750/22/79/50/2'
+        self.company_name = "Barclays"
+        self.url = "https://search.jobs.barclays/search-jobs/India/13015/2/1269750/22/79/50/2"
 
     def setup_driver(self):
         chrome_options = Options()

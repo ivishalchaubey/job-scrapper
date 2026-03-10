@@ -8,8 +8,8 @@ logger = setup_logger('grab_scraper')
 
 class GrabScraper:
     def __init__(self):
-        self.company_name = 'Grab'
-        self.url = 'https://api.smartrecruiters.com/v1/companies/Grab/postings'
+        self.company_name = "Grab Taxi"
+        self.url = "https://www.grab.careers/en/jobs/?search=&country=India&pagesize=20#results"
         self.session = requests.Session()
         self.session.headers.update({
             'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',

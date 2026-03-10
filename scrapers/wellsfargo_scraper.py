@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class WellsFargoScraper:
     def __init__(self):
-        self.company_name = 'Wells Fargo'
-        self.url = 'https://www.wellsfargojobs.com/en/jobs/?search=&country=India&pagesize=20#results'
+        self.company_name = "Wells Fargo"
+        self.url = "https://www.wellsfargojobs.com/en/jobs/?search=&country=India&pagesize=20#results"
         self.base_url = 'https://www.wellsfargojobs.com'
 
     def setup_driver(self):

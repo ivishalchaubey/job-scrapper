@@ -10,8 +10,8 @@ logger = setup_logger('apollohospitals_scraper')
 
 class ApolloHospitalsScraper:
     def __init__(self):
-        self.company_name = 'Apollo Hospitals'
-        self.url = 'https://cgs.fa.ap2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_2/jobs'
+        self.company_name = "Apollo Hospitals"
+        self.url = "https://cgs.fa.ap2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_2/jobs?location=India&locationId=300000000471745&locationLevel=country&mode=location"
         self.api_url = 'https://cgs.fa.ap2.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions'
         self.site_number = 'CX_2'
         self.india_location_ids = '300000000471741'

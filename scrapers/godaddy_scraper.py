@@ -9,8 +9,8 @@ logger = setup_logger('godaddy_scraper')
 
 class GoDaddyScraper:
     def __init__(self):
-        self.company_name = 'GoDaddy'
-        self.url = 'https://boards.greenhouse.io/godaddy'
+        self.company_name = "GoDaddy"
+        self.url = "https://careers.godaddy/jobs/search?page=1&query=&country_codes%5B%5D=IN"
         self.api_url = 'https://boards-api.greenhouse.io/v1/boards/godaddy/jobs'
 
     def generate_external_id(self, job_id, company):

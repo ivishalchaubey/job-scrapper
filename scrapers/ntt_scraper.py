@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class NTTScraper:
     def __init__(self):
-        self.company_name = 'NTT'
-        self.url = 'https://careers.services.global.ntt/global/en/search-results'
+        self.company_name = "NTT"
+        self.url = "https://careers.services.global.ntt/global/en/search-results"
         self.base_url = 'https://careers.services.global.ntt'
 
     def setup_driver(self):

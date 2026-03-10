@@ -17,9 +17,9 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class DeutscheTelekomScraper:
     def __init__(self):
-        self.company_name = 'Deutsche Telekom'
+        self.company_name = "Deutsche Telekom"
         # Eightfold AI PCSX platform -- redirected from telekom.eightfold.ai
-        self.url = 'https://growthhub.telekom.com/careers?location=India'
+        self.url = "https://careers.telekom.com/en/jobs?location=India"
         self.base_url = 'https://growthhub.telekom.com'
 
     def setup_driver(self):

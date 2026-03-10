@@ -11,8 +11,8 @@ logger = setup_logger('tatacapital_scraper')
 
 class TataCapitalScraper:
     def __init__(self):
-        self.company_name = 'Tata Capital'
-        self.url = 'https://eofh.fa.em2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_3001/jobs?location=India&locationId=300000000378365&locationLevel=country&mode=location'
+        self.company_name = "Tata Capital"
+        self.url = "https://eofh.fa.em2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_3001/jobs?location=India&locationId=300000000378365&locationLevel=country&mode=location"
         self.api_url = 'https://eofh.fa.em2.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions'
         self.site_number = 'CX_3001'
         self.india_location_id = '300000000378365'

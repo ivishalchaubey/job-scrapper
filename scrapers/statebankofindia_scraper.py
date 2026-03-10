@@ -19,9 +19,9 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class StateBankOfIndiaScraper:
     def __init__(self):
-        self.company_name = 'State Bank of India'
+        self.company_name = "State Bank of India"
         # sbi.co.in/web/careers/current-openings redirects to sbi.bank.in/web/careers/current-openings
-        self.url = 'https://sbi.co.in/web/careers/current-openings'
+        self.url = "https://sbi.bank.in/web/careers/current-openings"
 
     def setup_driver(self):
         """Set up Chrome driver with options"""

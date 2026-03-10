@@ -25,8 +25,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class AirbusScraper:
     def __init__(self):
-        self.company_name = 'Airbus'
-        self.url = 'https://ag.wd3.myworkdayjobs.com/Airbus?locationCountry=c4f78be1a8f14da0ab49ce1162348a5e'
+        self.company_name = "Airbus"
+        self.url = "https://ag.wd3.myworkdayjobs.com/Airbus?locationCountry=c4f78be1a8f14da0ab49ce1162348a5e"
         self.api_url = 'https://ag.wd3.myworkdayjobs.com/wday/cxs/ag/Airbus/jobs'
         self.base_job_url = 'https://ag.wd3.myworkdayjobs.com/Airbus'
 

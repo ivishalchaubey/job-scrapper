@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class RipplingScraper:
     def __init__(self):
-        self.company_name = 'Rippling'
-        self.url = 'https://www.rippling.com/en-GB/careers/open-roles'
+        self.company_name = "Rippling"
+        self.url = "https://www.rippling.com/en-GB/careers/open-roles"
 
     def setup_driver(self):
         chrome_options = Options()

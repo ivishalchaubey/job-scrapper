@@ -18,11 +18,11 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class DCBBankScraper:
     def __init__(self):
-        self.company_name = 'DCB Bank'
+        self.company_name = "DCB Bank"
         # DCB Bank migrated from genesis.dcbbank.com (Zwayam) to ZingHR.
         # The old Zwayam portal has a persistent SSL protocol error.
         # The new careers portal is hosted on ZingHR:
-        self.url = 'https://zingnext.zinghr.com/portal/embed/career-website?CareerClientKey=ASDFQ-BAHDV-QWERM'
+        self.url = "https://zingnext.zinghr.com/portal/embed/career-website?CareerClientKey=ASDFQ-BAHDV-QWERM"
         # Fallback: the old URL in case SSL is fixed
         self.legacy_url = 'https://genesis.dcbbank.com/#!/joblist'
         self.company_careers_url = 'https://www.dcb.bank.in/careers'

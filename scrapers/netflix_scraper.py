@@ -18,9 +18,9 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class NetflixScraper:
     def __init__(self):
-        self.company_name = 'Netflix'
+        self.company_name = "Netflix"
         # Netflix uses jobs.netflix.com for job search
-        self.url = 'https://jobs.netflix.com/search?location=India'
+        self.url = "https://explore.jobs.netflix.net/careers?location=India&pid=790313595051&Region=apac&domain=netflix.com&sort_by=relevance&triggerGoButton=false&triggerGoButton=true"
         self.fallback_url = 'https://explore.jobs.netflix.net/careers?location=India'
     
     def setup_driver(self):

@@ -11,8 +11,8 @@ logger = setup_logger('bergerpaints_scraper')
 
 class BergerPaintsScraper:
     def __init__(self):
-        self.company_name = 'Berger Paints'
-        self.url = 'https://iabiiz.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/jobs'
+        self.company_name = "Berger Paints"
+        self.url = "https://iabiiz.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/jobs"
         self.api_url = 'https://iabiiz.fa.ocs.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions'
         self.site_number = 'CX_1'
         self.page_size = 25

@@ -10,8 +10,8 @@ logger = setup_logger('freshworks_scraper')
 
 class FreshworksScraper:
     def __init__(self):
-        self.company_name = 'Freshworks'
-        self.url = 'https://careers.smartrecruiters.com/Freshworks'
+        self.company_name = "Freshworks"
+        self.url = "https://careers.smartrecruiters.com/Freshworks"
         self.api_base = 'https://api.smartrecruiters.com/v1/companies'
         self.company_id = 'Freshworks'
         self.page_size = 100

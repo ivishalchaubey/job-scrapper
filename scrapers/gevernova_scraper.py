@@ -8,8 +8,8 @@ logger = setup_logger('gevernova_scraper')
 
 class GEVernovaScraper:
     def __init__(self):
-        self.company_name = 'GE Vernova'
-        self.url = 'https://gevernova.wd5.myworkdayjobs.com/Vernova_ExternalSite'
+        self.company_name = "GE Vernova"
+        self.url = "https://careers.gevernova.com/jobs?filter%5Bcountry%5D%5B0%5D=India"
         self.api_url = 'https://gevernova.wd5.myworkdayjobs.com/wday/cxs/gevernova/Vernova_ExternalSite/jobs'
         self.base_job_url = 'https://gevernova.wd5.myworkdayjobs.com/Vernova_ExternalSite'
 

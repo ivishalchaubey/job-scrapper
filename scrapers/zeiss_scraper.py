@@ -11,7 +11,7 @@ logger = setup_logger('zeiss_scraper')
 
 class ZeissScraper:
     def __init__(self):
-        self.company_name = 'Zeiss'
+        self.company_name = "Zeiss"
         self.workday_api_url = 'https://zeissgroup.wd3.myworkdayjobs.com/wday/cxs/zeissgroup/External/jobs'
         self.workday_base_url = 'https://zeissgroup.wd3.myworkdayjobs.com/External'
         # India country facet ID from Workday

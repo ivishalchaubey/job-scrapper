@@ -18,9 +18,9 @@ logger = setup_logger('cbre_scraper')
 
 class CBREScraper:
     def __init__(self):
-        self.company_name = 'CBRE'
+        self.company_name = "CBRE Group"
         # Avature SPA -- field 9577=17142 is India filter
-        self.url = 'https://careers.cbre.com/en_US/careers/SearchJobs/?9577=%5B17142%5D'
+        self.url = "https://careers.cbre.com/en_US/careers/SearchJobs/?9577=%5B17142%5D&9577_format=10224&listFilterMode=1&jobSort=relevancy&jobRecordsPerPage=25&"
         self.base_url = 'https://careers.cbre.com'
 
     def setup_driver(self):

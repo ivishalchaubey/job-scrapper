@@ -8,8 +8,8 @@ logger = setup_logger('expediagroup_scraper')
 
 class ExpediaGroupScraper:
     def __init__(self):
-        self.company_name = 'Expedia Group'
-        self.url = 'https://expedia.wd108.myworkdayjobs.com/search'
+        self.company_name = "Expedia Group"
+        self.url = "https://careers.expediagroup.com/jobs/?&filter[country]=India"
         self.api_url = 'https://expedia.wd108.myworkdayjobs.com/wday/cxs/expedia/search/jobs'
         self.base_job_url = 'https://expedia.wd108.myworkdayjobs.com/search'
 

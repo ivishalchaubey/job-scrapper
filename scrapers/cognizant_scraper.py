@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class CognizantScraper:
     def __init__(self):
-        self.company_name = 'Cognizant'
-        self.url = 'https://careers.cognizant.com/global/en/search-results?qcountry=India'
+        self.company_name = "Cognizant"
+        self.url = "https://careers.cognizant.com/india-en/jobs/?keyword=&location=India&lat=&lng=&cname=India&ccode=IN&origin=global"
     
     def setup_driver(self):
         """Set up Chrome driver with options"""

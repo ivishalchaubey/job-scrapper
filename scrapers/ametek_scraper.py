@@ -10,8 +10,8 @@ logger = setup_logger('ametek_scraper')
 
 class AmetekScraper:
     def __init__(self):
-        self.company_name = 'Ametek'
-        self.url = 'https://jobs.ametek.com/search/'
+        self.company_name = "Ametek"
+        self.url = "https://jobs.ametek.com/search/?q=&q2=&alertId=&title=&location=IN&date=#searchresults"
         self.base_url = 'https://jobs.ametek.com'
         self.session = requests.Session()
         self.session.headers.update({

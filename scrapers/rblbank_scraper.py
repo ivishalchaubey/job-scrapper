@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class RblBankScraper:
     def __init__(self):
-        self.company_name = 'RBL Bank'
-        self.url = 'https://rblcareers.peoplestrong.com/job/joblist'
+        self.company_name = "RBL Bank"
+        self.url = "https://rblcareers.peoplestrong.com/job/joblist"
 
     def setup_driver(self):
         chrome_options = Options()

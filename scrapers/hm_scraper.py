@@ -8,8 +8,8 @@ logger = setup_logger('hm_scraper')
 
 class HMScraper:
     def __init__(self):
-        self.company_name = 'H&M'
-        self.url = 'https://careers.smartrecruiters.com/HMGroup'
+        self.company_name = "H&M"
+        self.url = "https://career.hm.com/in-en/search/?l=cou%3Ain"
         self.api_url = 'https://api.smartrecruiters.com/v1/companies/HMGroup/postings'
 
     def generate_external_id(self, job_id, company):

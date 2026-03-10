@@ -10,7 +10,7 @@ logger = setup_logger('ingersollrand_scraper')
 
 class IngersollRandScraper:
     def __init__(self):
-        self.company_name = 'Ingersoll Rand'
+        self.company_name = "Ingersoll Rand"
         self.base_url = 'https://careers.irco.com'
         self.search_url = 'https://careers.irco.com/go/Middle-East%2C-India-and-Africa/9515600/?q=&sortColumn=most_recent&startrow={offset}'
         self.headers = {

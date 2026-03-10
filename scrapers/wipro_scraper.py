@@ -21,8 +21,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class WiproScraper:
     def __init__(self):
-        self.company_name = 'Wipro'
-        self.url = 'https://careers.wipro.com/search/?q=&locationsearch=India&searchResultView=LIST'
+        self.company_name = "Wipro"
+        self.url = "https://careers.wipro.com/search/?q=&locationsearch=India&searchResultView=LIST"
 
     def setup_driver(self):
         chrome_options = Options()

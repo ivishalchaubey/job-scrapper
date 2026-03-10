@@ -18,9 +18,9 @@ logger = setup_logger('gallagher_scraper')
 
 class GallagherScraper:
     def __init__(self):
-        self.company_name = 'Gallagher'
+        self.company_name = "Gallagher"
         # Jibe (iCIMS) AngularJS SPA
-        self.url = 'https://jobs.ajg.com/ajg-global/jobs?locations=Bangalore,Karnataka,India'
+        self.url = "https://jobs.ajg.com/ajg-global/jobs?locations=Bangalore,Karnataka,India%7CChandigarh,Punjab,India%7CGurugram,Haryana,India%7CMumbai,Maharashtra,India%7CPune,Maharashtra,India&page=1"
         self.base_url = 'https://jobs.ajg.com'
 
     def setup_driver(self):

@@ -23,8 +23,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class AyeFinanceScraper:
     def __init__(self):
-        self.company_name = 'Aye Finance'
-        self.url = 'https://www.ayefin.com/careers/join-us'
+        self.company_name = "Aye Finance"
+        self.url = "https://ayefin.com/careers/join-us#opportunities"
         self.base_url = 'https://www.ayefin.com'
         self.headers = {
             'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',

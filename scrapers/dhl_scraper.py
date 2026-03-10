@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class DHLScraper:
     def __init__(self):
-        self.company_name = 'DHL Group'
-        self.url = 'https://careers.dhl.com/global/en/search-results?selected_fields=%7b%22businessUnit%22:%5b%22eCommerce%20Solutions%22%5d,%22country%22:%5b%22India%22%5d%7d'
+        self.company_name = "DHL Group"
+        self.url = "https://careers.dhl.com/global/en/search-results?selected_fields=%7b%22businessUnit%22:%5b%22eCommerce%20Solutions%22%5d,%22country%22:%5b%22India%22%5d%7d"
         self.base_url = 'https://careers.dhl.com'
 
     def setup_driver(self):

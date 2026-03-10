@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class ITCLimitedScraper:
     def __init__(self):
-        self.company_name = 'ITC Limited'
-        self.url = 'https://www.itcportal.com/careers/'
+        self.company_name = "ITC Limited"
+        self.url = "https://recruitment.itcportal.com/jobs/Careers#summer-internship"
     
     def setup_driver(self):
         """Set up Chrome driver with options"""

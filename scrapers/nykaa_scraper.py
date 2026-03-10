@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class NykaaScraper:
     def __init__(self):
-        self.company_name = 'Nykaa'
-        self.url = 'https://www.nykaa.com/careers'
+        self.company_name = "Nykaa"
+        self.url = "https://www.nykaafashion.com/lp/careers?srsltid=AfmBOopwkniPsnJ_-BPltqgT83oG-pewDMSh1oAkLLiAzFn8LL9vPJqn"
     
     def setup_driver(self):
         """Set up Chrome driver with options"""

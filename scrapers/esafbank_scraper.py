@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class ESAFBankScraper:
     def __init__(self):
-        self.company_name = 'ESAF Small Finance Bank'
-        self.url = 'https://esafcareers.zappyhire.com/'
+        self.company_name = "ESAF Small Finance Bank"
+        self.url = "https://esafcareers.zappyhire.com/#/"
 
     def setup_driver(self):
         chrome_options = Options()

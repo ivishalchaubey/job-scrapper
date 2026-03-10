@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class CoforgeScraper:
     def __init__(self):
-        self.company_name = 'Coforge'
-        self.url = 'https://careers.coforge.com/coforge/'
+        self.company_name = "Coforge"
+        self.url = "https://careers.coforge.com/coforge/"
         self.base_url = 'https://careers.coforge.com'
 
     def setup_driver(self):

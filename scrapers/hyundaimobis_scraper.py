@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class HyundaiMobisScraper:
     def __init__(self):
-        self.company_name = 'Hyundai Mobis'
-        self.url = 'https://hyundaimobisin.openings.co/hyundaimobisin/'
+        self.company_name = "Hyundai Mobis"
+        self.url = "https://hyundaimobisin.openings.co/hyundaimobisin/"
         self.alt_url = 'https://hyundaimobisin.openings.co/'
 
     def setup_driver(self):

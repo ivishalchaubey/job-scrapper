@@ -18,8 +18,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class HindustanUnileverScraper:
     def __init__(self):
-        self.company_name = 'Hindustan Unilever'
-        self.url = 'https://www.hul.co.in/careers/'
+        self.company_name = "Hindustan Unilever Limited"
+        self.url = "https://careers.unilever.com/en/search-jobs"
     
     def setup_driver(self):
         """Set up Chrome driver with options"""

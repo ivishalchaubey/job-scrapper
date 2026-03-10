@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class AXAScraper:
     def __init__(self):
-        self.company_name = 'AXA'
-        self.url = 'https://careers.axa.com/careers-home/jobs?country=India&page=1'
+        self.company_name = "AXA"
+        self.url = "https://careers.axa.com/careers-home/jobs?country=India&page=1"
         self.base_url = 'https://careers.axa.com'
 
     def setup_driver(self):

@@ -25,8 +25,8 @@ INDIA_KEYWORDS = ['india', 'mumbai', 'delhi', 'bangalore', 'bengaluru', 'hyderab
 
 class WarnerBrosScraper:
     def __init__(self):
-        self.company_name = 'Warner Bros. Discovery'
-        self.url = 'https://careers.wbd.com/global/en/search-results'
+        self.company_name = "Warner Bros. Discovery"
+        self.url = "https://careers.wbd.com/global/en/search-results"
         self.base_url = 'https://careers.wbd.com'
 
     def setup_driver(self):

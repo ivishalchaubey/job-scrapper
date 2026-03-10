@@ -20,8 +20,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 
 class ContinentalScraper:
     def __init__(self):
-        self.company_name = 'Continental'
-        self.url = 'https://jobs.continental.com/en/#/?location=%7B%22title%22:%22India%22,%22type%22:%22country%22,%22countryCode%22:%22in%22%7D'
+        self.company_name = "Continental"
+        self.url = "https://jobs.continental.com/en/#/?location=%7B%22title%22:%22India%22,%22type%22:%22country%22,%22countryCode%22:%22in%22%7D"
         self.base_url = 'https://jobs.continental.com'
 
     def setup_driver(self):

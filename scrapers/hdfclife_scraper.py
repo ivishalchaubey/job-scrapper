@@ -81,8 +81,8 @@ class __HdfcEncrypter {
 
 class HDFCLifeScraper:
     def __init__(self):
-        self.company_name = 'HDFC Life'
-        self.url = 'https://www.hdfclife.com/hdfc-careers/'
+        self.company_name = "HDFC Life"
+        self.url = "https://www.hdfclife.com/hdfc-careers/find-your-fit.html?jobRole=Sales%20&location=&reqId=undefined"
         self.base_url = 'https://www.hdfclife.com'
 
     def setup_driver(self):
