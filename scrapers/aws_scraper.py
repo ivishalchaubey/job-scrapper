@@ -6,11 +6,11 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 import hashlib
 import time
-from datetime import datetime
-from pathlib import Path
+import re
 
 from core.logging import setup_logger
-from config.scraper import SCRAPE_TIMEOUT, HEADLESS_MODE, FETCH_FULL_JOB_DETAILS, MAX_PAGES_TO_SCRAPE
+from config.scraper import SCRAPE_TIMEOUT, HEADLESS_MODE, MAX_PAGES_TO_SCRAPE
+from scrapers.csv_url_resolver import get_company_url
 
 logger = setup_logger('aws_scraper')
 
@@ -19,7 +19,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 class AWSScraper:
     def __init__(self):
         self.company_name = "Amazon Web Services"
-        self.url = "https://www.amazon.jobs/en/search?offset=0&result_limit=10&sort=relevant&business_category%5B%5D=amazon-web-services&distanceType=Mi&radius=24km&latitude=&longitude=&loc_group_id=&loc_query=India&base_query=&city=&country=IND&region=&county=&query_options=&"
+        default_url = "https://www.amazon.jobs/en/search?offset=0&result_limit=10&sort=relevant&business_category%5B%5D=amazon-web-services&distanceType=Mi&radius=24km&latitude=&longitude=&loc_group_id=&loc_query=India&base_query=&city=&country=IND&region=&county=&query_options=&"
+        self.url = get_company_url(self.company_name, default_url)
     
     def setup_driver(self):
         """Set up Chrome driver with options"""
@@ -238,6 +239,7 @@ class AWSScraper:
                     
                     job_data = {
                         'external_id': self.generate_external_id(job_id, self.company_name),
+                        'job_id': job_id,
                         'company_name': self.company_name,
                         'title': job_title,
                         'description': '',
@@ -256,8 +258,8 @@ class AWSScraper:
                         'status': 'active'
                     }
                     
-                    # Fetch full details
-                    if FETCH_FULL_JOB_DETAILS and job_url:
+                    # Fetch full details from detail page
+                    if job_url:
                         full_details = self._fetch_job_details(driver, job_url)
                         job_data.update(full_details)
                     
@@ -317,6 +319,7 @@ class AWSScraper:
                     
                     job_data = {
                         'external_id': self.generate_external_id(job_id, self.company_name),
+                        'job_id': job_id,
                         'company_name': self.company_name,
                         'title': job_title,
                         'description': '',
@@ -335,8 +338,8 @@ class AWSScraper:
                         'status': 'active'
                     }
                     
-                    # Fetch full details if enabled
-                    if FETCH_FULL_JOB_DETAILS and job_link:
+                    # Fetch full details from detail page
+                    if job_link:
                         full_details = self._fetch_job_details(driver, job_link)
                         job_data.update(full_details)
                     
@@ -361,31 +364,32 @@ class AWSScraper:
             driver.get(job_url)
             time.sleep(3)
             
-            # Extract description
+            # Extract full description sections from the detail body.
             try:
-                # Try to find the Description/Basic qualifications section
-                desc_section = driver.find_element(By.XPATH, "//h2[contains(text(), 'Description') or contains(text(), 'Basic qualifications')]/parent::div")
-                details['description'] = desc_section.text.strip()[:2000]
-            except:
-                try:
-                    # Fallback: look for description div
-                    desc_elem = driver.find_element(By.CSS_SELECTOR, 'div[class*="description"]')
-                    details['description'] = desc_elem.text.strip()[:2000]
-                except:
+                section_blocks = driver.find_elements(By.CSS_SELECTOR, "#job-detail-body .content .section")
+                section_texts = []
+                for block in section_blocks:
+                    heading = ''
+                    body = ''
                     try:
-                        # Last resort: get main content area
-                        main_content = driver.find_element(By.CSS_SELECTOR, 'main, div[role="main"]')
-                        full_text = main_content.text
-                        if 'Basic qualifications' in full_text:
-                            desc_start = full_text.index('Basic qualifications')
-                            desc_text = full_text[desc_start:desc_start+1500]
-                            details['description'] = desc_text.strip()
-                        elif 'Description' in full_text:
-                            desc_start = full_text.index('Description') + len('Description')
-                            desc_text = full_text[desc_start:desc_start+1500]
-                            details['description'] = desc_text.strip()
-                    except:
+                        heading = block.find_element(By.TAG_NAME, 'h2').text.strip()
+                    except Exception:
                         pass
+                    try:
+                        body = block.text.strip()
+                        if heading and body.startswith(heading):
+                            body = body[len(heading):].strip()
+                    except Exception:
+                        body = ''
+                    if body:
+                        if heading:
+                            section_texts.append(f"{heading}:\n{body}")
+                        else:
+                            section_texts.append(body)
+                if section_texts:
+                    details['description'] = '\n\n'.join(section_texts)[:15000]
+            except Exception:
+                pass
             
             # Extract department/job category
             try:
@@ -393,28 +397,30 @@ class AWSScraper:
                 details['department'] = dept_elem.text.strip()
             except:
                 try:
-                    dept_elem = driver.find_element(By.XPATH, "//a[contains(@href, 'category')]")
+                    dept_elem = driver.find_element(By.CSS_SELECTOR, 'a[href*="/job_categories/"]')
                     details['department'] = dept_elem.text.strip()
                 except:
                     try:
-                        # Look for "Operations, IT, & Support Engineering" type text
-                        dept_elem = driver.find_element(By.XPATH, "//*[contains(text(), 'Job details')]/following-sibling::*//a")
+                        dept_elem = driver.find_element(By.XPATH, "//a[contains(@href, 'category')]")
                         details['department'] = dept_elem.text.strip()
                     except:
-                        pass
+                        try:
+                            dept_elem = driver.find_element(By.XPATH, "//*[contains(text(), 'Job details')]/following-sibling::*//a")
+                            details['department'] = dept_elem.text.strip()
+                        except:
+                            pass
             
             # Extract precise location from job details
             try:
-                # Look for location text (e.g., "Mumbai, MH, IND" or "Hyderabad, TS, IND")
-                location_elem = driver.find_element(By.XPATH, "//*[contains(text(), ', IND') or contains(text(), ', IN')]")
+                location_elem = driver.find_element(By.CSS_SELECTOR, "#job-detail-body .association.location-icon li")
                 location_text = location_elem.text.strip()
-                details['location'] = location_text
-                
-                # Parse location into city, state
-                city, state, _ = self.parse_location(location_text)
-                details['city'] = city
-                details['state'] = state
-            except:
+                if location_text:
+                    details['location'] = location_text
+                    city, state, country = self.parse_location(location_text)
+                    details['city'] = city
+                    details['state'] = state
+                    details['country'] = country
+            except Exception:
                 pass
             
             # Extract job type (Full Time, etc.)
@@ -443,14 +449,34 @@ class AWSScraper:
     def parse_location(self, location_str):
         """Parse location string into city, state, country"""
         if not location_str:
-            return '', '', 'India'
-        
-        # Remove "Job ID:" prefix if present
-        if 'Job ID:' in location_str:
-            location_str = location_str.split('Job ID:')[0]
-        
-        parts = [p.strip() for p in location_str.split(',')]
-        city = parts[0] if len(parts) > 0 else ''
-        state = parts[1] if len(parts) > 1 else ''
-        
-        return city, state, 'India'
+            return '', '', ''
+
+        cleaned = location_str.strip().replace('Location:', '').strip()
+        if '|' in cleaned:
+            cleaned = cleaned.split('|')[0].strip()
+
+        parts = [p.strip() for p in cleaned.split(',') if p.strip()]
+        city = ''
+        state = ''
+        country = ''
+
+        if len(parts) == 3 and parts[0].upper() in {'IND', 'IN'}:
+            country = 'India'
+            state = parts[1]
+            city = parts[2]
+        elif len(parts) >= 3:
+            city = parts[0]
+            state = parts[1]
+            country = parts[2]
+        elif len(parts) == 2:
+            city = parts[0]
+            state = parts[1]
+        elif len(parts) == 1:
+            city = parts[0]
+
+        if not country:
+            upper_cleaned = cleaned.upper()
+            if re.search(r'\b(IND|IN)\b', upper_cleaned) or 'INDIA' in upper_cleaned:
+                country = 'India'
+
+        return city, state, country
