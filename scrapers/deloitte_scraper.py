@@ -5,12 +5,14 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 import hashlib
+import html
+import json
+import re
 import time
-from datetime import datetime
-from pathlib import Path
 
 from core.logging import setup_logger
-from config.scraper import SCRAPE_TIMEOUT, HEADLESS_MODE, FETCH_FULL_JOB_DETAILS, MAX_PAGES_TO_SCRAPE
+from config.scraper import SCRAPE_TIMEOUT, HEADLESS_MODE, MAX_PAGES_TO_SCRAPE
+from scrapers.csv_url_resolver import get_company_url
 
 logger = setup_logger('deloitte_scraper')
 
@@ -19,7 +21,8 @@ CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0
 class DeloitteScraper:
     def __init__(self):
         self.company_name = "Deloitte"
-        self.url = "https://usijobs.deloitte.com/en_US/careersusi"
+        default_url = "https://usijobs.deloitte.com/en_US/careersusi"
+        self.url = get_company_url(self.company_name, default_url)
     
     def setup_driver(self):
         """Set up Chrome driver with options"""
@@ -70,6 +73,40 @@ class DeloitteScraper:
         """Generate stable external ID"""
         unique_string = f"{company}_{job_id}"
         return hashlib.md5(unique_string.encode()).hexdigest()
+
+    def _extract_job_id(self, job_url):
+        if not job_url:
+            return ''
+
+        patterns = [
+            r'[?&](?:jobId|jobID|jobid|requisitionId|reqId|id)=([A-Za-z0-9_-]+)',
+            r'/job/[^/]+/([A-Za-z0-9_-]+)(?:\?|$)',
+            r'/([A-Za-z]{1,6}-\d{3,})',
+            r'/(\d{6,})(?:\?|$)',
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, job_url)
+            if match:
+                return match.group(1).strip()
+
+        slug = job_url.rstrip('/').split('/')[-1]
+        if slug and slug.lower() not in {'job', 'jobs'}:
+            slug = slug.split('?', 1)[0].strip()
+            if slug:
+                return slug
+        return hashlib.md5(job_url.encode()).hexdigest()[:12]
+
+    def _clean_text(self, value):
+        if not value:
+            return ''
+        text = html.unescape(value)
+        text = re.sub(r'<br\s*/?>', '\n', text, flags=re.IGNORECASE)
+        text = re.sub(r'</p\s*>', '\n', text, flags=re.IGNORECASE)
+        text = re.sub(r'<li[^>]*>', '\n- ', text, flags=re.IGNORECASE)
+        text = re.sub(r'<[^>]+>', ' ', text)
+        text = re.sub(r'[ \t\r\f\v]+', ' ', text)
+        text = re.sub(r'\n\s*\n+', '\n\n', text)
+        return text.strip()[:15000]
     
     def scrape(self, max_pages=MAX_PAGES_TO_SCRAPE):
         """Scrape jobs from Deloitte careers page with pagination support"""
@@ -259,35 +296,54 @@ class DeloitteScraper:
                     continue
                 
                 # Extract job ID from URL
-                job_id = hashlib.md5(job_url.encode()).hexdigest()[:12]
+                job_id = self._extract_job_id(job_url)
                 
                 # Extract location information from subtitle
                 location = ""
                 city = ""
                 state = ""
-                country = "United States"  # Default for this URL
+                country = ""
                 department = ""
                 
                 try:
-                    # Deloitte structure: div.article__header__text__subtitle contains spans
-                    # Format: "Deloitte US | Department | City, State, Country"
+                    # Deloitte listing subtitle often includes org, department, and location pieces.
                     subtitle_elem = listing.find_element(By.CSS_SELECTOR, 'div.article__header__text__subtitle')
                     subtitle_spans = subtitle_elem.find_elements(By.TAG_NAME, 'span')
                     
-                    # Last span typically contains location
                     if subtitle_spans:
-                        # Try to find location span (contains comma)
-                        for span in subtitle_spans:
-                            span_text = span.text.strip()
-                            if ',' in span_text or any(state_name in span_text for state_name in ['United States', 'India', 'Canada']):
-                                location = span_text
-                                break
-                        
-                        # Extract department from middle spans
-                        if len(subtitle_spans) >= 2:
-                            dept_text = subtitle_spans[1].text.strip()
-                            if dept_text and dept_text not in ['Deloitte US', '|']:
-                                department = dept_text
+                        span_texts = [s.text.strip() for s in subtitle_spans if s.text and s.text.strip() and s.text.strip() != '|']
+                        location_candidates = []
+                        for text in span_texts:
+                            lower = text.lower()
+                            if (
+                                ',' in text
+                                or ' - ' in text
+                                or lower.endswith(' india')
+                                or ' united states' in lower
+                                or ' usa' in lower
+                                or ' uk' in lower
+                                or 'canada' in lower
+                                or 'australia' in lower
+                                or 'germany' in lower
+                                or 'singapore' in lower
+                                or 'japan' in lower
+                                or 'remote' in lower
+                            ):
+                                location_candidates.append(text)
+
+                        if location_candidates:
+                            location = location_candidates[-1]
+                        elif len(span_texts) >= 3:
+                            location = span_texts[-1]
+
+                        for text in span_texts:
+                            if text == location:
+                                continue
+                            lower = text.lower()
+                            if 'deloitte' in lower or lower in {'|'}:
+                                continue
+                            department = text
+                            break
                     
                     # Parse location if found
                     if location:
@@ -313,6 +369,7 @@ class DeloitteScraper:
                 
                 job_data = {
                     'external_id': self.generate_external_id(job_id, self.company_name),
+                    'job_id': job_id,
                     'company_name': self.company_name,
                     'title': job_title,
                     'description': '',
@@ -331,8 +388,8 @@ class DeloitteScraper:
                     'status': 'active'
                 }
                 
-                # Fetch full details if enabled
-                if FETCH_FULL_JOB_DETAILS and job_url:
+                # Fetch full details from detail page
+                if job_url:
                     full_details = self._fetch_job_details(driver, job_url)
                     job_data.update(full_details)
                 
@@ -360,7 +417,28 @@ class DeloitteScraper:
             
             # Extract description
             try:
+                # Primary: Deloitte job details rich-text payload (full JD body).
+                primary_selectors = [
+                    (By.CSS_SELECTOR, 'article.article--details .article__view__item.view--row.no-label.view--rich-text span.field-value'),
+                    (By.CSS_SELECTOR, 'article.article--details .article__view__item.view--rich-text span.field-value'),
+                ]
+                best_description = ''
+                for selector_type, selector_value in primary_selectors:
+                    try:
+                        for elem in driver.find_elements(selector_type, selector_value):
+                            html_or_text = elem.get_attribute('innerHTML') or elem.text or ''
+                            cleaned = self._clean_text(html_or_text)
+                            if len(cleaned) > len(best_description):
+                                best_description = cleaned
+                    except Exception:
+                        continue
+
+                if best_description:
+                    details['description'] = best_description
+
                 desc_selectors = [
+                    (By.CSS_SELECTOR, 'article.article.article--job-detail div.article__content'),
+                    (By.CSS_SELECTOR, 'section.section--article div.article__content'),
                     (By.CSS_SELECTOR, 'div[class*="description"]'),
                     (By.XPATH, "//h2[contains(text(), 'Description')]/following-sibling::div"),
                     (By.CSS_SELECTOR, 'div.job-description'),
@@ -369,11 +447,34 @@ class DeloitteScraper:
                 for selector_type, selector_value in desc_selectors:
                     try:
                         desc_elem = driver.find_element(selector_type, selector_value)
-                        if desc_elem and desc_elem.text.strip():
-                            details['description'] = desc_elem.text.strip()[:2000]
-                            break
+                        if desc_elem:
+                            candidate = self._clean_text(desc_elem.get_attribute('innerHTML') or desc_elem.text)
+                            if len(candidate) > len(details.get('description', '')):
+                                details['description'] = candidate
                     except:
                         continue
+                if not details.get('description'):
+                    page_source = driver.page_source
+                    # Fallback 1: embedded JSON-style description payload in page source.
+                    embedded = re.search(r'\"description\":\"(.*?)\"\\s*,\\s*\"title\"', page_source, flags=re.DOTALL)
+                    if embedded:
+                        raw = embedded.group(1)
+                        try:
+                            decoded = json.loads(f'\"{raw}\"')
+                        except Exception:
+                            decoded = raw
+                        cleaned = self._clean_text(decoded)
+                        if cleaned:
+                            details['description'] = cleaned[:15000]
+
+                if not details.get('description'):
+                    # Fallback 2: use og:description when full payload extraction fails.
+                    try:
+                        og_desc = driver.find_element(By.CSS_SELECTOR, 'meta[property=\"og:description\"]').get_attribute('content')
+                        if og_desc:
+                            details['description'] = html.unescape(og_desc).strip()[:15000]
+                    except Exception:
+                        pass
             except:
                 pass
             
@@ -396,20 +497,30 @@ class DeloitteScraper:
     def parse_location(self, location_str):
         """Parse location string into city, state, country"""
         if not location_str:
-            return '', '', 'United States'
-        
-        parts = [p.strip() for p in location_str.split(',')]
-        city = parts[0] if len(parts) > 0 else ''
-        state = parts[1] if len(parts) > 1 else ''
-        
-        # Determine country based on location string
-        country = 'United States'
-        location_lower = location_str.lower()
-        if any(country_name in location_lower for country_name in ['india', 'bangalore', 'mumbai', 'delhi', 'hyderabad', 'chennai', 'pune']):
-            country = 'India'
-        elif any(country_name in location_lower for country_name in ['uk', 'united kingdom', 'london', 'manchester']):
-            country = 'United Kingdom'
-        elif any(country_name in location_lower for country_name in ['canada', 'toronto', 'vancouver']):
-            country = 'Canada'
-        
+            return '', '', ''
+
+        cleaned = re.sub(r'\s+', ' ', location_str).strip()
+        cleaned = cleaned.replace(' | ', ', ')
+        parts = [p.strip() for p in cleaned.split(',') if p.strip()]
+
+        if len(parts) == 1 and ' - ' in parts[0]:
+            parts = [p.strip() for p in parts[0].split(' - ') if p.strip()]
+
+        city = parts[0] if len(parts) >= 1 else ''
+        state = ''
+        country = ''
+        if len(parts) == 2:
+            # Keep only scraped facts: if second token looks like country, map to country.
+            token = parts[1]
+            if token.lower() in {
+                'india', 'united states', 'usa', 'uk', 'united kingdom', 'canada',
+                'australia', 'germany', 'japan', 'singapore'
+            }:
+                country = token
+            else:
+                state = token
+        elif len(parts) >= 3:
+            state = parts[1]
+            country = parts[-1]
+
         return city, state, country

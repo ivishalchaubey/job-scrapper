@@ -1,357 +1,282 @@
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
 import hashlib
-import time
-from datetime import datetime
-from pathlib import Path
+import html
+import json
+import re
+import subprocess
+import uuid
+from urllib.parse import urlencode
+
+try:
+    import requests
+except ImportError:
+    requests = None
 
 from core.logging import setup_logger
-from config.scraper import SCRAPE_TIMEOUT, HEADLESS_MODE, FETCH_FULL_JOB_DETAILS, MAX_PAGES_TO_SCRAPE
+from config.scraper import SCRAPE_TIMEOUT, MAX_PAGES_TO_SCRAPE
+from scrapers.csv_url_resolver import get_company_url
 
 logger = setup_logger('ey_scraper')
 
-CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0.7559.133_fresh/chromedriver-mac-arm64/chromedriver'
 
 class EYScraper:
     def __init__(self):
         self.company_name = "EY"
-        self.url = "https://eyglobal.yello.co/job_boards/c1riT--B2O-KySgYWsZO1Q?locale=en\nhttps://careers.ey.com/ey/search/?createNewAlert=false&q=&optionsFacetsDD_customfield1=Strategy+and+Transactions&optionsFacetsDD_country=IN&optionsFacetsDD_city=\nhttps://careers.ey.com/ey/search/?createNewAlert=false&q=&optionsFacetsDD_customfield1=&optionsFacetsDD_country=IN&optionsFacetsDD_city="
-    
-    def setup_driver(self):
-        """Set up Chrome driver with options"""
-        chrome_options = Options()
-        if HEADLESS_MODE:
-            chrome_options.add_argument('--headless=new')
-        chrome_options.add_argument('--no-sandbox')
-        chrome_options.add_argument('--disable-dev-shm-usage')
-        chrome_options.add_argument('--disable-gpu')
-        chrome_options.add_argument('--window-size=1920,1080')
-        chrome_options.add_argument('--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36')
-        chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-        chrome_options.add_experimental_option('excludeSwitches', ['enable-logging'])
-        
-        try:
-            # Install and get the correct chromedriver path
-            driver_path = CHROMEDRIVER_PATH
-            logger.info(f"ChromeDriver installed at: {driver_path}")
-            
-            # Fix for macOS ARM - ensure we use the actual chromedriver binary
-            if 'chromedriver-mac-arm64' in driver_path and not driver_path.endswith('chromedriver'):
-                import os
-                driver_dir = os.path.dirname(driver_path)
-                actual_driver = os.path.join(driver_dir, 'chromedriver')
-                if os.path.exists(actual_driver):
-                    driver_path = actual_driver
-                    logger.info(f"Using corrected path: {driver_path}")
-            
-            service = Service(driver_path)
-            driver = webdriver.Chrome(service=service, options=chrome_options)
-            return driver
-        except Exception as e:
-            logger.error(f"ChromeDriver setup failed: {str(e)}")
-            # Fallback: try without service specification
-            logger.info("Attempting fallback driver setup...")
-            driver = webdriver.Chrome(options=chrome_options)
-            return driver
-    
+        default_url = "https://eyglobal.yello.co/job_boards/c1riT--B2O-KySgYWsZO1Q?locale=en"
+        raw_url = get_company_url(self.company_name, default_url)
+        self.url = self._normalize_url(raw_url, default_url)
+
+        match = re.search(r'/job_boards/([^?\s/]+)', self.url)
+        self.job_board_id = match.group(1) if match else "c1riT--B2O-KySgYWsZO1Q"
+        self.base_url = "https://eyglobal.yello.co"
+        self.search_url = f"{self.base_url}/job_boards/{self.job_board_id}/search"
+
+    def _normalize_url(self, raw_url, fallback_url):
+        candidates = [line.strip() for line in (raw_url or '').splitlines() if line.strip()]
+        for candidate in candidates:
+            if candidate.startswith('http'):
+                return candidate
+        return fallback_url
+
     def generate_external_id(self, job_id, company):
-        """Generate stable external ID"""
         unique_string = f"{company}_{job_id}"
         return hashlib.md5(unique_string.encode()).hexdigest()
-    
+
     def scrape(self, max_pages=MAX_PAGES_TO_SCRAPE):
-        """Scrape jobs from EY careers page with pagination support"""
         jobs = []
-        driver = None
-        
+        seen_external_ids = set()
+        tab_id = str(uuid.uuid4())
+
         try:
             logger.info(f"Starting scrape for {self.company_name}")
-            driver = self.setup_driver()
-            driver.get(self.url)
-            
-            # Wait for page to load - SuccessFactors platform needs extra time
-            wait = WebDriverWait(driver, SCRAPE_TIMEOUT)
-            time.sleep(15)  # SuccessFactors pages load slowly
+            logger.info(f"Using EY search URL: {self.search_url}")
 
-            # Scroll to trigger lazy-loaded content
-            logger.info("Scrolling to load dynamic content...")
-            last_height = driver.execute_script("return document.body.scrollHeight")
-            for scroll_i in range(5):
-                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                time.sleep(2)
-                new_height = driver.execute_script("return document.body.scrollHeight")
-                if new_height == last_height:
+            for page in range(1, max_pages + 1):
+                params = {
+                    'query': '',
+                    'filters': '',
+                    'job_board_tab_identifier': tab_id,
+                    'locale': 'en',
+                }
+                if page > 1:
+                    params['page_number'] = page
+
+                payload = self._fetch_json(self.search_url, params=params)
+                if not payload:
+                    logger.warning(f"No EY payload for page {page}; stopping")
                     break
-                last_height = new_height
-            driver.execute_script("window.scrollTo(0, 0);")
-            time.sleep(2)
 
-            current_page = 1
-            
-            while current_page <= max_pages:
-                logger.info(f"Scraping page {current_page} of {max_pages}")
-                
-                # Scrape current page
-                page_jobs = self._scrape_page(driver, wait)
-                jobs.extend(page_jobs)
-                
-                logger.info(f"Scraped {len(page_jobs)} jobs from page {current_page}")
-                
-                # Try to navigate to next page
-                if current_page < max_pages:
-                    if not self._go_to_next_page(driver, current_page):
-                        logger.info("No more pages available")
-                        break
-                    time.sleep(3)  # Wait for next page to load
-                
-                current_page += 1
-            
+                html_block = payload.get('html', '')
+                if not html_block:
+                    logger.warning(f"No EY listing HTML for page {page}; stopping")
+                    break
+
+                page_jobs = self._parse_listing_html(html_block)
+                new_count = 0
+                for job in page_jobs:
+                    ext_id = job.get('external_id')
+                    if not ext_id or ext_id in seen_external_ids:
+                        continue
+                    seen_external_ids.add(ext_id)
+                    jobs.append(job)
+                    new_count += 1
+
+                logger.info(f"Page {page}: scraped {len(page_jobs)} jobs, {new_count} new. Total: {len(jobs)}")
+
+                if not payload.get('more_requisitions'):
+                    logger.info("EY endpoint indicates no more pages")
+                    break
+
+                if payload.get('count_on_page', 0) == 0:
+                    logger.info("EY endpoint returned zero jobs on this page")
+                    break
+
             logger.info(f"Successfully scraped {len(jobs)} total jobs from {self.company_name}")
-            
+            return jobs
+
         except Exception as e:
             logger.error(f"Error scraping {self.company_name}: {str(e)}")
-            raise
-        
-        finally:
-            if driver:
-                driver.quit()
-        
-        return jobs
-    
-    def _go_to_next_page(self, driver, current_page):
-        """Navigate to the next page"""
-        try:
-            next_page_num = current_page + 1
-            next_page_selectors = [
-                (By.XPATH, f'//a[text()="{next_page_num}"]'),
-                (By.CSS_SELECTOR, f'a[aria-label="Page {next_page_num}"]'),
-                (By.XPATH, '//a[@aria-label="Next page"]'),
-                (By.XPATH, '//button[contains(text(), "Next")]'),
-                (By.CSS_SELECTOR, 'a.pagination-next'),
-                (By.XPATH, '//button[@aria-label="Go to next page"]'),
-            ]
-            
-            for selector_type, selector_value in next_page_selectors:
-                try:
-                    next_button = driver.find_element(selector_type, selector_value)
-                    driver.execute_script("arguments[0].scrollIntoView();", next_button)
-                    time.sleep(1)
-                    next_button.click()
-                    logger.info(f"Clicked next page button using selector: {selector_value}")
-                    return True
-                except:
-                    continue
-            
-            logger.warning("Could not find next page button")
-            return False
-                
-        except Exception as e:
-            logger.error(f"Error navigating to next page: {str(e)}")
-            return False
-    
-    def _scrape_page(self, driver, wait):
-        """Scrape jobs from current page - SuccessFactors platform"""
-        jobs = []
-        time.sleep(3)  # Wait for page content
-
-        # Try SuccessFactors-specific selectors first, then generic ones
-        job_cards = []
-        selectors = [
-            (By.CSS_SELECTOR, 'tr.data-row'),
-            (By.CSS_SELECTOR, 'a.jobTitle-link'),
-            (By.CSS_SELECTOR, 'td.jobTitle'),
-            (By.CSS_SELECTOR, 'a[href*="/job/"]'),
-            (By.CSS_SELECTOR, 'div.job-card'),
-            (By.CSS_SELECTOR, 'div[class*="job"]'),
-            (By.XPATH, '//div[contains(@class, "result")]'),
-            (By.TAG_NAME, 'article'),
-        ]
-
-        for selector_type, selector_value in selectors:
-            try:
-                wait.until(EC.presence_of_element_located((selector_type, selector_value)))
-                job_cards = driver.find_elements(selector_type, selector_value)
-                if job_cards and len(job_cards) > 0:
-                    logger.info(f"Found {len(job_cards)} job cards using selector: {selector_value}")
-                    break
-            except:
-                continue
-
-        # Link-based fallback: find all job-related links on page
-        if not job_cards:
-            logger.warning("No job cards found with standard selectors, trying link-based fallback")
-            try:
-                all_links = driver.find_elements(By.TAG_NAME, 'a')
-                job_links_found = []
-                seen_hrefs = set()
-                for link in all_links:
-                    try:
-                        href = link.get_attribute('href') or ''
-                        text = link.text.strip()
-                        if not text or len(text) < 3 or href in seen_hrefs:
-                            continue
-                        if '/job/' in href or '/ey/' in href or 'jobId' in href:
-                            job_links_found.append(link)
-                            seen_hrefs.add(href)
-                    except:
-                        continue
-                if job_links_found:
-                    logger.info(f"Fallback found {len(job_links_found)} job links")
-                    job_cards = job_links_found
-            except:
-                pass
-
-        if not job_cards:
-            logger.warning("No job cards found")
             return jobs
-        
-        # Extract from job cards
-        for idx, card in enumerate(job_cards):
+
+    def _parse_listing_html(self, html_block):
+        jobs = []
+        item_pattern = re.compile(r'<li class="search-results__item">(.*?)</li>', re.DOTALL)
+
+        for block in item_pattern.findall(html_block):
             try:
-                card_text = card.text
-                if not card_text or len(card_text) < 5:
+                title_match = re.search(
+                    r'<a class="search-results__req_title"[^>]*href="([^"]+)"[^>]*>(.*?)</a>',
+                    block,
+                    flags=re.DOTALL,
+                )
+                if not title_match:
                     continue
 
-                # Get job title - handle both row elements and link elements
-                job_title = ""
-                job_link = ""
-                try:
-                    if card.tag_name == 'a':
-                        job_title = card.text.strip()
-                        job_link = card.get_attribute('href')
-                    else:
-                        # Try SuccessFactors-specific selectors
-                        title_selectors = [
-                            (By.CSS_SELECTOR, 'a.jobTitle-link'),
-                            (By.CSS_SELECTOR, 'td.jobTitle a'),
-                            (By.CSS_SELECTOR, 'a[href*="/job/"]'),
-                            (By.TAG_NAME, 'a'),
-                        ]
-                        for sel_type, sel_val in title_selectors:
-                            try:
-                                title_link = card.find_element(sel_type, sel_val)
-                                job_title = title_link.text.strip()
-                                job_link = title_link.get_attribute('href')
-                                if job_title:
-                                    break
-                            except:
-                                continue
-                        if not job_title:
-                            job_title = card_text.split('\n')[0].strip()
-                except:
-                    job_title = card_text.split('\n')[0].strip()
-                
-                if not job_title or len(job_title) < 3:
+                raw_href = html.unescape(title_match.group(1).strip())
+                raw_title = title_match.group(2)
+                title = self._strip_html(raw_title)
+                if not title:
                     continue
-                
-                # Extract Job ID
-                job_id = f"ey_{idx}"
-                if job_link:
-                    job_id = hashlib.md5(job_link.encode()).hexdigest()[:12]
-                
-                # Extract location
-                location = ""
-                city = ""
-                state = ""
-                lines = card_text.split('\n')
-                for line in lines:
-                    if any(city_name in line for city_name in ['Mumbai', 'Delhi', 'Bangalore', 'Hyderabad', 'Chennai', 'Pune', 'Kolkata', 'India']):
-                        location = line.strip()
-                        city, state, _ = self.parse_location(location)
-                        break
-                
+
+                job_id_match = re.search(r'<span>(\d+)</span>', block)
+                job_id = job_id_match.group(1) if job_id_match else hashlib.md5(raw_href.encode()).hexdigest()[:12]
+
+                apply_url = self._to_abs_url(raw_href)
+
                 job_data = {
                     'external_id': self.generate_external_id(job_id, self.company_name),
+                    'job_id': job_id,
                     'company_name': self.company_name,
-                    'title': job_title,
+                    'title': title,
                     'description': '',
-                    'location': location,
-                    'city': city,
-                    'state': state,
-                    'country': 'India',
+                    'location': '',
+                    'city': '',
+                    'state': '',
+                    'country': '',
                     'employment_type': '',
                     'department': '',
-                    'apply_url': job_link if job_link else self.url,
+                    'apply_url': apply_url,
                     'posted_date': '',
                     'job_function': '',
                     'experience_level': '',
                     'salary_range': '',
                     'remote_type': '',
-                    'status': 'active'
+                    'status': 'active',
                 }
-                
-                # Fetch full details if enabled
-                if FETCH_FULL_JOB_DETAILS and job_link:
-                    full_details = self._fetch_job_details(driver, job_link)
-                    job_data.update(full_details)
-                
+
+                details = self._fetch_job_details(apply_url)
+                if details:
+                    job_data.update(details)
+
                 jobs.append(job_data)
-                
             except Exception as e:
-                logger.error(f"Error extracting job {idx}: {str(e)}")
+                logger.debug(f"Error parsing EY listing item: {str(e)}")
                 continue
-        
+
         return jobs
-    
-    def _fetch_job_details(self, driver, job_url):
-        """Fetch full job details by visiting the job page"""
+
+    def _fetch_job_details(self, job_url):
         details = {}
-        
-        try:
-            # Open job in new tab to avoid losing search results page
-            original_window = driver.current_window_handle
-            driver.execute_script("window.open('');")
-            driver.switch_to.window(driver.window_handles[-1])
-            
-            driver.get(job_url)
-            time.sleep(3)
-            
-            # Extract description
-            try:
-                desc_selectors = [
-                    (By.CSS_SELECTOR, 'div[class*="description"]'),
-                    (By.XPATH, "//h2[contains(text(), 'Description')]/following-sibling::div"),
-                    (By.CSS_SELECTOR, 'div.job-description'),
-                ]
-                
-                for selector_type, selector_value in desc_selectors:
-                    try:
-                        desc_elem = driver.find_element(selector_type, selector_value)
-                        if desc_elem and desc_elem.text.strip():
-                            details['description'] = desc_elem.text.strip()[:2000]
-                            break
-                    except:
-                        continue
-            except:
-                pass
-            
-            # Close tab and return to search results
-            driver.close()
-            driver.switch_to.window(original_window)
-            
-        except Exception as e:
-            logger.error(f"Error fetching job details: {str(e)}")
-            # Make sure we return to original window
-            try:
-                if len(driver.window_handles) > 1:
-                    driver.close()
-                    driver.switch_to.window(driver.window_handles[0])
-            except:
-                pass
-        
+        page = self._fetch_text(job_url)
+        if not page:
+            return details
+
+        title_match = re.search(r'<h1[^>]*>(.*?)</h1>', page, flags=re.DOTALL)
+        if title_match:
+            title = self._strip_html(title_match.group(1))
+            if title:
+                details['title'] = title
+
+        desc_match = re.search(
+            r'<section class="job-details__description[^>]*>\s*<div class="inner[^>]*">(.*?)</div>\s*</section>',
+            page,
+            flags=re.DOTALL,
+        )
+        if desc_match:
+            description = self._clean_rich_text(desc_match.group(1))
+            if description:
+                details['description'] = description
+
+        spans = re.findall(r'<div class="details-top__title">(.*?)</div>', page, flags=re.DOTALL)
+        if spans:
+            top_block = spans[0]
+            top_spans = re.findall(r'<span>(.*?)</span>', top_block, flags=re.DOTALL)
+            # Usually: requisition id then location token like IND-Noida
+            if len(top_spans) >= 2:
+                loc_candidate = self._strip_html(top_spans[1])
+                if loc_candidate:
+                    details['location'] = loc_candidate
+                    city, state, country = self.parse_location(loc_candidate)
+                    details['city'] = city
+                    details['state'] = state
+                    details['country'] = country
+
+        group_pattern = re.compile(
+            r'<div class="secondary-details__group">\s*<span class="secondary-details__title">(.*?)</span>\s*<span class="secondary-details__content">(.*?)</span>\s*</div>',
+            re.DOTALL,
+        )
+        for raw_label, raw_value in group_pattern.findall(page):
+            label = self._strip_html(raw_label).lower()
+            value = self._strip_html(raw_value)
+            if not value:
+                continue
+            if 'service line' in label or 'business area' in label:
+                details['department'] = value
+            elif 'country' in label and not details.get('country'):
+                details['country'] = value
+
         return details
-    
+
     def parse_location(self, location_str):
-        """Parse location string into city, state, country"""
         if not location_str:
-            return '', '', 'India'
-        
-        parts = [p.strip() for p in location_str.split(',')]
+            return '', '', ''
+
+        cleaned = location_str.strip()
+        if cleaned.upper().startswith('IND-'):
+            city = cleaned.split('-', 1)[1].strip() if '-' in cleaned else ''
+            return city, '', 'India'
+
+        parts = [p.strip() for p in cleaned.split(',') if p.strip()]
         city = parts[0] if len(parts) > 0 else ''
         state = parts[1] if len(parts) > 1 else ''
-        
-        return city, state, 'India'
+        country = parts[-1] if len(parts) >= 3 else ''
+        return city, state, country
+
+    def _to_abs_url(self, href):
+        if href.startswith('http://') or href.startswith('https://'):
+            return href
+        if href.startswith('/'):
+            return self.base_url + href
+        return self.base_url + '/' + href
+
+    def _clean_rich_text(self, value):
+        text = html.unescape(value)
+        text = re.sub(r'<br\s*/?>', '\n', text, flags=re.IGNORECASE)
+        text = re.sub(r'</p\s*>', '\n', text, flags=re.IGNORECASE)
+        text = re.sub(r'<li[^>]*>', '\n- ', text, flags=re.IGNORECASE)
+        text = re.sub(r'<[^>]+>', ' ', text)
+        text = re.sub(r'[ \t\r\f\v]+', ' ', text)
+        text = re.sub(r'\n\s*\n+', '\n\n', text)
+        return text.strip()[:15000]
+
+    def _strip_html(self, value):
+        text = html.unescape(value)
+        text = re.sub(r'<[^>]+>', ' ', text)
+        text = re.sub(r'\s+', ' ', text)
+        return text.strip()
+
+    def _fetch_json(self, url, params=None):
+        body = self._fetch_text(url, params=params)
+        if not body:
+            return None
+        try:
+            return json.loads(body)
+        except Exception as e:
+            logger.warning(f"EY JSON parse failed: {str(e)}")
+            return None
+
+    def _fetch_text(self, url, params=None):
+        if requests is not None:
+            try:
+                response = requests.get(url, params=params, timeout=SCRAPE_TIMEOUT)
+                if response.status_code == 200:
+                    return response.text
+                logger.debug(f"requests.get returned {response.status_code} for {url}")
+            except Exception as e:
+                logger.debug(f"requests.get failed for {url}: {str(e)}")
+
+        curl_cmd = ['curl', '-s']
+        final_url = url
+        if params:
+            query = urlencode(params, doseq=True)
+            separator = '&' if '?' in final_url else '?'
+            final_url = f"{final_url}{separator}{query}"
+        curl_cmd.append(final_url)
+
+        try:
+            proc = subprocess.run(curl_cmd, capture_output=True, text=True, timeout=SCRAPE_TIMEOUT)
+            if proc.returncode == 0 and proc.stdout:
+                return proc.stdout
+        except Exception as e:
+            logger.debug(f"curl failed for {url}: {str(e)}")
+
+        return ''
