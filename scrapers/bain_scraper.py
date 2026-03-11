@@ -1,6 +1,9 @@
 import hashlib
+import html
+import json
 import re
-from pathlib import Path
+import subprocess
+from urllib.parse import urlencode
 
 try:
     import cloudscraper
@@ -12,9 +15,9 @@ try:
 except ImportError:
     requests = None
 
-
 from core.logging import setup_logger
-from config.scraper import SCRAPE_TIMEOUT, HEADLESS_MODE, FETCH_FULL_JOB_DETAILS, MAX_PAGES_TO_SCRAPE
+from config.scraper import SCRAPE_TIMEOUT, MAX_PAGES_TO_SCRAPE
+from scrapers.csv_url_resolver import get_company_url
 
 logger = setup_logger('bain_scraper')
 
@@ -22,76 +25,61 @@ logger = setup_logger('bain_scraper')
 class BainScraper:
     def __init__(self):
         self.company_name = "Bain & Company"
-        # Original URL (Cloudflare-blocked, kept for reference)
-        self.url = "https://www.bain.com/careers/find-a-role/?filters=offices(275,276,274)|"
+        default_url = "https://www.bain.com/careers/find-a-role/?filters=offices(275,276,274)|"
+        self.url = get_company_url(self.company_name, default_url)
         # Internal API endpoint (requires Cloudflare bypass via cloudscraper)
         self._api_url = 'https://www.bain.com/en/api/jobsearch/keyword/get'
         self._job_detail_base = 'https://www.bain.com/careers/find-a-role/position/'
         # Office filter IDs: 275=Mumbai, 276=New Delhi, 274=Bengaluru
         self._office_ids = '275,276,274'
+        self._ignore_location_tokens = {
+            'americas | apac | emea',
+            'americas|apac|emea',
+        }
 
     def generate_external_id(self, job_id, company):
         unique_string = f"{company}_{job_id}"
         return hashlib.md5(unique_string.encode()).hexdigest()
 
     def scrape(self, max_pages=MAX_PAGES_TO_SCRAPE):
-        """Scrape Bain India jobs via internal API with cloudscraper for Cloudflare bypass."""
+        """Scrape Bain India jobs via internal API."""
         all_jobs = []
         seen_ids = set()
 
         try:
-            logger.info(f"Starting {self.company_name} scraping via API with Cloudflare bypass")
+            logger.info(f"Starting {self.company_name} scraping via API")
 
-            if cloudscraper is None:
-                logger.error("cloudscraper library not available. Install with: pip install cloudscraper")
-                return all_jobs
-
-            # Create cloudscraper session to bypass Cloudflare
-            scraper = cloudscraper.create_scraper(
-                browser={'browser': 'chrome', 'platform': 'darwin', 'mobile': False}
-            )
-
-            # First visit the careers page to get Cloudflare cookies
-            logger.info("Fetching Cloudflare cookies from careers page...")
-            try:
-                cookie_response = scraper.get(
-                    'https://www.bain.com/careers/find-a-role/',
-                    timeout=SCRAPE_TIMEOUT
+            scraper = None
+            if cloudscraper is not None:
+                scraper = cloudscraper.create_scraper(
+                    browser={'browser': 'chrome', 'platform': 'darwin', 'mobile': False}
                 )
-                if cookie_response.status_code != 200:
-                    logger.warning(f"Cookie page returned {cookie_response.status_code}")
-            except Exception as e:
-                logger.warning(f"Cookie fetch failed: {str(e)}")
+            elif requests is not None:
+                scraper = requests.Session()
+                scraper.headers.update({
+                    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+                })
+            else:
+                logger.warning("Neither cloudscraper nor requests available; using curl fallback only")
 
             # Now query the job search API
             page = 1
-            results_per_page = 50  # Request more per page
+            results_per_page = 10
 
             while page <= max_pages:
+                start_offset = (page - 1) * results_per_page
                 params = {
                     'keyword': '',
-                    'page': page,
+                    'start': start_offset,
                     'resultsPerPage': results_per_page,
                     'offices': self._office_ids,
                 }
 
                 try:
-                    response = scraper.get(
-                        self._api_url,
-                        params=params,
-                        headers={
-                            'Accept': 'application/json, text/plain, */*',
-                            'X-Requested-With': 'XMLHttpRequest',
-                            'Referer': self.url,
-                        },
-                        timeout=SCRAPE_TIMEOUT
-                    )
-
-                    if response.status_code != 200:
-                        logger.warning(f"API returned status {response.status_code} on page {page}")
+                    data = self._fetch_api_page(params=params, scraper=scraper)
+                    if not data:
+                        logger.warning(f"API returned empty/unreadable data on page {page}")
                         break
-
-                    data = response.json()
 
                     if not isinstance(data, dict):
                         logger.error(f"Unexpected API response type: {type(data).__name__}")
@@ -101,7 +89,9 @@ class BainScraper:
                     total_results = data.get('totalResults', 0)
 
                     if page == 1:
-                        logger.info(f"API reports {total_results} total results, got {len(results)} on first page")
+                        logger.info(
+                            f"API reports {total_results} total results, got {len(results)} on first page (start={start_offset})"
+                        )
 
                     if not results:
                         logger.info(f"No results on page {page}, stopping")
@@ -115,7 +105,9 @@ class BainScraper:
                             seen_ids.add(job_data['external_id'])
                             new_count += 1
 
-                    logger.info(f"Page {page}: {len(results)} results, {new_count} new. Total: {len(all_jobs)}")
+                    logger.info(
+                        f"Page {page} (start={start_offset}): {len(results)} results, {new_count} new. Total: {len(all_jobs)}"
+                    )
 
                     # If no new jobs were found, pagination isn't working or we got all results
                     if new_count == 0:
@@ -162,18 +154,16 @@ class BainScraper:
             locations_raw = job_raw.get('Location', [])
             location_str = ''
             if isinstance(locations_raw, list):
-                # Filter for India offices
-                india_cities = ['Mumbai', 'New Delhi', 'Bengaluru', 'Bangalore', 'Delhi',
-                                'Gurgaon', 'Gurugram', 'Hyderabad', 'Chennai', 'Pune', 'Kolkata']
-                india_offices = [loc.strip() for loc in locations_raw
-                                 if any(city.lower() in loc.strip().lower() for city in india_cities)]
-                if india_offices:
-                    location_str = ', '.join(india_offices)
-                else:
-                    # If no India-specific offices, use all locations
-                    location_str = ', '.join(loc.strip() for loc in locations_raw[:5])
-                    if len(locations_raw) > 5:
-                        location_str += f' + {len(locations_raw) - 5} more offices'
+                cleaned_locations = []
+                for loc in locations_raw:
+                    clean_loc = str(loc).strip()
+                    if not clean_loc:
+                        continue
+                    if clean_loc.lower() in self._ignore_location_tokens:
+                        continue
+                    if clean_loc not in cleaned_locations:
+                        cleaned_locations.append(clean_loc)
+                location_str = ', '.join(cleaned_locations[:10])
             elif isinstance(locations_raw, str):
                 location_str = locations_raw.strip()
 
@@ -196,13 +186,14 @@ class BainScraper:
             if description:
                 description = re.sub(r'<[^>]+>', '', description).strip()
                 description = re.sub(r'\s+', ' ', description)
-                description = description[:3000]
+                description = description[:15000]
 
             # Parse location
             location_parts = self.parse_location(location_str)
 
             job_data = {
                 'external_id': self.generate_external_id(job_id if job_id else title, self.company_name),
+                'job_id': job_id,
                 'company_name': self.company_name,
                 'title': title,
                 'apply_url': apply_url,
@@ -220,6 +211,20 @@ class BainScraper:
                 'remote_type': '',
                 'status': 'active'
             }
+
+            if apply_url and apply_url != self.url:
+                try:
+                    details = self._fetch_job_details(apply_url)
+                    if details:
+                        detail_location = (details.get('location') or '').lower()
+                        if any(token in detail_location for token in self._ignore_location_tokens):
+                            details.pop('location', None)
+                            details.pop('city', None)
+                            details.pop('state', None)
+                            details.pop('country', None)
+                        job_data.update(details)
+                except Exception as e:
+                    logger.warning(f"Could not fetch Bain detail page for job {job_id or title}: {str(e)}")
 
             return job_data
 
@@ -240,31 +245,164 @@ class BainScraper:
 
         # Clean up location string
         location_str = location_str.strip()
-        location_str = re.sub(r'\+\s*\d+\s*(?:more\s+)?offices?', '', location_str).strip().rstrip(',').strip()
-
-        # Check for India cities
-        india_cities = ['Mumbai', 'New Delhi', 'Bengaluru', 'Bangalore', 'Delhi',
-                        'Gurgaon', 'Gurugram', 'Hyderabad', 'Chennai', 'Pune', 'Kolkata']
-        found_cities = [city for city in india_cities if city.lower() in location_str.lower()]
-
-        if found_cities:
-            result['city'] = ', '.join(found_cities)
-            result['country'] = 'India'
-        else:
-            # Try to parse as comma-separated
-            parts = [p.strip() for p in location_str.split(',') if p.strip()]
-            if parts:
-                result['city'] = parts[0]
-            if len(parts) >= 2:
-                result['state'] = parts[1]
-            if len(parts) >= 3:
-                result['country'] = parts[2]
-
-        # Default to India for our filtered results
-        if not result['country'] and any(city.lower() in location_str.lower() for city in india_cities):
+        parts = [p.strip() for p in location_str.split(',') if p.strip()]
+        if len(parts) > 3:
+            return result
+        if parts:
+            result['city'] = parts[0]
+        if len(parts) >= 2:
+            result['state'] = parts[1]
+        if len(parts) >= 3:
+            result['country'] = parts[-1]
+        if not result['country'] and re.search(r'\b(India|IND)\b', location_str, flags=re.IGNORECASE):
             result['country'] = 'India'
 
         return result
+
+    def _fetch_job_details(self, job_url):
+        """Fetch full details from Bain job detail page."""
+        details = {}
+        try:
+            page = self._fetch_text(url=job_url)
+            if not page:
+                return details
+
+            script_matches = re.findall(
+                r'<script[^>]*type=["\']application/ld\+json["\'][^>]*>(.*?)</script>',
+                page,
+                flags=re.IGNORECASE | re.DOTALL
+            )
+            for script_content in script_matches:
+                try:
+                    payload = json.loads(script_content.strip())
+                except Exception:
+                    continue
+
+                blocks = payload if isinstance(payload, list) else [payload]
+                for block in blocks:
+                    if not isinstance(block, dict):
+                        continue
+                    raw_desc = block.get('description')
+                    if raw_desc and not details.get('description'):
+                        details['description'] = self._clean_text(raw_desc)
+                    job_loc = block.get('jobLocation')
+                    if job_loc and not details.get('location'):
+                        loc = self._extract_ld_json_location(job_loc)
+                        if loc:
+                            details['location'] = loc
+                            details.update(self.parse_location(loc))
+                    if details.get('description') and details.get('location'):
+                        break
+
+            if not details.get('description'):
+                fallback_patterns = [
+                    r'<div[^>]+class=["\'][^"\']*job-description[^"\']*["\'][^>]*>(.*?)</div>',
+                    r'<section[^>]+class=["\'][^"\']*job-description[^"\']*["\'][^>]*>(.*?)</section>',
+                ]
+                for pattern in fallback_patterns:
+                    match = re.search(pattern, page, flags=re.IGNORECASE | re.DOTALL)
+                    if match:
+                        cleaned = self._clean_text(match.group(1))
+                        if cleaned:
+                            details['description'] = cleaned
+                            break
+
+        except Exception as e:
+            logger.debug(f"Error in Bain detail page scrape: {str(e)}")
+
+        return details
+
+    def _fetch_api_page(self, params, scraper=None):
+        headers = {
+            'Accept': 'application/json, text/plain, */*',
+            'X-Requested-With': 'XMLHttpRequest',
+            'Referer': self.url,
+            'User-Agent': 'Mozilla/5.0',
+        }
+
+        if scraper is not None:
+            try:
+                response = scraper.get(
+                    self._api_url,
+                    params=params,
+                    headers=headers,
+                    timeout=SCRAPE_TIMEOUT
+                )
+                if response.status_code == 200:
+                    return response.json()
+                logger.warning(f"Bain API non-200 via python client: {response.status_code}; trying curl fallback")
+            except Exception as e:
+                logger.warning(f"Bain API python client failed: {str(e)}; trying curl fallback")
+
+        text = self._fetch_text(url=self._api_url, headers=headers, params=params)
+        if not text:
+            return None
+        try:
+            return json.loads(text)
+        except Exception as e:
+            logger.warning(f"Bain API curl JSON parse failed: {str(e)}")
+            return None
+
+    def _fetch_text(self, url, headers=None, params=None):
+        headers = headers or {}
+
+        if requests is not None:
+            try:
+                response = requests.get(url, headers=headers, params=params, timeout=SCRAPE_TIMEOUT)
+                if response.status_code == 200:
+                    return response.text
+                logger.debug(f"requests.get returned {response.status_code} for {url}; trying curl")
+            except Exception as e:
+                logger.debug(f"requests.get failed for {url}: {str(e)}")
+
+        curl_cmd = ['curl', '-s']
+        for key, value in headers.items():
+            curl_cmd.extend(['-H', f'{key}: {value}'])
+
+        final_url = url
+        if params:
+            query = urlencode(params, doseq=True)
+            separator = '&' if '?' in url else '?'
+            final_url = f"{url}{separator}{query}"
+
+        curl_cmd.append(final_url)
+
+        try:
+            proc = subprocess.run(curl_cmd, capture_output=True, text=True, timeout=SCRAPE_TIMEOUT)
+            if proc.returncode == 0 and proc.stdout:
+                return proc.stdout
+            logger.debug(f"curl failed for {url}: rc={proc.returncode}, stderr={proc.stderr[:300]}")
+        except Exception as e:
+            logger.debug(f"curl execution failed for {url}: {str(e)}")
+
+        return ''
+
+    def _extract_ld_json_location(self, job_location):
+        locations = []
+        location_entries = job_location if isinstance(job_location, list) else [job_location]
+        for entry in location_entries:
+            if not isinstance(entry, dict):
+                continue
+            address = entry.get('address', {})
+            if isinstance(address, dict):
+                city = (address.get('addressLocality') or '').strip()
+                state = (address.get('addressRegion') or '').strip()
+                country = (address.get('addressCountry') or '').strip()
+                pieces = [p for p in [city, state, country] if p]
+                if pieces:
+                    locations.append(', '.join(pieces))
+        return ', '.join(locations)
+
+    def _clean_text(self, value):
+        text = value if isinstance(value, str) else str(value)
+        text = html.unescape(text)
+        text = re.sub(r'<br\s*/?>', '\n', text, flags=re.IGNORECASE)
+        text = re.sub(r'</p\s*>', '\n', text, flags=re.IGNORECASE)
+        text = re.sub(r'<li[^>]*>', '\n- ', text, flags=re.IGNORECASE)
+        text = re.sub(r'<[^>]+>', ' ', text)
+        text = re.sub(r'[ \t\r\f\v]+', ' ', text)
+        text = re.sub(r'\n\s*\n+', '\n\n', text)
+        return text.strip()[:15000]
 
 
 if __name__ == "__main__":

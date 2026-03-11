@@ -4,25 +4,26 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.common.action_chains import ActionChains
 import hashlib
+import html
+import json
+import re
 import time
-from datetime import datetime
-from pathlib import Path
 import os
-import stat
+from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 
 from core.logging import setup_logger
-from config.scraper import SCRAPE_TIMEOUT, HEADLESS_MODE, FETCH_FULL_JOB_DETAILS, MAX_PAGES_TO_SCRAPE
+from config.scraper import SCRAPE_TIMEOUT, HEADLESS_MODE, MAX_PAGES_TO_SCRAPE
+from scrapers.csv_url_resolver import get_company_url
 
 logger = setup_logger('bcg_scraper')
 
 class BCGScraper:
     def __init__(self):
         self.company_name = "Boston Consulting Group"
-        # Filter for India locations
-        self.url = "https://careers.bcg.com/global/en/search-results?rk=page-targeted-jobs-page54-prod-ds-Nusa6pGk&sortBy=Most%20relevant"
+        default_url = "https://careers.bcg.com/global/en/search-results?rk=page-targeted-jobs-page54-prod-ds-Nusa6pGk&sortBy=Most%20relevant"
+        self.url = get_company_url(self.company_name, default_url)
 
     def setup_driver(self):
         """Set up Chrome driver with options"""
@@ -63,39 +64,65 @@ class BCGScraper:
         """Main scraping method"""
         driver = None
         all_jobs = []
+        seen_external_ids = set()
 
         try:
             driver = self.setup_driver()
             logger.info(f"Starting {self.company_name} scraping from {self.url}")
 
             driver.get(self.url)
+            for current_page in range(1, max_pages + 1):
+                logger.info(f"Scraping page {current_page} of {max_pages}")
 
-            # Smart wait for Phenom job listings instead of blind sleep
-            try:
-                WebDriverWait(driver, 15).until(EC.presence_of_element_located((
-                    By.CSS_SELECTOR, "div.job-title, li[data-ph-at-id='job-listing'], a.apply-btn, div.phs-facet-results"
-                )))
-                logger.info("Job listings loaded")
-            except Exception as e:
-                logger.warning(f"Timeout waiting for Phenom job listings: {str(e)}")
-                time.sleep(5)
+                # Smart wait for Phenom job listings instead of blind sleep
+                try:
+                    WebDriverWait(driver, 15).until(EC.presence_of_element_located((
+                        By.CSS_SELECTOR, "div.job-title, li[data-ph-at-id='job-listing'], a.apply-btn, div.phs-facet-results"
+                    )))
+                except Exception as e:
+                    logger.warning(f"Timeout waiting for Phenom job listings: {str(e)}")
+                    time.sleep(5)
 
-            # Quick scroll to trigger lazy loading
-            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(1)
-            driver.execute_script("window.scrollTo(0, 0);")
-            time.sleep(0.5)
+                # Quick scroll to trigger lazy loading
+                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                time.sleep(1)
+                driver.execute_script("window.scrollTo(0, 0);")
+                time.sleep(0.5)
 
-            # Scrape current page
-            wait = WebDriverWait(driver, 5)
-            jobs = self._scrape_page(driver, wait)
-            all_jobs.extend(jobs)
+                wait = WebDriverWait(driver, 5)
+                page_jobs = self._scrape_page(driver, wait)
 
-            # Phenom API fallback if DOM scraping returned 0 jobs
-            if not all_jobs:
-                logger.info("DOM scraping returned 0 jobs, trying Phenom API approach")
-                api_jobs = self._scrape_via_phenom_api(driver)
-                all_jobs.extend(api_jobs)
+                unique_page_jobs = []
+                for job in page_jobs:
+                    ext_id = job.get('external_id')
+                    if not ext_id or ext_id in seen_external_ids:
+                        continue
+                    seen_external_ids.add(ext_id)
+                    unique_page_jobs.append(job)
+                    all_jobs.append(job)
+
+                logger.info(
+                    f"Page {current_page}: scraped {len(page_jobs)} jobs, {len(unique_page_jobs)} unique, total {len(all_jobs)}"
+                )
+
+                # Phenom API fallback only on first page when DOM extraction fails
+                if current_page == 1 and not all_jobs:
+                    logger.info("DOM scraping returned 0 jobs, trying Phenom API approach")
+                    api_jobs = self._scrape_via_phenom_api(driver)
+                    for job in api_jobs:
+                        ext_id = job.get('external_id')
+                        if ext_id and ext_id not in seen_external_ids:
+                            seen_external_ids.add(ext_id)
+                            all_jobs.append(job)
+                    if all_jobs:
+                        break
+
+                if current_page >= max_pages:
+                    break
+
+                if not self._go_to_next_page(driver, current_page):
+                    logger.info("No more pages available")
+                    break
 
             logger.info(f"Total jobs scraped: {len(all_jobs)}")
             return all_jobs
@@ -107,6 +134,25 @@ class BCGScraper:
             if driver:
                 driver.quit()
                 logger.info("Browser closed")
+
+    def _go_to_next_page(self, driver, current_page):
+        """Navigate BCG search results by incrementing `from` offset."""
+        try:
+            next_offset = current_page * 10
+            current_url = driver.current_url
+            parsed = urlparse(current_url)
+            query = parse_qs(parsed.query, keep_blank_values=True)
+            query['from'] = [str(next_offset)]
+            query['s'] = [str(current_page)]
+            next_query = urlencode(query, doseq=True)
+            next_url = urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, next_query, parsed.fragment))
+
+            driver.get(next_url)
+            logger.info(f"Navigated to next page URL: {next_url}")
+            return True
+        except Exception as e:
+            logger.error(f"Error navigating to next page: {str(e)}")
+            return False
 
     def _scrape_page(self, driver, wait):
         """Scrape all jobs from current page"""
@@ -125,58 +171,31 @@ class BCGScraper:
             js_jobs = driver.execute_script("""
                 var results = [];
 
-                // Strategy A: Find job titles via div.job-title
-                var jobTitles = document.querySelectorAll('div.job-title');
-                for (var i = 0; i < jobTitles.length; i++) {
-                    var titleDiv = jobTitles[i];
-                    var titleSpan = titleDiv.querySelector('span');
-                    var title = titleSpan ? titleSpan.innerText.trim() : titleDiv.innerText.trim();
+                // Strategy A: Primary extraction via job links with metadata attrs.
+                var jobLinks = document.querySelectorAll("a[data-ph-at-id='job-link']");
+                for (var i = 0; i < jobLinks.length; i++) {
+                    var link = jobLinks[i];
+                    var title = (link.getAttribute('data-ph-at-job-title-text') || link.innerText || '').trim();
                     if (!title) continue;
-
-                    // Find the closest parent that contains an apply link
-                    var parent = titleDiv.closest('li') || titleDiv.closest('div.phs-facet-results') || titleDiv.parentElement;
-                    var applyLink = null;
-                    var url = '';
-
-                    // Look for apply button near this job title
+                    var parent = link.closest("[data-ph-at-id='jobs-list-item']") || link.closest('li') || link.parentElement;
+                    var summary = '';
                     if (parent) {
-                        applyLink = parent.querySelector('a.apply-btn') || parent.querySelector('a[href*="/job/"]') || parent.querySelector('a[href*="jobId"]');
+                        var descEl = parent.querySelector("[data-ph-at-id='job-desc'], [data-ph-at-id='job-description'], .job-description, p");
+                        if (descEl) summary = descEl.innerText.trim();
                     }
-                    // Also check siblings
-                    if (!applyLink) {
-                        var sibling = titleDiv.nextElementSibling;
-                        while (sibling) {
-                            if (sibling.tagName === 'A') { applyLink = sibling; break; }
-                            var innerA = sibling.querySelector('a.apply-btn') || sibling.querySelector('a[href*="/job/"]');
-                            if (innerA) { applyLink = innerA; break; }
-                            sibling = sibling.nextElementSibling;
-                        }
-                    }
-
-                    if (applyLink) {
-                        url = applyLink.href || '';
-                    }
-
-                    // Extract location from nearby elements
-                    var location = '';
-                    if (parent) {
-                        var locEl = parent.querySelector('[class*="location"], [data-ph-at-job-location-text]');
-                        if (locEl) location = locEl.innerText.trim();
-                    }
-
-                    // Extract category/department
-                    var department = '';
-                    if (parent) {
-                        var catEl = parent.querySelector('[class*="category"], [data-ph-at-job-category-text]');
-                        if (catEl) department = catEl.innerText.trim();
-                    }
-
-                    if (title.length > 2) {
-                        results.push({title: title, url: url, location: location, department: department});
-                    }
+                    results.push({
+                        title: title,
+                        url: link.href || '',
+                        job_id: (link.getAttribute('data-ph-at-job-id-text') || '').trim(),
+                        location: (link.getAttribute('data-ph-at-job-location-text') || '').trim(),
+                        department: (link.getAttribute('data-ph-at-job-category-text') || '').trim(),
+                        employment_type: (link.getAttribute('data-ph-at-job-type-text') || '').trim(),
+                        posted_date: (link.getAttribute('data-ph-at-job-post-date-text') || '').trim(),
+                        summary: summary
+                    });
                 }
 
-                // Strategy B: If no results from job-title divs, try li[data-ph-at-id='job-listing']
+                // Strategy B: If no results from job links, try li[data-ph-at-id='job-listing']
                 if (results.length === 0) {
                     var listings = document.querySelectorAll('li[data-ph-at-id="job-listing"]');
                     for (var j = 0; j < listings.length; j++) {
@@ -190,7 +209,7 @@ class BCGScraper:
                         var catEl2 = li.querySelector('[class*="category"], [data-ph-at-job-category-text]');
                         var cat2 = catEl2 ? catEl2.innerText.trim() : '';
                         if (title2.length > 2) {
-                            results.push({title: title2, url: url2, location: loc2, department: cat2});
+                            results.push({title: title2, url: url2, location: loc2, department: cat2, job_id: '', employment_type: '', posted_date: '', summary: ''});
                         }
                     }
                 }
@@ -206,7 +225,7 @@ class BCGScraper:
                         title3 = title3.replace(/^Apply\\s*(for)?\\s*/i, '').trim();
                         var url3 = btn.href || '';
                         if (title3.length > 2) {
-                            results.push({title: title3, url: url3, location: '', department: ''});
+                            results.push({title: title3, url: url3, location: '', department: '', job_id: '', employment_type: '', posted_date: '', summary: ''});
                         }
                     }
                 }
@@ -219,9 +238,10 @@ class BCGScraper:
                 seen_titles = set()
                 for jdx, jdata in enumerate(js_jobs):
                     title = jdata.get('title', '').strip()
-                    url = jdata.get('url', '').strip()
+                    url = html.unescape(jdata.get('url', '').strip())
                     location = jdata.get('location', '').strip()
                     department = jdata.get('department', '').strip()
+                    summary = jdata.get('summary', '').strip()
 
                     if not title or len(title) < 3 or title in seen_titles:
                         continue
@@ -230,25 +250,36 @@ class BCGScraper:
                     if not url:
                         url = self.url
 
-                    # Extract job ID from URL
-                    job_id = ''
-                    if 'jobId=' in url:
-                        job_id = url.split('jobId=')[-1].split('&')[0]
-                    elif '/job/' in url:
-                        job_id = url.split('/job/')[-1].split('/')[0].split('?')[0]
+                    # Extract job ID
+                    job_id = (jdata.get('job_id') or '').strip()
+                    if not job_id:
+                        if 'jobId=' in url:
+                            job_id = url.split('jobId=')[-1].split('&')[0]
+                        elif '/job/' in url:
+                            job_id = url.split('/job/')[-1].split('/')[0].split('?')[0]
+                        elif '/jobs/' in url:
+                            job_id = url.split('/jobs/')[-1].split('/')[0].split('?')[0]
+                        elif 'post_onboarding_pid=' in url:
+                            job_id = url.split('post_onboarding_pid=')[-1].split('&')[0]
                     if not job_id:
                         job_id = f"bcg_{jdx}_{hashlib.md5((title + url).encode()).hexdigest()[:8]}"
 
+                    if location == title:
+                        location = ''
+                    if department == title:
+                        department = ''
+
                     job_data = {
                         'external_id': self.generate_external_id(job_id, self.company_name),
+                        'job_id': job_id,
                         'company_name': self.company_name,
                         'title': title,
                         'apply_url': url,
                         'location': location,
                         'department': department,
-                        'employment_type': '',
-                        'description': '',
-                        'posted_date': '',
+                        'employment_type': jdata.get('employment_type', '').strip(),
+                        'description': summary,
+                        'posted_date': jdata.get('posted_date', '').strip(),
                         'city': '',
                         'state': '',
                         'country': '',
@@ -260,6 +291,14 @@ class BCGScraper:
                     }
                     location_parts = self.parse_location(location)
                     job_data.update(location_parts)
+
+                    if url and url != self.url:
+                        try:
+                            details = self._fetch_job_details(driver, url)
+                            if details:
+                                job_data.update(details)
+                        except Exception as e:
+                            logger.warning(f"Could not fetch details for {title}: {str(e)}")
 
                     if job_data['external_id'] not in scraped_ids:
                         jobs.append(job_data)
@@ -325,6 +364,7 @@ class BCGScraper:
                         job_id = hashlib.md5(url.encode()).hexdigest()[:12]
                         job_data = {
                             'external_id': self.generate_external_id(job_id, self.company_name),
+                            'job_id': job_id,
                             'company_name': self.company_name,
                             'title': title,
                             'apply_url': url,
@@ -460,6 +500,10 @@ class BCGScraper:
                 job_id = job_url.split('jobId=')[-1].split('&')[0]
             elif '/job/' in job_url:
                 job_id = job_url.split('/job/')[-1].split('/')[0].split('?')[0]
+            elif '/jobs/' in job_url:
+                job_id = job_url.split('/jobs/')[-1].split('/')[0].split('?')[0]
+            elif 'post_onboarding_pid=' in job_url:
+                job_id = job_url.split('post_onboarding_pid=')[-1].split('&')[0]
             else:
                 job_id = f"bcg_{idx}_{hashlib.md5((title + job_url).encode()).hexdigest()[:8]}"
 
@@ -515,6 +559,7 @@ class BCGScraper:
             # Build job data
             job_data = {
                 'external_id': self.generate_external_id(job_id, self.company_name),
+                'job_id': job_id,
                 'company_name': self.company_name,
                 'title': title,
                 'apply_url': job_url,
@@ -533,8 +578,8 @@ class BCGScraper:
                 'status': 'active'
             }
 
-            # Fetch full details if enabled
-            if FETCH_FULL_JOB_DETAILS and job_url and job_url != self.url:
+            # Fetch full details from job detail page
+            if job_url and job_url != self.url:
                 try:
                     logger.info(f"Fetching details for: {title}")
                     details = self._fetch_job_details(driver, job_url)
@@ -568,94 +613,145 @@ class BCGScraper:
             driver.execute_script("window.open('');")
             driver.switch_to.window(driver.window_handles[-1])
 
-            driver.get(job_url)
+            driver.get(html.unescape(job_url))
             detail_wait = WebDriverWait(driver, 5)
-            time.sleep(3)
+            time.sleep(2)
+
+            page_source = driver.page_source
+
+            # Parse job data from JSON-LD first (most reliable and complete).
+            ld_json_matches = re.findall(
+                r'<script[^>]*type=["\']application/ld\+json["\'][^>]*>(.*?)</script>',
+                page_source,
+                flags=re.IGNORECASE | re.DOTALL
+            )
+            for script_content in ld_json_matches:
+                payload = None
+                try:
+                    payload = json.loads(script_content.strip())
+                except Exception:
+                    continue
+                entries = payload if isinstance(payload, list) else [payload]
+                for item in entries:
+                    if not isinstance(item, dict):
+                        continue
+                    if item.get('@type') != 'JobPosting':
+                        continue
+
+                    raw_desc = item.get('description')
+                    if raw_desc:
+                        details['description'] = self._clean_text(raw_desc)
+
+                    locations = item.get('jobLocation')
+                    if locations:
+                        location_text = self._extract_ld_json_location(locations)
+                        if location_text:
+                            details['location'] = location_text
+                            details.update(self.parse_location(location_text))
+
+                    category = item.get('occupationalCategory')
+                    if category and not details.get('department'):
+                        details['department'] = str(category).strip()
+
+                    employment_type = item.get('employmentType')
+                    if isinstance(employment_type, list):
+                        employment_type = ', '.join(str(x).strip() for x in employment_type if str(x).strip())
+                    if employment_type and not details.get('employment_type'):
+                        details['employment_type'] = str(employment_type).strip()
+
+                    posted = item.get('datePosted')
+                    if posted and not details.get('posted_date'):
+                        details['posted_date'] = str(posted).strip()
 
             # Description
-            description_selectors = [
-                "[data-ph-at-id='jobDescription']",
-                "[data-ph-at-id='jobdescription']",
-                ".job-description",
-                "[class*='job-description']",
-                "[class*='description']"
-            ]
-            for selector in description_selectors:
-                try:
-                    desc_elem = detail_wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, selector)))
-                    text = desc_elem.text.strip()
-                    if text:
-                        details['description'] = text[:3000]
-                        break
-                except Exception:
-                    continue
+            if not details['description']:
+                description_selectors = [
+                    "[data-ph-at-id='jobDescription']",
+                    "[data-ph-at-id='jobdescription']",
+                    ".job-description",
+                    "[class*='job-description']",
+                    "[class*='description']"
+                ]
+                for selector in description_selectors:
+                    try:
+                        desc_elem = detail_wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, selector)))
+                        text = desc_elem.text.strip()
+                        if text:
+                            details['description'] = text[:15000]
+                            break
+                    except Exception:
+                        continue
 
             # Location
-            location_selectors = [
-                "[data-ph-at-id='jobLocation']",
-                "[data-ph-at-id='jobLocationText']",
-                ".job-location",
-                "[class*='location']"
-            ]
-            for selector in location_selectors:
-                try:
-                    loc_elem = driver.find_element(By.CSS_SELECTOR, selector)
-                    text = loc_elem.text.strip()
-                    if text:
-                        details['location'] = text
-                        break
-                except Exception:
-                    continue
+            if not details['location']:
+                location_selectors = [
+                    "[data-ph-at-id='jobLocation']",
+                    "[data-ph-at-id='jobLocationText']",
+                    ".job-location",
+                    "[class*='location']"
+                ]
+                for selector in location_selectors:
+                    try:
+                        loc_elem = driver.find_element(By.CSS_SELECTOR, selector)
+                        text = loc_elem.text.strip()
+                        if text:
+                            details['location'] = text
+                            break
+                    except Exception:
+                        continue
 
             # Department / Category
-            department_selectors = [
-                "[data-ph-at-id='jobCategory']",
-                "[data-ph-at-id='jobCategoryText']",
-                ".job-category",
-                "[class*='category']"
-            ]
-            for selector in department_selectors:
-                try:
-                    dept_elem = driver.find_element(By.CSS_SELECTOR, selector)
-                    text = dept_elem.text.strip()
-                    if text:
-                        details['department'] = text
-                        break
-                except Exception:
-                    continue
+            if not details['department']:
+                department_selectors = [
+                    "[data-ph-at-id='jobCategory']",
+                    "[data-ph-at-id='jobCategoryText']",
+                    ".job-category",
+                    "[class*='category']"
+                ]
+                for selector in department_selectors:
+                    try:
+                        dept_elem = driver.find_element(By.CSS_SELECTOR, selector)
+                        text = dept_elem.text.strip()
+                        if text:
+                            details['department'] = text
+                            break
+                    except Exception:
+                        continue
 
             # Employment type
-            employment_selectors = [
-                "[data-ph-at-id='jobType']",
-                "[data-ph-at-id='jobTypeText']",
-                ".job-type",
-                "[class*='job-type']"
-            ]
-            for selector in employment_selectors:
-                try:
-                    type_elem = driver.find_element(By.CSS_SELECTOR, selector)
-                    text = type_elem.text.strip()
-                    if text:
-                        details['employment_type'] = text
-                        break
-                except Exception:
-                    continue
+            if not details['employment_type']:
+                employment_selectors = [
+                    "[data-ph-at-id='jobType']",
+                    "[data-ph-at-id='jobTypeText']",
+                    ".job-type",
+                    "[class*='job-type']"
+                ]
+                for selector in employment_selectors:
+                    try:
+                        type_elem = driver.find_element(By.CSS_SELECTOR, selector)
+                        text = type_elem.text.strip()
+                        if text:
+                            details['employment_type'] = text
+                            break
+                    except Exception:
+                        continue
 
             # Posted date
-            posted_selectors = [
-                "[data-ph-at-id='jobPostedDate']",
-                "[class*='posted']",
-                "[class*='date']"
-            ]
-            for selector in posted_selectors:
-                try:
-                    date_elem = driver.find_element(By.CSS_SELECTOR, selector)
-                    text = date_elem.text.strip()
-                    if text and len(text) < 50:
-                        details['posted_date'] = text
-                        break
-                except Exception:
-                    continue
+            if not details['posted_date']:
+                posted_selectors = [
+                    "[data-ph-at-id='jobPostedDate']",
+                    "[class*='posted']",
+                    "[class*='date']"
+                ]
+                for selector in posted_selectors:
+                    try:
+                        date_elem = driver.find_element(By.CSS_SELECTOR, selector)
+                        text = date_elem.text.strip()
+                        if text and len(text) < 50:
+                            details['posted_date'] = text
+                            break
+                    except Exception:
+                        continue
 
             # Fallback: get main content text if description is still empty
             if not details['description']:
@@ -663,7 +759,7 @@ class BCGScraper:
                     main_content = driver.find_element(By.CSS_SELECTOR, "main, [role='main']")
                     full_text = main_content.text.strip()
                     if full_text:
-                        details['description'] = full_text[:3000]
+                        details['description'] = full_text[:15000]
                 except Exception:
                     pass
 
@@ -738,6 +834,7 @@ class BCGScraper:
 
                                     jobs.append({
                                         'external_id': self.generate_external_id(str(job_id), self.company_name),
+                                        'job_id': str(job_id),
                                         'company_name': self.company_name,
                                         'title': title,
                                         'apply_url': url if url else self.url,
@@ -787,6 +884,7 @@ class BCGScraper:
                         job_id = f"bcg_src_{idx}_{hashlib.md5(title.encode()).hexdigest()[:8]}"
                         jobs.append({
                             'external_id': self.generate_external_id(job_id, self.company_name),
+                            'job_id': job_id,
                             'company_name': self.company_name,
                             'title': title,
                             'apply_url': url if url else self.url,
@@ -824,9 +922,7 @@ class BCGScraper:
         # "Mumbai, India"
         # "Available in 5 locations"
 
-        if 'Available in' in location_str or 'location' in location_str.lower():
-            # Multi-location job
-            result['country'] = 'India'  # Since we're filtering for India
+        if 'Available in' in location_str:
             return result
 
         # Try to parse comma-separated location
@@ -848,6 +944,34 @@ class BCGScraper:
             result['country'] = 'India'
 
         return result
+
+    def _extract_ld_json_location(self, job_location):
+        locations = []
+        entries = job_location if isinstance(job_location, list) else [job_location]
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            address = entry.get('address', {})
+            if not isinstance(address, dict):
+                continue
+            city = (address.get('addressLocality') or '').strip()
+            state = (address.get('addressRegion') or '').strip()
+            country = (address.get('addressCountry') or '').strip()
+            pieces = [x for x in [city, state, country] if x]
+            if pieces:
+                locations.append(', '.join(pieces))
+        return ', '.join(locations)
+
+    def _clean_text(self, value):
+        text = value if isinstance(value, str) else str(value)
+        text = html.unescape(text)
+        text = re.sub(r'<br\s*/?>', '\n', text, flags=re.IGNORECASE)
+        text = re.sub(r'</p\s*>', '\n', text, flags=re.IGNORECASE)
+        text = re.sub(r'<li[^>]*>', '\n- ', text, flags=re.IGNORECASE)
+        text = re.sub(r'<[^>]+>', ' ', text)
+        text = re.sub(r'[ \t\r\f\v]+', ' ', text)
+        text = re.sub(r'\n\s*\n+', '\n\n', text)
+        return text.strip()[:15000]
 
 if __name__ == "__main__":
     scraper = BCGScraper()
