@@ -12,11 +12,11 @@ except ImportError:
     requests = None
 
 from core.logging import setup_logger
-from config.scraper import SCRAPE_TIMEOUT, MAX_PAGES_TO_SCRAPE
+from core.webdriver_utils import setup_chrome_driver
+from config.scraper import SCRAPE_TIMEOUT, MAX_PAGES_TO_SCRAPE, HEADLESS_MODE
 from scrapers.csv_url_resolver import get_company_url
 
 logger = setup_logger('ey_scraper')
-
 
 class EYScraper:
     def __init__(self):
@@ -29,6 +29,10 @@ class EYScraper:
         self.job_board_id = match.group(1) if match else "c1riT--B2O-KySgYWsZO1Q"
         self.base_url = "https://eyglobal.yello.co"
         self.search_url = f"{self.base_url}/job_boards/{self.job_board_id}/search"
+    
+    def setup_driver(self):
+        """Set up Chrome driver using cross-platform utility"""
+        return setup_chrome_driver(headless_mode=HEADLESS_MODE)
 
     def _normalize_url(self, raw_url, fallback_url):
         candidates = [line.strip() for line in (raw_url or '').splitlines() if line.strip()]

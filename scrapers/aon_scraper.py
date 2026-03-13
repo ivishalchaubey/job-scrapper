@@ -6,10 +6,10 @@ except ImportError:
     requests = None
 
 from core.logging import setup_logger
-from config.scraper import MAX_PAGES_TO_SCRAPE
+from core.webdriver_utils import setup_chrome_driver
+from config.scraper import MAX_PAGES_TO_SCRAPE, HEADLESS_MODE
 
 logger = setup_logger('aon_scraper')
-
 
 class AonScraper:
     def __init__(self):
@@ -17,6 +17,10 @@ class AonScraper:
         self.url = "https://jobs.aon.com/jobs?locations=Bangalore,Karnataka,India%7CBengaluru,Karnataka,India%7CGreater%20Noida,Uttar%20Pradesh,India%7CGurgaon,Haryana,India%7CGurugram,Haryana,India%7CMumbai,Maharashtra,India%7CNOIDA,Uttar%20Pradesh,India&page=1"
         self.base_url = 'https://jobs.aon.com'
         self.api_url = 'https://jobs.aon.com/api/jobs'
+    
+    def setup_driver(self):
+        """Set up Chrome driver using cross-platform utility"""
+        return setup_chrome_driver(headless_mode=HEADLESS_MODE)
 
     def generate_external_id(self, job_id, company):
         unique_string = f"{company}_{job_id}"
@@ -202,7 +206,6 @@ class AonScraper:
         if 'India' in location_str:
             result['country'] = 'India'
         return result
-
 
 if __name__ == "__main__":
     scraper = AonScraper()

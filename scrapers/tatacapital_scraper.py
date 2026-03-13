@@ -4,10 +4,10 @@ import time
 from pathlib import Path
 
 from core.logging import setup_logger
+from core.webdriver_utils import setup_chrome_driver
 from config.scraper import SCRAPE_TIMEOUT, HEADLESS_MODE, FETCH_FULL_JOB_DETAILS, MAX_PAGES_TO_SCRAPE
 
 logger = setup_logger('tatacapital_scraper')
-
 
 class TataCapitalScraper:
     def __init__(self):
@@ -18,6 +18,10 @@ class TataCapitalScraper:
         self.india_location_id = '300000000378365'
         self.page_size = 25
         self.job_detail_base_url = 'https://eofh.fa.em2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_3001/job'
+    
+    def setup_driver(self):
+        """Set up Chrome driver using cross-platform utility"""
+        return setup_chrome_driver(headless_mode=HEADLESS_MODE)
 
     def generate_external_id(self, job_id, company):
         """Generate stable external ID"""
@@ -204,7 +208,6 @@ class TataCapitalScraper:
             country = 'India'
 
         return city, state, country
-
 
 if __name__ == "__main__":
     scraper = TataCapitalScraper()

@@ -3,9 +3,7 @@ from functools import lru_cache
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
-
 CSV_PATH = Path(__file__).resolve().parent.parent / "scrappers.csv"
-
 
 def _normalize_url(raw_url):
     if not raw_url:
@@ -27,7 +25,6 @@ def _normalize_url(raw_url):
 
     return url
 
-
 @lru_cache(maxsize=1)
 def _load_company_urls():
     company_to_url = {}
@@ -44,7 +41,6 @@ def _load_company_urls():
             if company and url:
                 company_to_url[company.lower()] = url
     return company_to_url
-
 
 def get_company_url(company_name, fallback_url=""):
     urls = _load_company_urls()

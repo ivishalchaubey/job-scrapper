@@ -9,47 +9,20 @@ import time
 import os
 
 from core.logging import setup_logger
+from core.webdriver_utils import setup_chrome_driver
 from config.scraper import HEADLESS_MODE, MAX_PAGES_TO_SCRAPE
 
 logger = setup_logger('impetus_scraper')
-
-CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0.7559.133_fresh/chromedriver-mac-arm64/chromedriver'
-
 
 class ImpetusScraper:
     def __init__(self):
         self.company_name = "Impetus"
         self.url = "https://impetus.openings.co/impetus/#!/"
         self.base_url = 'https://impetus.openings.co'
-
+    
     def setup_driver(self):
-        """Set up Chrome driver with anti-detection options"""
-        chrome_options = Options()
-        if HEADLESS_MODE:
-            chrome_options.add_argument('--headless=new')
-        chrome_options.add_argument('--no-sandbox')
-        chrome_options.add_argument('--disable-dev-shm-usage')
-        chrome_options.add_argument('--disable-gpu')
-        chrome_options.add_argument('--window-size=1920,1080')
-        chrome_options.add_argument('--user-agent=AppleWebKit/537.36')
-        chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-        chrome_options.add_experimental_option('useAutomationExtension', False)
-        chrome_options.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
-
-        try:
-            if os.path.exists(CHROMEDRIVER_PATH):
-                service = Service(CHROMEDRIVER_PATH)
-                driver = webdriver.Chrome(service=service, options=chrome_options)
-            else:
-                driver = webdriver.Chrome(options=chrome_options)
-        except Exception:
-            driver = webdriver.Chrome(options=chrome_options)
-
-        driver.execute_cdp_cmd('Network.setUserAgentOverride', {
-            "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
-        })
-        driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-        return driver
+        """Set up Chrome driver using cross-platform utility"""
+        return setup_chrome_driver(headless_mode=HEADLESS_MODE)
 
     def generate_external_id(self, job_id, company):
         """Generate stable external ID"""
@@ -337,7 +310,6 @@ class ImpetusScraper:
             return result
         except Exception:
             return False
-
 
 if __name__ == '__main__':
     scraper = ImpetusScraper()

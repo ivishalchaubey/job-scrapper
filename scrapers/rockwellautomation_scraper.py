@@ -4,10 +4,10 @@ import time
 import requests
 
 from core.logging import setup_logger
-from config.scraper import MAX_PAGES_TO_SCRAPE
+from core.webdriver_utils import setup_chrome_driver
+from config.scraper import MAX_PAGES_TO_SCRAPE, HEADLESS_MODE
 
 logger = setup_logger('rockwellautomation_scraper')
-
 
 class RockwellAutomationScraper:
     def __init__(self):
@@ -15,6 +15,10 @@ class RockwellAutomationScraper:
         self.url = "https://rockwellautomation.wd1.myworkdayjobs.com/en-US/External_Rockwell_Automation?locationCountry=c4f78be1a8f14da0ab49ce1162348a5e"
         self.api_url = 'https://rockwellautomation.wd1.myworkdayjobs.com/wday/cxs/rockwellautomation/External_Rockwell_Automation/jobs'
         self.base_job_url = 'https://rockwellautomation.wd1.myworkdayjobs.com/External_Rockwell_Automation'
+    
+    def setup_driver(self):
+        """Set up Chrome driver using cross-platform utility"""
+        return setup_chrome_driver(headless_mode=HEADLESS_MODE)
 
     def generate_external_id(self, job_id, company):
         unique_string = f"{company}_{job_id}"

@@ -2,16 +2,20 @@ import requests
 import hashlib
 from datetime import datetime
 from core.logging import setup_logger
-from config.scraper import SCRAPE_TIMEOUT, MAX_PAGES_TO_SCRAPE
+from core.webdriver_utils import setup_chrome_driver
+from config.scraper import SCRAPE_TIMEOUT, MAX_PAGES_TO_SCRAPE, HEADLESS_MODE
 
 logger = setup_logger('linkedin_lever_scraper')
-
 
 class LinkedInLeverScraper:
     def __init__(self):
         self.company_name = "LinkedIn"
         self.url = "https://www.linkedin.com/jobs/search/?currentJobId=4376554774&f_C=1337%2C2587638%2C39939&f_PP=105214831&geoId=92000000&origin=JOB_SEARCH_PAGE_JOB_FILTER&sortBy=R"
         self.api_url = 'https://api.lever.co/v0/postings/linkedin?mode=json'
+    
+    def setup_driver(self):
+        """Set up Chrome driver using cross-platform utility"""
+        return setup_chrome_driver(headless_mode=HEADLESS_MODE)
 
     def generate_external_id(self, job_id, company):
         unique_string = f"{company}_{job_id}"

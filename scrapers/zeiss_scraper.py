@@ -4,10 +4,10 @@ import re
 import time
 
 from core.logging import setup_logger
-from config.scraper import MAX_PAGES_TO_SCRAPE
+from core.webdriver_utils import setup_chrome_driver
+from config.scraper import MAX_PAGES_TO_SCRAPE, HEADLESS_MODE
 
 logger = setup_logger('zeiss_scraper')
-
 
 class ZeissScraper:
     def __init__(self):
@@ -16,6 +16,10 @@ class ZeissScraper:
         self.workday_base_url = 'https://zeissgroup.wd3.myworkdayjobs.com/External'
         # India country facet ID from Workday
         self.india_country_facet = 'c4f78be1a8f14da0ab49ce1162348a5e'
+    
+    def setup_driver(self):
+        """Set up Chrome driver using cross-platform utility"""
+        return setup_chrome_driver(headless_mode=HEADLESS_MODE)
 
     def generate_external_id(self, job_id, company):
         unique_string = f"{company}_{job_id}"
@@ -160,7 +164,6 @@ class ZeissScraper:
         except Exception as e:
             logger.error(f"Error parsing Workday job: {str(e)}")
             return None
-
 
 if __name__ == "__main__":
     scraper = ZeissScraper()

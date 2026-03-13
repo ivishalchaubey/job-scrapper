@@ -4,10 +4,10 @@ import time
 import requests
 
 from core.logging import setup_logger
-from config.scraper import MAX_PAGES_TO_SCRAPE
+from core.webdriver_utils import setup_chrome_driver
+from config.scraper import MAX_PAGES_TO_SCRAPE, HEADLESS_MODE
 
 logger = setup_logger('autodesk_scraper')
-
 
 class AutodeskScraper:
     def __init__(self):
@@ -15,6 +15,10 @@ class AutodeskScraper:
         self.url = "https://autodesk.wd1.myworkdayjobs.com/Ext?_gl=1*1oqsxil*_gcl_au*MTgxNzc2NTUxMy4xNzcxNDk3MzE0*_ga*MTUyMTAyMzU2MC4xNzcxNDk3MzEz*_ga_NZSJ72N6RX*czE3NzE0OTczMTMkbzEkZzEkdDE3NzE0OTczMTMkajYwJGwwJGgw&State_Region=701eb5584934425d930bc84b9e8b04eb&State_Region=a3c37012f51642f4a7b3dafc8ac37801"
         self.api_url = 'https://autodesk.wd1.myworkdayjobs.com/wday/cxs/autodesk/Ext/jobs'
         self.base_job_url = 'https://autodesk.wd1.myworkdayjobs.com/Ext'
+    
+    def setup_driver(self):
+        """Set up Chrome driver using cross-platform utility"""
+        return setup_chrome_driver(headless_mode=HEADLESS_MODE)
 
     def generate_external_id(self, job_id, company):
         unique_string = f"{company}_{job_id}"

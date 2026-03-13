@@ -9,12 +9,10 @@ import time
 import os
 
 from core.logging import setup_logger
+from core.webdriver_utils import setup_chrome_driver
 from config.scraper import HEADLESS_MODE, MAX_PAGES_TO_SCRAPE
 
 logger = setup_logger('tvscredit_scraper')
-
-CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0.7559.133_fresh/chromedriver-mac-arm64/chromedriver'
-
 
 class TVSCreditScraper:
     def __init__(self):
@@ -22,43 +20,10 @@ class TVSCreditScraper:
         self.url = "https://tvscredit.talentrecruit.com/career-page"
         self.alt_url = 'https://www.tvscredit.com/careers/current-openings/'
         self.base_url = 'https://tvscredit.talentrecruit.com'
-
+    
     def setup_driver(self):
-        """Set up Chrome driver with full anti-detection for TalentRecruit"""
-        chrome_options = Options()
-        if HEADLESS_MODE:
-            chrome_options.add_argument('--headless=new')
-        chrome_options.add_argument('--no-sandbox')
-        chrome_options.add_argument('--disable-dev-shm-usage')
-        chrome_options.add_argument('--disable-gpu')
-        chrome_options.add_argument('--window-size=1920,1080')
-        chrome_options.add_argument('--user-agent=AppleWebKit/537.36')
-        chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-        chrome_options.add_experimental_option('useAutomationExtension', False)
-        chrome_options.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
-
-        try:
-            if os.path.exists(CHROMEDRIVER_PATH):
-                service = Service(CHROMEDRIVER_PATH)
-                driver = webdriver.Chrome(service=service, options=chrome_options)
-            else:
-                driver = webdriver.Chrome(options=chrome_options)
-        except Exception:
-            driver = webdriver.Chrome(options=chrome_options)
-
-        driver.execute_cdp_cmd('Network.setUserAgentOverride', {
-            "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
-        })
-        driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-
-        # Additional anti-detection for TalentRecruit
-        driver.execute_script("""
-            Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
-            Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']});
-            window.chrome = {runtime: {}};
-        """)
-
-        return driver
+        """Set up Chrome driver using cross-platform utility"""
+        return setup_chrome_driver(headless_mode=HEADLESS_MODE)
 
     def generate_external_id(self, job_id, company):
         """Generate stable external ID"""
@@ -493,7 +458,6 @@ class TVSCreditScraper:
             return result
         except Exception:
             return False
-
 
 if __name__ == '__main__':
     scraper = TVSCreditScraper()

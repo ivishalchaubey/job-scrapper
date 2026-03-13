@@ -3,10 +3,10 @@ import hashlib
 from bs4 import BeautifulSoup
 
 from core.logging import setup_logger
+from core.webdriver_utils import setup_chrome_driver
 from config.scraper import HEADLESS_MODE, MAX_PAGES_TO_SCRAPE
 
 logger = setup_logger('easemytrip_scraper')
-
 
 class EaseMyTripScraper:
     def __init__(self):
@@ -17,6 +17,10 @@ class EaseMyTripScraper:
             'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
         }
+    
+    def setup_driver(self):
+        """Set up Chrome driver using cross-platform utility"""
+        return setup_chrome_driver(headless_mode=HEADLESS_MODE)
 
     def generate_external_id(self, job_id, company):
         """Generate stable external ID."""
@@ -163,7 +167,6 @@ class EaseMyTripScraper:
             logger.error(f"Error scraping {self.company_name}: {str(e)}")
 
         return all_jobs
-
 
 if __name__ == "__main__":
     scraper = EaseMyTripScraper()

@@ -14,14 +14,11 @@ try:
 except ImportError:
     requests = None
 
-
 from core.logging import setup_logger
+from core.webdriver_utils import setup_chrome_driver
 from config.scraper import SCRAPE_TIMEOUT, HEADLESS_MODE, FETCH_FULL_JOB_DETAILS, MAX_PAGES_TO_SCRAPE
 
 logger = setup_logger('diageo_scraper')
-
-CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0.7559.133_fresh/chromedriver-mac-arm64/chromedriver'
-
 
 class DiageoScraper:
     def __init__(self):
@@ -29,32 +26,10 @@ class DiageoScraper:
         self.url = "https://www.linkedin.com/company/diageo-india/jobs/?viewAsMember=true"
         self.api_url = 'https://diageo.wd3.myworkdayjobs.com/wday/cxs/diageo/Diageo_Careers/jobs'
         self.base_job_url = 'https://diageo.wd3.myworkdayjobs.com/Diageo_Careers'
-
+    
     def setup_driver(self):
-        chrome_options = Options()
-        if HEADLESS_MODE:
-            chrome_options.add_argument('--headless=new')
-        chrome_options.add_argument('--no-sandbox')
-        chrome_options.add_argument('--disable-dev-shm-usage')
-        chrome_options.add_argument('--disable-gpu')
-        chrome_options.add_argument('--window-size=1920,1080')
-        chrome_options.add_argument('--user-agent=AppleWebKit/537.36')
-        chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-        chrome_options.add_experimental_option('useAutomationExtension', False)
-        chrome_options.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
-
-        try:
-            driver = webdriver.Chrome(options=chrome_options)
-        except Exception as e:
-            logger.warning(f"Auto-detect failed: {str(e)}, trying explicit path")
-            service = Service(CHROMEDRIVER_PATH)
-            driver = webdriver.Chrome(service=service, options=chrome_options)
-
-        driver.execute_cdp_cmd('Network.setUserAgentOverride', {
-            "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
-        })
-        driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-        return driver
+        """Set up Chrome driver using cross-platform utility"""
+        return setup_chrome_driver(headless_mode=HEADLESS_MODE)
 
     def generate_external_id(self, job_id, company):
         unique_string = f"{company}_{job_id}"
@@ -405,7 +380,6 @@ class DiageoScraper:
             result['country'] = 'India'
 
         return result
-
 
 if __name__ == "__main__":
     scraper = DiageoScraper()

@@ -16,11 +16,11 @@ except ImportError:
     requests = None
 
 from core.logging import setup_logger
-from config.scraper import SCRAPE_TIMEOUT, MAX_PAGES_TO_SCRAPE
+from core.webdriver_utils import setup_chrome_driver
+from config.scraper import SCRAPE_TIMEOUT, MAX_PAGES_TO_SCRAPE, HEADLESS_MODE
 from scrapers.csv_url_resolver import get_company_url
 
 logger = setup_logger('bain_scraper')
-
 
 class BainScraper:
     def __init__(self):
@@ -36,6 +36,10 @@ class BainScraper:
             'americas | apac | emea',
             'americas|apac|emea',
         }
+    
+    def setup_driver(self):
+        """Set up Chrome driver using cross-platform utility"""
+        return setup_chrome_driver(headless_mode=HEADLESS_MODE)
 
     def generate_external_id(self, job_id, company):
         unique_string = f"{company}_{job_id}"
@@ -403,7 +407,6 @@ class BainScraper:
         text = re.sub(r'[ \t\r\f\v]+', ' ', text)
         text = re.sub(r'\n\s*\n+', '\n\n', text)
         return text.strip()[:15000]
-
 
 if __name__ == "__main__":
     scraper = BainScraper()

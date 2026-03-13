@@ -4,10 +4,10 @@ import time
 from pathlib import Path
 
 from core.logging import setup_logger
+from core.webdriver_utils import setup_chrome_driver
 from config.scraper import SCRAPE_TIMEOUT, HEADLESS_MODE, FETCH_FULL_JOB_DETAILS, MAX_PAGES_TO_SCRAPE
 
 logger = setup_logger('honeywell_scraper')
-
 
 class HoneywellScraper:
     def __init__(self):
@@ -21,6 +21,10 @@ class HoneywellScraper:
         self.india_location_id = '300000000469485'
         self.page_size = 25
         self.job_detail_base_url = 'https://ibqbjb.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/Honeywell/job'
+    
+    def setup_driver(self):
+        """Set up Chrome driver using cross-platform utility"""
+        return setup_chrome_driver(headless_mode=HEADLESS_MODE)
 
     def generate_external_id(self, job_id, company):
         """Generate stable external ID"""
@@ -218,7 +222,6 @@ class HoneywellScraper:
             country = 'India'
 
         return city, state, country
-
 
 if __name__ == "__main__":
     scraper = HoneywellScraper()

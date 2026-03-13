@@ -3,10 +3,10 @@ import hashlib
 import time
 
 from core.logging import setup_logger
-from config.scraper import MAX_PAGES_TO_SCRAPE
+from core.webdriver_utils import setup_chrome_driver
+from config.scraper import MAX_PAGES_TO_SCRAPE, HEADLESS_MODE
 
 logger = setup_logger('adanigroup_scraper')
-
 
 class AdaniGroupScraper:
     def __init__(self):
@@ -16,6 +16,10 @@ class AdaniGroupScraper:
         self.site_number = 'CX_1'
         self.page_size = 25
         self.job_detail_base_url = 'https://eibd.fa.em2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/job'
+    
+    def setup_driver(self):
+        """Set up Chrome driver using cross-platform utility"""
+        return setup_chrome_driver(headless_mode=HEADLESS_MODE)
 
     def generate_external_id(self, job_id, company):
         unique_string = f"{company}_{job_id}"

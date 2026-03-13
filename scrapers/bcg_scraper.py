@@ -12,8 +12,8 @@ import time
 import os
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
-
 from core.logging import setup_logger
+from core.webdriver_utils import setup_chrome_driver
 from config.scraper import SCRAPE_TIMEOUT, HEADLESS_MODE, MAX_PAGES_TO_SCRAPE
 from scrapers.csv_url_resolver import get_company_url
 

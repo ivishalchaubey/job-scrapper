@@ -4,10 +4,10 @@ import time
 import requests
 
 from core.logging import setup_logger
-from config.scraper import MAX_PAGES_TO_SCRAPE
+from core.webdriver_utils import setup_chrome_driver
+from config.scraper import MAX_PAGES_TO_SCRAPE, HEADLESS_MODE
 
 logger = setup_logger('carelon_scraper')
-
 
 class CarelonScraper:
     def __init__(self):
@@ -15,6 +15,10 @@ class CarelonScraper:
         self.url = "https://elevancehealth.wd1.myworkdayjobs.com/en-US/carelonglobal_in"
         self.api_url = 'https://elevancehealth.wd1.myworkdayjobs.com/wday/cxs/elevancehealth/carelonglobal_in/jobs'
         self.base_job_url = 'https://elevancehealth.wd1.myworkdayjobs.com/carelonglobal_in'
+    
+    def setup_driver(self):
+        """Set up Chrome driver using cross-platform utility"""
+        return setup_chrome_driver(headless_mode=HEADLESS_MODE)
 
     def generate_external_id(self, job_id, company):
         unique_string = f"{company}_{job_id}"

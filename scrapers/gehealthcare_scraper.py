@@ -1,10 +1,10 @@
 import requests
 import hashlib
 from core.logging import setup_logger
-from config.scraper import SCRAPE_TIMEOUT, MAX_PAGES_TO_SCRAPE
+from core.webdriver_utils import setup_chrome_driver
+from config.scraper import SCRAPE_TIMEOUT, MAX_PAGES_TO_SCRAPE, HEADLESS_MODE
 
 logger = setup_logger('gehealthcare_scraper')
-
 
 class GEHealthCareScraper:
     def __init__(self):
@@ -12,6 +12,10 @@ class GEHealthCareScraper:
         self.url = "https://careers.gehealthcare.com/global/en/india-jobs"
         self.api_url = 'https://gehc.wd5.myworkdayjobs.com/wday/cxs/gehc/GEHC_ExternalSite/jobs'
         self.base_job_url = 'https://gehc.wd5.myworkdayjobs.com/GEHC_ExternalSite'
+    
+    def setup_driver(self):
+        """Set up Chrome driver using cross-platform utility"""
+        return setup_chrome_driver(headless_mode=HEADLESS_MODE)
 
     def generate_external_id(self, job_id, company):
         unique_string = f"{company}_{job_id}"

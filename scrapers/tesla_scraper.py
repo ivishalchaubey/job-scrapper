@@ -18,122 +18,20 @@ except ImportError:
     requests = None
 
 from core.logging import setup_logger
+from core.webdriver_utils import setup_chrome_driver
 from config.scraper import SCRAPE_TIMEOUT, HEADLESS_MODE, FETCH_FULL_JOB_DETAILS, MAX_PAGES_TO_SCRAPE
 
 logger = setup_logger('tesla_scraper')
-
-CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0.7559.133_fresh/chromedriver-mac-arm64/chromedriver'
 
 class TeslaScraper:
     def __init__(self):
         self.company_name = "Tesla"
         # Tesla uses Akamai Bot Manager which blocks headless Chrome aggressively
         self.url = "https://hire-r1.mokahr.com/social-recruitment/tesla/100004142#/jobs?page=1&anchorName=jobsList"
-
+    
     def setup_driver(self):
-        """Set up Chrome driver with maximum anti-detection for Akamai bypass."""
-        chrome_options = Options()
-        if HEADLESS_MODE:
-            chrome_options.add_argument('--headless=new')
-        chrome_options.add_argument('--no-sandbox')
-        chrome_options.add_argument('--disable-dev-shm-usage')
-        chrome_options.add_argument('--disable-gpu')
-        chrome_options.add_argument('--window-size=1920,1080')
-        # Short UA in options, full UA via CDP (anti-detection pattern)
-        chrome_options.add_argument('--user-agent=AppleWebKit/537.36')
-        chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-        chrome_options.add_argument('--disable-infobars')
-        chrome_options.add_argument('--disable-extensions')
-        chrome_options.add_argument('--disable-popup-blocking')
-        chrome_options.add_argument('--ignore-certificate-errors')
-        # Extra stealth flags for Akamai bypass
-        chrome_options.add_argument('--disable-features=IsolateOrigins,site-per-process')
-        chrome_options.add_argument('--disable-site-isolation-trials')
-        chrome_options.add_argument('--disable-web-security')
-        chrome_options.add_argument('--disable-features=CrossSiteDocumentBlockingIfIsolating')
-        chrome_options.add_argument('--disable-features=CrossSiteDocumentBlockingAlways')
-        chrome_options.add_argument('--disable-renderer-backgrounding')
-        chrome_options.add_argument('--disable-backgrounding-occluded-windows')
-        chrome_options.add_argument('--disable-ipc-flooding-protection')
-        chrome_options.add_argument('--enable-features=NetworkService,NetworkServiceInProcess')
-        chrome_options.add_experimental_option('excludeSwitches', ['enable-automation', 'enable-logging'])
-        chrome_options.add_experimental_option('useAutomationExtension', False)
-
-        driver_path = CHROMEDRIVER_PATH
-        driver_path_obj = Path(driver_path)
-        if driver_path_obj.name != 'chromedriver':
-            parent = driver_path_obj.parent
-            actual_driver = parent / 'chromedriver'
-            if actual_driver.exists():
-                driver_path = str(actual_driver)
-
-        try:
-            current_permissions = os.stat(driver_path).st_mode
-            os.chmod(driver_path, current_permissions | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-        except:
-            pass
-
-        try:
-            service = Service(driver_path)
-            driver = webdriver.Chrome(service=service, options=chrome_options)
-        except Exception as e:
-            logger.error(f"ChromeDriver setup failed: {str(e)}")
-            logger.info("Attempting fallback driver setup...")
-            driver = webdriver.Chrome(options=chrome_options)
-
-        # Full UA via CDP for anti-detection
-        driver.execute_cdp_cmd('Network.setUserAgentOverride', {
-            'userAgent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-            'acceptLanguage': 'en-US,en;q=0.9',
-            'platform': 'macOS',
-        })
-
-        # Comprehensive stealth injection before any page loads
-        driver.execute_cdp_cmd('Page.addScriptToEvaluateOnNewDocument', {
-            'source': '''
-                // Remove webdriver flag
-                Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
-                delete navigator.__proto__.webdriver;
-
-                // Chrome runtime
-                window.chrome = {
-                    runtime: {},
-                    loadTimes: function() { return {} },
-                    csi: function() { return {} },
-                };
-
-                // Languages
-                Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']});
-                Object.defineProperty(navigator, 'language', {get: () => 'en-US'});
-
-                // Plugins
-                Object.defineProperty(navigator, 'plugins', {
-                    get: () => {
-                        var p = [
-                            {name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer'},
-                            {name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai'},
-                            {name: 'Native Client', filename: 'internal-nacl-plugin'},
-                        ];
-                        p.length = 3;
-                        return p;
-                    }
-                });
-
-                // Hardware
-                Object.defineProperty(navigator, 'hardwareConcurrency', {get: () => 8});
-                Object.defineProperty(navigator, 'deviceMemory', {get: () => 8});
-
-                // Permissions
-                var origQuery = window.navigator.permissions.query;
-                window.navigator.permissions.query = function(p) {
-                    return p.name === 'notifications'
-                        ? Promise.resolve({state: Notification.permission})
-                        : origQuery.call(navigator.permissions, p);
-                };
-            '''
-        })
-
-        return driver
+        """Set up Chrome driver using cross-platform utility"""
+        return setup_chrome_driver(headless_mode=HEADLESS_MODE)
 
     def generate_external_id(self, job_id, company):
         """Generate stable external ID"""
@@ -879,7 +777,6 @@ class TeslaScraper:
         state = parts[1] if len(parts) > 1 else ''
 
         return city, state, 'India'
-
 
 if __name__ == "__main__":
     scraper = TeslaScraper()

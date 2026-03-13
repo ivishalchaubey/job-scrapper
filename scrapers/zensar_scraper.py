@@ -4,10 +4,10 @@ import time
 from pathlib import Path
 
 from core.logging import setup_logger
+from core.webdriver_utils import setup_chrome_driver
 from config.scraper import SCRAPE_TIMEOUT, HEADLESS_MODE, FETCH_FULL_JOB_DETAILS, MAX_PAGES_TO_SCRAPE
 
 logger = setup_logger('zensar_scraper')
-
 
 class ZensarTechnologiesScraper:
     def __init__(self):
@@ -18,6 +18,10 @@ class ZensarTechnologiesScraper:
         self.india_location_ids = '300000000435151;300000000389881;300000000435178;300000000435310;300000000435430'
         self.page_size = 25
         self.job_detail_base_url = 'https://fa-etvl-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/job'
+    
+    def setup_driver(self):
+        """Set up Chrome driver using cross-platform utility"""
+        return setup_chrome_driver(headless_mode=HEADLESS_MODE)
 
     def generate_external_id(self, job_id, company):
         """Generate stable external ID"""
@@ -204,7 +208,6 @@ class ZensarTechnologiesScraper:
             country = 'India'
 
         return city, state, country
-
 
 if __name__ == "__main__":
     scraper = ZensarTechnologiesScraper()

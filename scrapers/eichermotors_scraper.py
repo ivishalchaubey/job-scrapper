@@ -9,80 +9,20 @@ import time
 import re
 
 from core.logging import setup_logger
+from core.webdriver_utils import setup_chrome_driver
 from config.scraper import HEADLESS_MODE, MAX_PAGES_TO_SCRAPE
 
 logger = setup_logger('eichermotors_scraper')
-
-CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0.7559.133_fresh/chromedriver-mac-arm64/chromedriver'
-
 
 class EicherMotorsScraper:
     def __init__(self):
         self.company_name = "Eicher Motors"
         self.url = "https://careers.vecv.in/search/?createNewAlert=false&q=&locationsearch=&optionsFacetsDD_location=&optionsFacetsDD_city=&optionsFacetsDD_department=\nhttps://careers.royalenfield.com/us/en/home?_gl=1*y9ntof*_gcl_au*MjEyNTMxOTY3NC4xNzcxNTc2ODg5*_ga*MTUyNjI5NjQ3MC4xNzcxNTc2ODg5*_ga_7746PERT32*czE3NzE1NzY4ODkkbzEkZzEkdDE3NzE1NzY5MjAkajI5JGwwJGgw"
         self.base_url = 'https://careers.vecv.in'
-
+    
     def setup_driver(self):
-        """Set up Chrome with enhanced anti-detection for Cloudflare bypass."""
-        chrome_options = Options()
-
-        # Cloudflare detects standard headless mode; use non-headless if
-        # HEADLESS_MODE is set, but add extra flags to reduce detection.
-        if HEADLESS_MODE:
-            chrome_options.add_argument('--headless=new')
-
-        chrome_options.add_argument('--no-sandbox')
-        chrome_options.add_argument('--disable-dev-shm-usage')
-        chrome_options.add_argument('--disable-gpu')
-        chrome_options.add_argument('--window-size=1920,1080')
-        chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-        chrome_options.add_argument('--disable-features=IsolateOrigins,site-per-process')
-        chrome_options.add_argument('--disable-infobars')
-        chrome_options.add_argument('--lang=en-US,en;q=0.9')
-        chrome_options.add_argument(
-            '--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) '
-            'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
-        )
-        chrome_options.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
-        chrome_options.add_experimental_option('useAutomationExtension', False)
-
-        # Exclude common automation indicators
-        chrome_options.add_experimental_option('prefs', {
-            'credentials_enable_service': False,
-            'profile.password_manager_enabled': False,
-        })
-
-        try:
-            driver = webdriver.Chrome(options=chrome_options)
-        except Exception:
-            service = Service(CHROMEDRIVER_PATH)
-            driver = webdriver.Chrome(service=service, options=chrome_options)
-
-        # Override navigator properties to avoid detection
-        driver.execute_cdp_cmd('Network.setUserAgentOverride', {
-            "userAgent": (
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/131.0.0.0 Safari/537.36"
-            ),
-            "platform": "macOS",
-            "acceptLanguage": "en-US,en;q=0.9",
-        })
-
-        # Patch navigator properties
-        driver.execute_cdp_cmd('Page.addScriptToEvaluateOnNewDocument', {
-            'source': '''
-                Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
-                Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']});
-                Object.defineProperty(navigator, 'plugins', {
-                    get: () => [1, 2, 3, 4, 5]
-                });
-                window.chrome = { runtime: {} };
-                Object.defineProperty(navigator, 'maxTouchPoints', {get: () => 0});
-            '''
-        })
-
-        return driver
+        """Set up Chrome driver using cross-platform utility"""
+        return setup_chrome_driver(headless_mode=HEADLESS_MODE)
 
     def generate_external_id(self, job_id, company):
         unique_string = f"{company}_{job_id}"
@@ -486,7 +426,6 @@ class EicherMotorsScraper:
         if 'India' in location_str:
             result['country'] = 'India'
         return result
-
 
 if __name__ == "__main__":
     scraper = EicherMotorsScraper()

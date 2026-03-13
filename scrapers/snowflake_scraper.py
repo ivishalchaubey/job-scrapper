@@ -2,15 +2,19 @@ import requests
 import hashlib
 import re
 from core.logging import setup_logger
-from config.scraper import SCRAPE_TIMEOUT
+from core.webdriver_utils import setup_chrome_driver
+from config.scraper import SCRAPE_TIMEOUT, HEADLESS_MODE
 
 logger = setup_logger('snowflake_scraper')
-
 
 class SnowflakeScraper:
     def __init__(self):
         self.company_name = "Snowflake"
         self.api_url = 'https://api.ashbyhq.com/posting-api/job-board/snowflake'
+    
+    def setup_driver(self):
+        """Set up Chrome driver using cross-platform utility"""
+        return setup_chrome_driver(headless_mode=HEADLESS_MODE)
 
     def generate_external_id(self, job_id, company):
         unique_string = f"{company}_{job_id}"

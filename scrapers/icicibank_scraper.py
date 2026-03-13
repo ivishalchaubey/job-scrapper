@@ -10,62 +10,20 @@ from datetime import datetime
 from pathlib import Path
 
 from core.logging import setup_logger
+from core.webdriver_utils import setup_chrome_driver
 from config.scraper import SCRAPE_TIMEOUT, HEADLESS_MODE, FETCH_FULL_JOB_DETAILS, MAX_PAGES_TO_SCRAPE
 
 logger = setup_logger('icicibank_scraper')
-
-CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0.7559.133_fresh/chromedriver-mac-arm64/chromedriver'
 
 class ICICIBankScraper:
     def __init__(self):
         self.company_name = "ICICI Bank"
         # Point to actual job search/listings page
         self.url = "https://www.linkedin.com/jobs/search/?currentJobId=4344909707&f_C=2967&geoId=92000000&origin=COMPANY_PAGE_JOBS_CLUSTER_EXPANSION&originToLandingJobPostings=4344909707%2C4344687209%2C4358932424%2C4344909715%2C4344510067%2C4344776459%2C4344450623%2C4338202809%2C4344341030"
-
+    
     def setup_driver(self):
-        """Set up Chrome driver with anti-detection"""
-        chrome_options = Options()
-        if HEADLESS_MODE:
-            chrome_options.add_argument('--headless=new')
-        chrome_options.add_argument('--no-sandbox')
-        chrome_options.add_argument('--disable-dev-shm-usage')
-        chrome_options.add_argument('--disable-gpu')
-        chrome_options.add_argument('--window-size=1920,1080')
-        chrome_options.add_argument('--user-agent=AppleWebKit/537.36')
-        chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-        chrome_options.add_experimental_option('useAutomationExtension', False)
-        chrome_options.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
-
-        driver_paths = [
-            CHROMEDRIVER_PATH,
-            '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0.7559.133/chromedriver-mac-arm64/chromedriver',
-            '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/143.0.7499.192/chromedriver-mac-arm64/chromedriver',
-        ]
-
-        driver = None
-        for dp in driver_paths:
-            try:
-                service = Service(dp)
-                driver = webdriver.Chrome(service=service, options=chrome_options)
-                logger.info(f"ChromeDriver started with: {dp}")
-                break
-            except Exception as e:
-                logger.warning(f"ChromeDriver {dp} failed: {e}")
-                continue
-
-        if not driver:
-            try:
-                driver = webdriver.Chrome(options=chrome_options)
-                logger.info("Using default ChromeDriver")
-            except Exception as e:
-                logger.error(f"All ChromeDriver attempts failed: {e}")
-                raise
-
-        driver.execute_cdp_cmd('Network.setUserAgentOverride', {
-            "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
-        })
-        driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-        return driver
+        """Set up Chrome driver using cross-platform utility"""
+        return setup_chrome_driver(headless_mode=HEADLESS_MODE)
 
     def generate_external_id(self, job_id, company):
         """Generate stable external ID"""

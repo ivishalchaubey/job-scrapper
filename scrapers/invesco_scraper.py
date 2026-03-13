@@ -4,10 +4,10 @@ import time
 import requests
 
 from core.logging import setup_logger
-from config.scraper import MAX_PAGES_TO_SCRAPE
+from core.webdriver_utils import setup_chrome_driver
+from config.scraper import MAX_PAGES_TO_SCRAPE, HEADLESS_MODE
 
 logger = setup_logger('invesco_scraper')
-
 
 class InvescoScraper:
     def __init__(self):
@@ -15,6 +15,10 @@ class InvescoScraper:
         self.url = "https://invesco.wd1.myworkdayjobs.com/en-GB/IVZ?locations=1804888b7f5a100128e426fb60bc0000"
         self.api_url = 'https://invesco.wd1.myworkdayjobs.com/wday/cxs/invesco/IVZ/jobs'
         self.base_job_url = 'https://invesco.wd1.myworkdayjobs.com/IVZ'
+    
+    def setup_driver(self):
+        """Set up Chrome driver using cross-platform utility"""
+        return setup_chrome_driver(headless_mode=HEADLESS_MODE)
 
     def generate_external_id(self, job_id, company):
         unique_string = f"{company}_{job_id}"

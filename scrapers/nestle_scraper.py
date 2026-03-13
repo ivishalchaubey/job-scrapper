@@ -3,12 +3,11 @@ import hashlib
 import re
 from pathlib import Path
 
-
 from core.logging import setup_logger
+from core.webdriver_utils import setup_chrome_driver
 from config.scraper import SCRAPE_TIMEOUT, HEADLESS_MODE, FETCH_FULL_JOB_DETAILS, MAX_PAGES_TO_SCRAPE
 
 logger = setup_logger('nestle_scraper')
-
 
 class NestleScraper:
     def __init__(self):
@@ -19,6 +18,10 @@ class NestleScraper:
         self._api_base = 'https://jobdetails.nestle.com'
         self._search_url = f'{self._api_base}/job/search'
         self._results_per_page = 10
+    
+    def setup_driver(self):
+        """Set up Chrome driver using cross-platform utility"""
+        return setup_chrome_driver(headless_mode=HEADLESS_MODE)
 
     def generate_external_id(self, job_id, company):
         unique_string = f"{company}_{job_id}"
@@ -250,7 +253,6 @@ class NestleScraper:
             result['country'] = 'India'
 
         return result
-
 
 if __name__ == "__main__":
     scraper = NestleScraper()

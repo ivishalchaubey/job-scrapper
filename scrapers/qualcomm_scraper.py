@@ -7,12 +7,10 @@ import stat
 import requests
 
 from core.logging import setup_logger
+from core.webdriver_utils import setup_chrome_driver
 from config.scraper import HEADLESS_MODE, MAX_PAGES_TO_SCRAPE
 
 logger = setup_logger('qualcomm_scraper')
-
-CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0.7559.133_fresh/chromedriver-mac-arm64/chromedriver'
-
 
 class QualcommScraper:
     def __init__(self):
@@ -21,6 +19,10 @@ class QualcommScraper:
         self.api_url = 'https://qualcomm.wd5.myworkdayjobs.com/wday/cxs/qualcomm/External/jobs'
         self.base_job_url = 'https://qualcomm.wd5.myworkdayjobs.com/External'
         self.india_country_id = 'bc33aa3152ec42d4995f4791a106ed09'
+    
+    def setup_driver(self):
+        """Set up Chrome driver using cross-platform utility"""
+        return setup_chrome_driver(headless_mode=HEADLESS_MODE)
 
     def generate_external_id(self, job_id, company):
         """Generate stable external ID"""
@@ -343,7 +345,7 @@ class QualcommScraper:
         chrome_options.add_experimental_option('useAutomationExtension', False)
         chrome_options.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
 
-        driver_path = CHROMEDRIVER_PATH
+        driver_path = "chromedriver"  # Fixed by webdriver_utils
         if not os.path.exists(driver_path):
             logger.warning(f"Fresh chromedriver not found at {driver_path}, trying system chromedriver")
             from webdriver_manager.chrome import ChromeDriverManager

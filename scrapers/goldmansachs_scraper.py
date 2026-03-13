@@ -2,12 +2,11 @@ import requests
 import hashlib
 from pathlib import Path
 
-
 from core.logging import setup_logger
+from core.webdriver_utils import setup_chrome_driver
 from config.scraper import SCRAPE_TIMEOUT, HEADLESS_MODE, FETCH_FULL_JOB_DETAILS, MAX_PAGES_TO_SCRAPE
 
 logger = setup_logger('goldmansachs_scraper')
-
 
 class GoldmanSachsScraper:
     def __init__(self):
@@ -18,6 +17,10 @@ class GoldmanSachsScraper:
         self._api_url = 'https://api-higher.gs.com/gateway/api/v1/graphql'
         self._page_size = 20
         self._roles_base_url = 'https://higher.gs.com/roles'
+    
+    def setup_driver(self):
+        """Set up Chrome driver using cross-platform utility"""
+        return setup_chrome_driver(headless_mode=HEADLESS_MODE)
 
     def generate_external_id(self, job_id, company):
         unique_string = f"{company}_{job_id}"
@@ -266,7 +269,6 @@ class GoldmanSachsScraper:
         state = parts[1] if len(parts) > 1 else ''
 
         return city, state, 'India'
-
 
 if __name__ == "__main__":
     scraper = GoldmanSachsScraper()

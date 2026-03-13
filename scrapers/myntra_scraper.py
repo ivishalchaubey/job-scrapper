@@ -9,7 +9,8 @@ import re
 from datetime import datetime
 
 from core.logging import setup_logger
-from config.scraper import SCRAPE_TIMEOUT, MAX_PAGES_TO_SCRAPE
+from core.webdriver_utils import setup_chrome_driver
+from config.scraper import HEADLESS_MODE, SCRAPE_TIMEOUT, MAX_PAGES_TO_SCRAPE
 
 logger = setup_logger('myntra_scraper')
 
@@ -17,7 +18,6 @@ logger = setup_logger('myntra_scraper')
 API_BASE = 'https://io.spire2grow.com/ies/v1/p'
 WORKSPACE_ID = 'MYNTRA-93as3'
 PAGE_SIZE = 20
-
 
 class MyntraScraper:
     def __init__(self):
@@ -40,6 +40,10 @@ class MyntraScraper:
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+    
+    def setup_driver(self):
+        """Set up Chrome driver using cross-platform utility"""
+        return setup_chrome_driver(headless_mode=HEADLESS_MODE)
     def generate_external_id(self, job_id, company):
         """Generate a stable external ID from company + job identifier."""
         unique_string = f"{company}_{job_id}"

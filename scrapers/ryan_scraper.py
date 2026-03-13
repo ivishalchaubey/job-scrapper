@@ -4,10 +4,10 @@ import time
 import requests
 
 from core.logging import setup_logger
-from config.scraper import MAX_PAGES_TO_SCRAPE
+from core.webdriver_utils import setup_chrome_driver
+from config.scraper import MAX_PAGES_TO_SCRAPE, HEADLESS_MODE
 
 logger = setup_logger('ryan_scraper')
-
 
 class RyanScraper:
     def __init__(self):
@@ -15,6 +15,10 @@ class RyanScraper:
         self.url = "https://ryan.wd1.myworkdayjobs.com/RyanCareers?locations=9c5ef1aaea1c1050c0d408f2350b94c3&locations=7cb141a2f2641001ebada432a0870000&locations=313eb71192a51001a581d3bde5ea0000"
         self.api_url = 'https://ryan.wd1.myworkdayjobs.com/wday/cxs/ryan/RyanCareers/jobs'
         self.base_job_url = 'https://ryan.wd1.myworkdayjobs.com/RyanCareers'
+    
+    def setup_driver(self):
+        """Set up Chrome driver using cross-platform utility"""
+        return setup_chrome_driver(headless_mode=HEADLESS_MODE)
 
     def generate_external_id(self, job_id, company):
         unique_string = f"{company}_{job_id}"

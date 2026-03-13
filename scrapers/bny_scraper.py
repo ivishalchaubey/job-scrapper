@@ -8,12 +8,10 @@ import hashlib
 import time
 
 from core.logging import setup_logger
+from core.webdriver_utils import setup_chrome_driver
 from config.scraper import HEADLESS_MODE, MAX_PAGES_TO_SCRAPE
 
-CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0.7559.133_fresh/chromedriver-mac-arm64/chromedriver'
-
 logger = setup_logger('bny_scraper')
-
 
 class BNYScraper:
     def __init__(self):
@@ -21,28 +19,10 @@ class BNYScraper:
         # Eightfold AI PCSX platform
         self.url = "https://bnymellon.eightfold.ai/careers?start=0&location=India&pid=40076775&sort_by=distance&filter_include_remote=1"
         self.base_url = 'https://bnymellon.eightfold.ai'
-
+    
     def setup_driver(self):
-        chrome_options = Options()
-        if HEADLESS_MODE:
-            chrome_options.add_argument('--headless=new')
-        chrome_options.add_argument('--no-sandbox')
-        chrome_options.add_argument('--disable-dev-shm-usage')
-        chrome_options.add_argument('--disable-gpu')
-        chrome_options.add_argument('--window-size=1920,1080')
-        chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-        chrome_options.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
-        chrome_options.add_experimental_option('useAutomationExtension', False)
-        try:
-            driver = webdriver.Chrome(options=chrome_options)
-        except Exception:
-            service = Service(CHROMEDRIVER_PATH)
-            driver = webdriver.Chrome(service=service, options=chrome_options)
-        driver.execute_cdp_cmd('Network.setUserAgentOverride', {
-            "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
-        })
-        driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-        return driver
+        """Set up Chrome driver using cross-platform utility"""
+        return setup_chrome_driver(headless_mode=HEADLESS_MODE)
 
     def generate_external_id(self, job_id, company):
         unique_string = f"{company}_{job_id}"
@@ -475,7 +455,6 @@ class BNYScraper:
         if 'India' in location_str or 'IND' in location_str:
             result['country'] = 'India'
         return result
-
 
 if __name__ == "__main__":
     scraper = BNYScraper()

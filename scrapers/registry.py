@@ -4,6 +4,7 @@ Scraper Registry - Generated from scrappers.csv.
 from datetime import datetime
 
 from core.logging import setup_logger
+from core.webdriver_utils import setup_chrome_driver
 from config.scraper import LOGS_DIR
 
 log_file = LOGS_DIR / f"registry_{datetime.now().strftime('%Y%m%d')}.log"
@@ -411,7 +412,6 @@ from scrapers.zeiss_scraper import ZeissScraper
 from scrapers.zensar_scraper import ZensarTechnologiesScraper
 from scrapers.zepto_scraper import ZeptoScraper
 from scrapers.zoho_scraper import ZohoScraper
-
 
 SCRAPER_MAP = {
     'jll': JLLScraper,
@@ -822,7 +822,6 @@ SCRAPER_MAP = {
     'guardian': GuardianScraper,
     'h&m': HMScraper,
 }
-
 
 ALL_COMPANY_CHOICES = [
     'JLL',

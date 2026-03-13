@@ -1,10 +1,10 @@
 import requests
 import hashlib
 from core.logging import setup_logger
-from config.scraper import SCRAPE_TIMEOUT, MAX_PAGES_TO_SCRAPE
+from core.webdriver_utils import setup_chrome_driver
+from config.scraper import SCRAPE_TIMEOUT, MAX_PAGES_TO_SCRAPE, HEADLESS_MODE
 
 logger = setup_logger('stryker_scraper')
-
 
 class StrykerScraper:
     def __init__(self):
@@ -12,6 +12,10 @@ class StrykerScraper:
         self.url = "https://careers.stryker.com/jobs?location_type=4&location_name=India"
         self.api_url = 'https://stryker.wd1.myworkdayjobs.com/wday/cxs/stryker/StrykerCareers/jobs'
         self.base_job_url = 'https://stryker.wd1.myworkdayjobs.com/StrykerCareers'
+    
+    def setup_driver(self):
+        """Set up Chrome driver using cross-platform utility"""
+        return setup_chrome_driver(headless_mode=HEADLESS_MODE)
 
     def generate_external_id(self, job_id, company):
         unique_string = f"{company}_{job_id}"

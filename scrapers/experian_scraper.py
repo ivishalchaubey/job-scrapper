@@ -3,10 +3,10 @@ import hashlib
 import time
 
 from core.logging import setup_logger
-from config.scraper import SCRAPE_TIMEOUT, MAX_PAGES_TO_SCRAPE
+from core.webdriver_utils import setup_chrome_driver
+from config.scraper import SCRAPE_TIMEOUT, MAX_PAGES_TO_SCRAPE, HEADLESS_MODE
 
 logger = setup_logger('experian_scraper')
-
 
 class ExperianScraper:
     def __init__(self):
@@ -15,6 +15,10 @@ class ExperianScraper:
         self.api_base = 'https://api.smartrecruiters.com/v1/companies'
         self.company_id = 'Experian'
         self.page_size = 100
+    
+    def setup_driver(self):
+        """Set up Chrome driver using cross-platform utility"""
+        return setup_chrome_driver(headless_mode=HEADLESS_MODE)
 
     def generate_external_id(self, job_id, company):
         """Generate stable external ID"""
@@ -196,7 +200,6 @@ class ExperianScraper:
             country = 'India'
 
         return city, state, country
-
 
 if __name__ == "__main__":
     scraper = ExperianScraper()

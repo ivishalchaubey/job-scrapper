@@ -1,10 +1,10 @@
 import requests
 import hashlib
 from core.logging import setup_logger
-from config.scraper import SCRAPE_TIMEOUT, MAX_PAGES_TO_SCRAPE
+from core.webdriver_utils import setup_chrome_driver
+from config.scraper import SCRAPE_TIMEOUT, MAX_PAGES_TO_SCRAPE, HEADLESS_MODE
 
 logger = setup_logger('maersk_scraper')
-
 
 class MaerskScraper:
     def __init__(self):
@@ -12,6 +12,10 @@ class MaerskScraper:
         self.url = "https://www.maersk.com/careers/vacancies?searchText=&city="
         self.api_url = 'https://maersk.wd3.myworkdayjobs.com/wday/cxs/maersk/Maersk_Careers/jobs'
         self.base_job_url = 'https://maersk.wd3.myworkdayjobs.com/Maersk_Careers'
+    
+    def setup_driver(self):
+        """Set up Chrome driver using cross-platform utility"""
+        return setup_chrome_driver(headless_mode=HEADLESS_MODE)
 
     def generate_external_id(self, job_id, company):
         unique_string = f"{company}_{job_id}"

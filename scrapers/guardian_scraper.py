@@ -4,10 +4,10 @@ import time
 import requests
 
 from core.logging import setup_logger
-from config.scraper import MAX_PAGES_TO_SCRAPE
+from core.webdriver_utils import setup_chrome_driver
+from config.scraper import MAX_PAGES_TO_SCRAPE, HEADLESS_MODE
 
 logger = setup_logger('guardian_scraper')
-
 
 class GuardianScraper:
     def __init__(self):
@@ -15,6 +15,10 @@ class GuardianScraper:
         self.url = "https://guardianlife.wd5.myworkdayjobs.com/en-GB/Guardian-Life-Careers?locationCountry=c4f78be1a8f14da0ab49ce1162348a5e"
         self.api_url = 'https://guardianlife.wd5.myworkdayjobs.com/wday/cxs/guardianlife/Guardian-Life-Careers/jobs'
         self.base_job_url = 'https://guardianlife.wd5.myworkdayjobs.com/Guardian-Life-Careers'
+    
+    def setup_driver(self):
+        """Set up Chrome driver using cross-platform utility"""
+        return setup_chrome_driver(headless_mode=HEADLESS_MODE)
 
     def generate_external_id(self, job_id, company):
         unique_string = f"{company}_{job_id}"

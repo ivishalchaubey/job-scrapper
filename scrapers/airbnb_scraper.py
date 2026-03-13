@@ -1,16 +1,20 @@
 import requests
 import hashlib
 from core.logging import setup_logger
-from config.scraper import SCRAPE_TIMEOUT, MAX_PAGES_TO_SCRAPE
+from core.webdriver_utils import setup_chrome_driver
+from config.scraper import SCRAPE_TIMEOUT, MAX_PAGES_TO_SCRAPE, HEADLESS_MODE
 
 logger = setup_logger('airbnb_scraper')
-
 
 class AirbnbScraper:
     def __init__(self):
         self.company_name = "Airbnb"
         self.url = "https://careers.airbnb.com/positions/?_where_you_work=india%2Cbangalore-india-75876%2Cgurugram-india-75875"
         self.api_url = 'https://boards-api.greenhouse.io/v1/boards/airbnb/jobs'
+    
+    def setup_driver(self):
+        """Set up Chrome driver using cross-platform utility"""
+        return setup_chrome_driver(headless_mode=HEADLESS_MODE)
 
     def generate_external_id(self, job_id, company):
         unique_string = f"{company}_{job_id}"

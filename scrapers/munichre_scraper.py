@@ -9,54 +9,26 @@ import time
 import os
 from pathlib import Path
 
-
 from core.logging import setup_logger
+from core.webdriver_utils import setup_chrome_driver
 from config.scraper import SCRAPE_TIMEOUT, HEADLESS_MODE, FETCH_FULL_JOB_DETAILS, MAX_PAGES_TO_SCRAPE
 
 logger = setup_logger('munichre_scraper')
-
-CHROMEDRIVER_PATH = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0.7559.133_fresh/chromedriver-mac-arm64/chromedriver'
 
 INDIA_KEYWORDS = ['india', 'mumbai', 'delhi', 'bangalore', 'bengaluru', 'hyderabad',
                   'chennai', 'pune', 'kolkata', 'gurgaon', 'gurugram', 'noida',
                   'ahmedabad', 'jaipur', 'lucknow', 'chandigarh', 'kochi', 'coimbatore',
                   'thiruvananthapuram', 'indore', 'nagpur', 'vadodara', 'visakhapatnam']
 
-
 class MunichReScraper:
     def __init__(self):
         self.company_name = "Munich Re"
         self.url = "https://careers.munichre.com/en/search-jobs?alrpm=1269750&ascf=[%7B%22Value%22:%22Munich+Re+all+companies%22,%22Key%22:%22custom_fields.Brands%22%7D]"
         self.base_url = 'https://careers.munichre.com'
-
+    
     def setup_driver(self):
-        chrome_options = Options()
-        if HEADLESS_MODE:
-            chrome_options.add_argument('--headless=new')
-        chrome_options.add_argument('--no-sandbox')
-        chrome_options.add_argument('--disable-dev-shm-usage')
-        chrome_options.add_argument('--disable-gpu')
-        chrome_options.add_argument('--window-size=1920,1080')
-        chrome_options.add_argument('--user-agent=AppleWebKit/537.36')
-        chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-        chrome_options.add_experimental_option('useAutomationExtension', False)
-        chrome_options.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
-
-        try:
-            if os.path.exists(CHROMEDRIVER_PATH):
-                service = Service(CHROMEDRIVER_PATH)
-                driver = webdriver.Chrome(service=service, options=chrome_options)
-            else:
-                driver = webdriver.Chrome(options=chrome_options)
-        except Exception as e:
-            logger.warning(f"Primary driver failed: {str(e)}, trying fallback")
-            driver = webdriver.Chrome(options=chrome_options)
-
-        driver.execute_cdp_cmd('Network.setUserAgentOverride', {
-            "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
-        })
-        driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-        return driver
+        """Set up Chrome driver using cross-platform utility"""
+        return setup_chrome_driver(headless_mode=HEADLESS_MODE)
 
     def generate_external_id(self, job_id, company):
         unique_string = f"{company}_{job_id}"
@@ -277,7 +249,6 @@ class MunichReScraper:
         if 'India' in location_str:
             result['country'] = 'India'
         return result
-
 
 if __name__ == "__main__":
     scraper = MunichReScraper()

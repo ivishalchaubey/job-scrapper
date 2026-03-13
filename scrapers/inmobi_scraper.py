@@ -2,16 +2,20 @@ import requests
 import hashlib
 
 from core.logging import setup_logger
-from config.scraper import SCRAPE_TIMEOUT, MAX_PAGES_TO_SCRAPE
+from core.webdriver_utils import setup_chrome_driver
+from config.scraper import SCRAPE_TIMEOUT, MAX_PAGES_TO_SCRAPE, HEADLESS_MODE
 
 logger = setup_logger('inmobi_scraper')
-
 
 class InMobiScraper:
     def __init__(self):
         self.company_name = "InMobi"
         self.url = "https://www.inmobi.com/company/careers?country=india"
         self.api_url = 'https://boards-api.greenhouse.io/v1/boards/inmobi/jobs'
+    
+    def setup_driver(self):
+        """Set up Chrome driver using cross-platform utility"""
+        return setup_chrome_driver(headless_mode=HEADLESS_MODE)
 
     def generate_external_id(self, job_id, company):
         unique_string = f"{company}_{job_id}"
@@ -119,7 +123,6 @@ class InMobiScraper:
         if 'India' in location_str:
             result['country'] = 'India'
         return result
-
 
 if __name__ == "__main__":
     scraper = InMobiScraper()

@@ -3,10 +3,10 @@ import hashlib
 import time
 
 from core.logging import setup_logger
-from config.scraper import MAX_PAGES_TO_SCRAPE
+from core.webdriver_utils import setup_chrome_driver
+from config.scraper import MAX_PAGES_TO_SCRAPE, HEADLESS_MODE
 
 logger = setup_logger('generali_scraper')
-
 
 class GeneraliScraper:
     def __init__(self):
@@ -14,6 +14,10 @@ class GeneraliScraper:
         self.url = "https://www.generalicentralinsurance.com/current-openings"
         self.base_url = 'https://www.generalicentralinsurance.com'
         self.api_url = 'https://www.generalicentralinsurance.com/content/futuregeneraliindiainsurancecoltd/api/mdm/job-role.json'
+    
+    def setup_driver(self):
+        """Set up Chrome driver using cross-platform utility"""
+        return setup_chrome_driver(headless_mode=HEADLESS_MODE)
 
     def generate_external_id(self, job_id, company):
         unique_string = f"{company}_{job_id}"
@@ -140,7 +144,6 @@ class GeneraliScraper:
             logger.error(f"Error: {str(e)}")
 
         return all_jobs
-
 
 if __name__ == "__main__":
     scraper = GeneraliScraper()

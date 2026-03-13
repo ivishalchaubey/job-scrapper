@@ -16,12 +16,12 @@ except ImportError:
     requests = None
 
 from core.logging import setup_logger
+from core.webdriver_utils import setup_chrome_driver
 from config.scraper import SCRAPE_TIMEOUT, HEADLESS_MODE, FETCH_FULL_JOB_DETAILS, MAX_PAGES_TO_SCRAPE
 
 logger = setup_logger('americanexpress_scraper')
 
 FRESH_CHROMEDRIVER = '/Users/ivishalchaubey/.wdm/drivers/chromedriver/mac64/144.0.7559.133_fresh/chromedriver-mac-arm64/chromedriver'
-
 
 class AmericanExpressScraper:
     def __init__(self):
@@ -491,7 +491,6 @@ class AmericanExpressScraper:
             result['country'] = 'India'
 
         return result
-
 
 if __name__ == "__main__":
     scraper = AmericanExpressScraper()

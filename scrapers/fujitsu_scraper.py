@@ -3,12 +3,12 @@ import hashlib
 import time
 
 from core.logging import setup_logger
-from config.scraper import MAX_PAGES_TO_SCRAPE
+from core.webdriver_utils import setup_chrome_driver
+from config.scraper import MAX_PAGES_TO_SCRAPE, HEADLESS_MODE
 
 logger = setup_logger('fujitsu_scraper')
 
 PAGE_SIZE = 10  # SuccessFactors RMK API returns 10 per page
-
 
 class FujitsuScraper:
     def __init__(self):
@@ -25,6 +25,10 @@ class FujitsuScraper:
             'Referer': 'https://www.jobs.global.fujitsu.com/search/',
             'Origin': 'https://www.jobs.global.fujitsu.com',
         })
+    
+    def setup_driver(self):
+        """Set up Chrome driver using cross-platform utility"""
+        return setup_chrome_driver(headless_mode=HEADLESS_MODE)
 
     def generate_external_id(self, job_id, company):
         unique_string = f"{company}_{job_id}"
@@ -200,7 +204,6 @@ class FujitsuScraper:
                 continue
 
         return jobs
-
 
 if __name__ == "__main__":
     scraper = FujitsuScraper()

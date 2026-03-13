@@ -3,10 +3,10 @@ import hashlib
 import time
 
 from core.logging import setup_logger
-from config.scraper import SCRAPE_TIMEOUT, MAX_PAGES_TO_SCRAPE
+from core.webdriver_utils import setup_chrome_driver
+from config.scraper import SCRAPE_TIMEOUT, MAX_PAGES_TO_SCRAPE, HEADLESS_MODE
 
 logger = setup_logger('dpworld_scraper')
-
 
 class DPWorldScraper:
     def __init__(self):
@@ -17,6 +17,10 @@ class DPWorldScraper:
         self.india_location_ids = '300000000273955'
         self.page_size = 25
         self.job_detail_base_url = 'https://ehpv.fa.em2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/job'
+    
+    def setup_driver(self):
+        """Set up Chrome driver using cross-platform utility"""
+        return setup_chrome_driver(headless_mode=HEADLESS_MODE)
 
     def generate_external_id(self, job_id, company):
         unique_string = f"{company}_{job_id}"
@@ -198,7 +202,6 @@ class DPWorldScraper:
             country = 'India'
 
         return city, state, country
-
 
 if __name__ == "__main__":
     scraper = DPWorldScraper()

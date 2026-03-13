@@ -10,12 +10,11 @@ from pathlib import Path
 import os
 import stat
 
-
 from core.logging import setup_logger
+from core.webdriver_utils import setup_chrome_driver
 from config.scraper import SCRAPE_TIMEOUT, HEADLESS_MODE, FETCH_FULL_JOB_DETAILS, MAX_PAGES_TO_SCRAPE
 
 logger = setup_logger('bookmyshow_scraper')
-
 
 class BookMyShowScraper:
     def __init__(self):
@@ -382,7 +381,6 @@ class BookMyShowScraper:
             except:
                 pass
         return details
-
 
 if __name__ == "__main__":
     scraper = BookMyShowScraper()

@@ -3,10 +3,10 @@ from bs4 import BeautifulSoup
 import hashlib
 import re
 from core.logging import setup_logger
-from config.scraper import MAX_PAGES_TO_SCRAPE
+from core.webdriver_utils import setup_chrome_driver
+from config.scraper import MAX_PAGES_TO_SCRAPE, HEADLESS_MODE
 
 logger = setup_logger('cargill_scraper')
-
 
 class CargillScraper:
     def __init__(self):
@@ -19,6 +19,10 @@ class CargillScraper:
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
             'Accept-Language': 'en-US,en;q=0.9',
         })
+    
+    def setup_driver(self):
+        """Set up Chrome driver using cross-platform utility"""
+        return setup_chrome_driver(headless_mode=HEADLESS_MODE)
 
     def generate_external_id(self, job_id, company):
         unique_string = f"{company}_{job_id}"
@@ -447,7 +451,6 @@ class CargillScraper:
             logger.info(f"JSON-LD Extracted: {title} | {location}")
         except Exception as e:
             logger.warning(f"Error processing JSON-LD job: {str(e)}")
-
 
 if __name__ == "__main__":
     scraper = CargillScraper()

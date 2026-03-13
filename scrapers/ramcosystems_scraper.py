@@ -4,10 +4,10 @@ import re
 import json
 
 from core.logging import setup_logger
-from config.scraper import MAX_PAGES_TO_SCRAPE
+from core.webdriver_utils import setup_chrome_driver
+from config.scraper import MAX_PAGES_TO_SCRAPE, HEADLESS_MODE
 
 logger = setup_logger('ramcosystems_scraper')
-
 
 class RamcoSystemsScraper:
     def __init__(self):
@@ -17,6 +17,10 @@ class RamcoSystemsScraper:
         self.headers = {
             'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
         }
+    
+    def setup_driver(self):
+        """Set up Chrome driver using cross-platform utility"""
+        return setup_chrome_driver(headless_mode=HEADLESS_MODE)
 
     def generate_external_id(self, job_id, company):
         unique_string = f"{company}_{job_id}"
@@ -409,7 +413,6 @@ class RamcoSystemsScraper:
                 break
 
         return jobs
-
 
 if __name__ == "__main__":
     scraper = RamcoSystemsScraper()

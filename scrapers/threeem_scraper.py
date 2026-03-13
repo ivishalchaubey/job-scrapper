@@ -7,10 +7,10 @@ import time
 import requests
 
 from core.logging import setup_logger
-from config.scraper import MAX_PAGES_TO_SCRAPE
+from core.webdriver_utils import setup_chrome_driver
+from config.scraper import MAX_PAGES_TO_SCRAPE, HEADLESS_MODE
 
 logger = setup_logger('threeem_scraper')
-
 
 class ThreeEmScraper:
     def __init__(self):
@@ -19,6 +19,10 @@ class ThreeEmScraper:
         self.api_url = 'https://3m.wd1.myworkdayjobs.com/wday/cxs/3m/Search/jobs'
         self.base_job_url = 'https://3m.wd1.myworkdayjobs.com/Search'
         self._detail_cache = {}
+    
+    def setup_driver(self):
+        """Set up Chrome driver using cross-platform utility"""
+        return setup_chrome_driver(headless_mode=HEADLESS_MODE)
 
     def generate_external_id(self, job_id, company):
         unique_string = f"{company}_{job_id}"

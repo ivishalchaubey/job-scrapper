@@ -4,10 +4,10 @@ import time
 import requests
 
 from core.logging import setup_logger
-from config.scraper import MAX_PAGES_TO_SCRAPE
+from core.webdriver_utils import setup_chrome_driver
+from config.scraper import HEADLESS_MODE, MAX_PAGES_TO_SCRAPE
 
 logger = setup_logger('motorolasolutions_scraper')
-
 
 class MotorolaSolutionsScraper:
     def __init__(self):
@@ -15,6 +15,10 @@ class MotorolaSolutionsScraper:
         self.url = "https://motorolasolutions.wd5.myworkdayjobs.com/Careers?timeType=14bb6aa2c25e4a218b2a3faaa951e44c&locationCountry=c4f78be1a8f14da0ab49ce1162348a5e"
         self.api_url = 'https://motorolasolutions.wd5.myworkdayjobs.com/wday/cxs/motorolasolutions/Careers/jobs'
         self.base_job_url = 'https://motorolasolutions.wd5.myworkdayjobs.com/Careers'
+    
+    def setup_driver(self):
+        """Set up Chrome driver using cross-platform utility"""
+        return setup_chrome_driver(headless_mode=HEADLESS_MODE)
 
     def generate_external_id(self, job_id, company):
         unique_string = f"{company}_{job_id}"

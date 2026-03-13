@@ -11,7 +11,7 @@ LOGS_DIR.mkdir(exist_ok=True)
 # Scraper settings
 SCRAPE_TIMEOUT = 30
 HEADLESS_MODE = True
-MAX_PAGES_TO_SCRAPE = 15
+MAX_PAGES_TO_SCRAPE = 1
 FETCH_FULL_JOB_DETAILS = False
 
 # Company URLs

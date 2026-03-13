@@ -4,10 +4,10 @@ import time
 import requests
 
 from core.logging import setup_logger
-from config.scraper import MAX_PAGES_TO_SCRAPE
+from core.webdriver_utils import setup_chrome_driver
+from config.scraper import MAX_PAGES_TO_SCRAPE, HEADLESS_MODE
 
 logger = setup_logger('franklintempleton_scraper')
-
 
 class FranklinTempletonScraper:
     def __init__(self):
@@ -15,6 +15,10 @@ class FranklinTempletonScraper:
         self.url = "https://franklintempleton.wd5.myworkdayjobs.com/Primary-External-1?_gl=1*q7f5r8*_ga*Njg1MzEyNTU5LjE3NzIxMDQxNjM.*_ga_15V8ZZDP8Z*czE3NzIxMDQxNjIkbzEkZzAkdDE3NzIxMDQxOTgkajI0JGwwJGgw&locationCountry=c4f78be1a8f14da0ab49ce1162348a5e"
         self.api_url = 'https://franklintempleton.wd5.myworkdayjobs.com/wday/cxs/franklintempleton/Primary-External-1/jobs'
         self.base_job_url = 'https://franklintempleton.wd5.myworkdayjobs.com/Primary-External-1'
+    
+    def setup_driver(self):
+        """Set up Chrome driver using cross-platform utility"""
+        return setup_chrome_driver(headless_mode=HEADLESS_MODE)
 
     def generate_external_id(self, job_id, company):
         unique_string = f"{company}_{job_id}"

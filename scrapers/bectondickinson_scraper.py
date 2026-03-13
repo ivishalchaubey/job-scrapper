@@ -1,10 +1,10 @@
 import requests
 import hashlib
 from core.logging import setup_logger
-from config.scraper import SCRAPE_TIMEOUT, MAX_PAGES_TO_SCRAPE
+from core.webdriver_utils import setup_chrome_driver
+from config.scraper import SCRAPE_TIMEOUT, MAX_PAGES_TO_SCRAPE, HEADLESS_MODE
 
 logger = setup_logger('bectondickinson_scraper')
-
 
 class BectonDickinsonScraper:
     def __init__(self):
@@ -12,6 +12,10 @@ class BectonDickinsonScraper:
         self.url = "https://jobs.bd.com/en/location/india-jobs/159/1269750/2"
         self.api_url = 'https://bdx.wd1.myworkdayjobs.com/wday/cxs/bdx/EXTERNAL_CAREER_SITE_INDIA/jobs'
         self.base_job_url = 'https://bdx.wd1.myworkdayjobs.com/EXTERNAL_CAREER_SITE_INDIA'
+    
+    def setup_driver(self):
+        """Set up Chrome driver using cross-platform utility"""
+        return setup_chrome_driver(headless_mode=HEADLESS_MODE)
 
     def generate_external_id(self, job_id, company):
         unique_string = f"{company}_{job_id}"

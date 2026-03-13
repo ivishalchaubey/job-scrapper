@@ -4,10 +4,10 @@ import time
 import requests
 
 from core.logging import setup_logger
-from config.scraper import MAX_PAGES_TO_SCRAPE
+from core.webdriver_utils import setup_chrome_driver
+from config.scraper import MAX_PAGES_TO_SCRAPE, HEADLESS_MODE
 
 logger = setup_logger('otis_scraper')
-
 
 class OtisScraper:
     def __init__(self):
@@ -15,6 +15,10 @@ class OtisScraper:
         self.url = "https://otis.wd5.myworkdayjobs.com/REC_Ext_Gateway?locationCountry=c4f78be1a8f14da0ab49ce1162348a5e"
         self.api_url = 'https://otis.wd5.myworkdayjobs.com/wday/cxs/otis/REC_Ext_Gateway/jobs'
         self.base_job_url = 'https://otis.wd5.myworkdayjobs.com/REC_Ext_Gateway'
+    
+    def setup_driver(self):
+        """Set up Chrome driver using cross-platform utility"""
+        return setup_chrome_driver(headless_mode=HEADLESS_MODE)
 
     def generate_external_id(self, job_id, company):
         unique_string = f"{company}_{job_id}"

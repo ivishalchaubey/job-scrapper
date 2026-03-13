@@ -3,10 +3,10 @@ import hashlib
 from bs4 import BeautifulSoup
 
 from core.logging import setup_logger
-from config.scraper import MAX_PAGES_TO_SCRAPE
+from core.webdriver_utils import setup_chrome_driver
+from config.scraper import MAX_PAGES_TO_SCRAPE, HEADLESS_MODE
 
 logger = setup_logger('yash_scraper')
-
 
 class YashScraper:
     def __init__(self):
@@ -17,6 +17,10 @@ class YashScraper:
             'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
         }
         self.page_size = 10
+    
+    def setup_driver(self):
+        """Set up Chrome driver using cross-platform utility"""
+        return setup_chrome_driver(headless_mode=HEADLESS_MODE)
 
     def generate_external_id(self, job_id, company):
         unique_string = f"{company}_{job_id}"
@@ -168,7 +172,6 @@ class YashScraper:
             logger.error(f"Error scraping {self.company_name}: {str(e)}")
 
         return all_jobs
-
 
 if __name__ == "__main__":
     scraper = YashScraper()

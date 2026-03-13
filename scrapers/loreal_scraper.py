@@ -11,12 +11,11 @@ from pathlib import Path
 import os
 import stat
 
-
 from core.logging import setup_logger
+from core.webdriver_utils import setup_chrome_driver
 from config.scraper import SCRAPE_TIMEOUT, HEADLESS_MODE, FETCH_FULL_JOB_DETAILS, MAX_PAGES_TO_SCRAPE
 
 logger = setup_logger('loreal_scraper')
-
 
 class LorealScraper:
     def __init__(self):
@@ -653,7 +652,6 @@ class LorealScraper:
             result['country'] = 'India'
 
         return result
-
 
 if __name__ == "__main__":
     scraper = LorealScraper()

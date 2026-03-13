@@ -4,10 +4,10 @@ import re
 import time
 
 from core.logging import setup_logger
-from config.scraper import MAX_PAGES_TO_SCRAPE
+from core.webdriver_utils import setup_chrome_driver
+from config.scraper import MAX_PAGES_TO_SCRAPE, HEADLESS_MODE
 
 logger = setup_logger('questdiagnostics_scraper')
-
 
 class QuestDiagnosticsScraper:
     def __init__(self):
@@ -15,6 +15,10 @@ class QuestDiagnosticsScraper:
         self.base_url = 'https://indiacareers.questdiagnostics.com'
         self.search_url = f'{self.base_url}/search-jobs/results'
         self.location_url = f'{self.base_url}/location/india-jobs/38852/1269750/2'
+    
+    def setup_driver(self):
+        """Set up Chrome driver using cross-platform utility"""
+        return setup_chrome_driver(headless_mode=HEADLESS_MODE)
 
     def generate_external_id(self, job_id, company):
         unique_string = f"{company}_{job_id}"
@@ -201,7 +205,6 @@ class QuestDiagnosticsScraper:
             })
 
         return jobs
-
 
 if __name__ == "__main__":
     scraper = QuestDiagnosticsScraper()

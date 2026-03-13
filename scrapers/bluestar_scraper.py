@@ -7,10 +7,10 @@ except ImportError:
     requests = None
 
 from core.logging import setup_logger
-from config.scraper import MAX_PAGES_TO_SCRAPE
+from core.webdriver_utils import setup_chrome_driver
+from config.scraper import MAX_PAGES_TO_SCRAPE, HEADLESS_MODE
 
 logger = setup_logger('bluestar_scraper')
-
 
 class BlueStarScraper:
     def __init__(self):
@@ -18,6 +18,10 @@ class BlueStarScraper:
         self.url = "https://bluestar.workline.hr/CPortal/GeneralOpening.aspx?DetailCode=1"
         self.base_url = 'https://bluestar.workline.hr'
         self.api_url = 'https://bluestar.workline.hr/CPortal/GeneralOpening.aspx/GetCurrentopening'
+    
+    def setup_driver(self):
+        """Set up Chrome driver using cross-platform utility"""
+        return setup_chrome_driver(headless_mode=HEADLESS_MODE)
 
     def generate_external_id(self, job_id, company):
         unique_string = f"{company}_{job_id}"
@@ -205,7 +209,6 @@ class BlueStarScraper:
         if 'India' in location_str:
             result['country'] = 'India'
         return result
-
 
 if __name__ == "__main__":
     scraper = BlueStarScraper()
