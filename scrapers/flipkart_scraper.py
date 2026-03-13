@@ -5,6 +5,8 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 import hashlib
+import html
+import re
 import time
 import os
 from datetime import datetime
@@ -33,104 +35,80 @@ class FlipkartScraper:
         return hashlib.md5(unique_string.encode()).hexdigest()
     
     def scrape(self, max_pages=MAX_PAGES_TO_SCRAPE):
-        """Scrape jobs from Flipkart careers page with pagination support"""
+        """Scrape jobs from Flipkart careers page using careers APIs via browser context."""
         jobs = []
         driver = None
         
         try:
             logger.info(f"Starting scrape for {self.company_name}")
             driver = self.setup_driver()
-            
-            # Navigate to jobs page using direct URL (bypasses hash routing)
+
+            # Open careers page first so browser session can call protected API endpoints.
             logger.info(f"Navigating to {self.url}")
             driver.get(self.url)
-            
-            # Wait for page to load - Flipkart uses Angular SPA
-            wait = WebDriverWait(driver, SCRAPE_TIMEOUT)
-            logger.info("Waiting for Angular app to initialize...")
-            time.sleep(20)  # Angular SPA needs extra time for API calls
-            
-            # Check current URL
-            current_url = driver.current_url
-            logger.info(f"Current URL: {current_url}")
-            
-            # If we're on homepage, use hash navigation to job listing view
-            if 'job-listing' not in current_url.lower() and 'jobview' not in current_url.lower():
-                logger.info("Navigating to job listing view...")
-                try:
-                    driver.execute_script("window.location.hash = '#!/job-listing'")
-                    time.sleep(5)
-                    current_url = driver.current_url
-                    logger.info(f"URL after hash: {current_url}")
-                except Exception as e:
-                    logger.warning(f"Hash navigation failed: {e}")
-            
-            # Wait for Angular to finish loading and making API calls
-            logger.info("Waiting for Angular to load jobs data (25 seconds)...")
-            time.sleep(25)  # Angular apps often need more time for API calls
-            
-            # Scroll to trigger any lazy loading - more aggressive
-            logger.info("Scrolling to trigger content loading...")
-            for i in range(6):
-                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                time.sleep(2)
-                driver.execute_script(f"window.scrollTo(0, {i * 300});")
-                time.sleep(1)
-            
-            driver.execute_script("window.scrollTo(0, 0);")
-            time.sleep(3)
-            
-            # Try clicking "View All" or "Show More" buttons
-            try:
-                buttons = driver.find_elements(By.XPATH, '//button[contains(text(), "View")] | //button[contains(text(), "Show")] | //a[contains(text(), "View All")]')
-                for btn in buttons:
-                    try:
-                        if btn.is_displayed():
-                            btn.click()
-                            time.sleep(3)
-                            break
-                    except:
-                        pass
-            except:
-                pass
-            
-            current_page = 1
-            all_scraped_ids = set()
-            
-            while current_page <= max_pages:
-                logger.info(f"Scraping page/scroll iteration {current_page} of {max_pages}")
-                
-                # Scrape current page
-                page_jobs = self._scrape_page(driver, wait)
-                
-                # Filter out duplicates
-                new_jobs = [j for j in page_jobs if j['external_id'] not in all_scraped_ids]
-                for job in new_jobs:
-                    all_scraped_ids.add(job['external_id'])
-                    jobs.append(job)
-                
-                logger.info(f"Page {current_page}: Found {len(new_jobs)} new jobs (total: {len(jobs)})")
-                
-                # If no new jobs found, try scrolling more
-                if current_page < max_pages and len(new_jobs) > 0:
-                    # Scroll down to load more jobs
-                    prev_height = driver.execute_script("return document.body.scrollHeight")
-                    driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                    time.sleep(3)
-                    new_height = driver.execute_script("return document.body.scrollHeight")
-                    
-                    # If height didn't change, try pagination
-                    if new_height == prev_height:
-                        if not self._go_to_next_page(driver, current_page):
-                            logger.info("No more pages/content available")
-                            break
-                        time.sleep(3)
-                elif len(new_jobs) == 0:
-                    logger.info("No new jobs found, ending scrape")
+            time.sleep(8)
+
+            page_size = 10
+            seen_external_ids = set()
+
+            for page_index in range(max_pages):
+                offset = page_index * page_size
+                logger.info(f"Fetching API page {page_index + 1}/{max_pages} (offset={offset})")
+
+                page_items = self._fetch_jobs_page_api(driver, offset)
+                if not page_items:
+                    logger.info("No jobs returned by API for this page; stopping pagination")
                     break
-                
-                current_page += 1
-            
+
+                page_added = 0
+                for item in page_items:
+                    source = item.get('_source', {}) if isinstance(item, dict) else {}
+                    job_id = source.get('id')
+                    if not job_id:
+                        continue
+
+                    details = None
+                    if FETCH_FULL_JOB_DETAILS:
+                        details = self._fetch_job_detail_api(driver, source)
+
+                    job = self._build_job_record(source, details)
+                    if not job:
+                        continue
+
+                    needs_page_enrichment = len((job.get('description') or '').strip()) < 120
+                    if (FETCH_FULL_JOB_DETAILS or needs_page_enrichment) and job.get('apply_url'):
+                        page_details = self._fetch_job_page_details(driver, job['apply_url'])
+                        if page_details:
+                            if page_details.get('description') and len(page_details['description']) > len(job.get('description', '')):
+                                job['description'] = page_details['description']
+                            if page_details.get('experience_level'):
+                                job['experience_level'] = page_details['experience_level']
+                            if page_details.get('job_function'):
+                                job['job_function'] = page_details['job_function']
+                            if page_details.get('posted_date'):
+                                job['posted_date'] = page_details['posted_date']
+                            if page_details.get('location'):
+                                job['location'] = page_details['location']
+                                city, state, country = self.parse_location(page_details['location'])
+                                job['city'] = city
+                                job['state'] = state
+                                job['country'] = country
+                            if page_details.get('department') and not job.get('department'):
+                                job['department'] = page_details['department']
+
+                    if job['external_id'] in seen_external_ids:
+                        continue
+
+                    seen_external_ids.add(job['external_id'])
+                    jobs.append(job)
+                    page_added += 1
+
+                logger.info(f"API page {page_index + 1}: added {page_added} jobs (total: {len(jobs)})")
+
+                # If API returns fewer than page size, assume last page.
+                if len(page_items) < page_size:
+                    break
+
             logger.info(f"Successfully scraped {len(jobs)} total jobs from {self.company_name}")
             
         except Exception as e:
@@ -144,444 +122,287 @@ class FlipkartScraper:
         
         return jobs
     
-    def _go_to_next_page(self, driver, current_page):
-        """Navigate to the next page"""
+    def _fetch_jobs_page_api(self, driver, offset):
+        """Fetch one listing page from the jobs/search API through browser context."""
         try:
-            next_page_num = current_page + 1
-            next_page_selectors = [
-                (By.XPATH, f'//a[text()="{next_page_num}"]'),
-                (By.CSS_SELECTOR, f'a[aria-label="Page {next_page_num}"]'),
-                (By.XPATH, '//a[@aria-label="Next page"]'),
-                (By.XPATH, '//button[contains(text(), "Next")]'),
-                (By.CSS_SELECTOR, 'a.pagination-next'),
-            ]
-            
-            for selector_type, selector_value in next_page_selectors:
-                try:
-                    next_button = driver.find_element(selector_type, selector_value)
-                    driver.execute_script("arguments[0].scrollIntoView();", next_button)
-                    time.sleep(1)
-                    next_button.click()
-                    logger.info(f"Clicked next page button using selector: {selector_value}")
-                    return True
-                except:
-                    continue
-            
-            logger.warning("Could not find next page button")
-            return False
-                
+            script = """
+                const done = arguments[arguments.length - 1];
+                const start = arguments[0];
+                const fd = new FormData();
+                fd.append('filterCri', JSON.stringify({
+                    paginationStartNo: start,
+                    selectedCall: 'sort',
+                    sortCriteria: {name: 'modifiedDate', isAscending: false},
+                    anyOfTheseWords: ''
+                }));
+                fd.append('domain', 'www.flipkartcareers.com');
+                fd.append('companyId', 'MTUxMTA=');
+
+                fetch('https://public.zwayam.com/jobs/search', {method: 'POST', body: fd})
+                  .then(r => r.json())
+                  .then(j => done(j))
+                  .catch(e => done({error: String(e)}));
+            """
+
+            response = driver.execute_async_script(script, offset)
+            if not isinstance(response, dict):
+                return []
+            if response.get('error'):
+                logger.warning(f"jobs/search API error: {response.get('error')}")
+                return []
+
+            data = response.get('data', {}) if isinstance(response.get('data'), dict) else {}
+            items = data.get('data', []) if isinstance(data.get('data'), list) else []
+            return items
         except Exception as e:
-            logger.error(f"Error navigating to next page: {str(e)}")
-            return False
-    
-    def _scrape_page(self, driver, wait):
-        """Scrape jobs from current page - IMPROVED VERSION"""
-        jobs = []
-        
+            logger.error(f"Error fetching jobs/search API page: {str(e)}")
+            return []
+
+    def _fetch_job_detail_api(self, driver, source):
+        """Fetch full job detail from jobs-service/v1/jobs/careersite."""
         try:
-            logger.info(f"Current URL: {driver.current_url}")
-            logger.info(f"Page title: {driver.title}")
-            
-            time.sleep(3)
-            
-            # STRATEGY 1: Extract from Angular/React data
-            logger.info("Trying to extract from page data...")
-            try:
-                jobs_data = driver.execute_script("""
-                    var jobs = [];
-                    // Check Angular scope
-                    if (typeof angular !== 'undefined') {
-                        try {
-                            var elem = document.querySelector('[ng-controller], [ng-app]');
-                            if (elem) {
-                                var scope = angular.element(elem).scope();
-                                if (scope && scope.jobs) jobs = scope.jobs;
-                                if (scope && scope.jobsList) jobs = scope.jobsList;
-                            }
-                        } catch(e) {}
-                    }
-                    // Check window object
-                    if (window.jobsData) jobs = window.jobsData;
-                    if (window.jobs && Array.isArray(window.jobs)) jobs = window.jobs;
-                    
-                    return jobs;
-                """)
-                
-                if jobs_data and len(jobs_data) > 0:
-                    logger.info(f"Found {len(jobs_data)} jobs from page data")
-                    for idx, job_obj in enumerate(jobs_data):
-                        try:
-                            if isinstance(job_obj, dict):
-                                title = job_obj.get('title') or job_obj.get('jobTitle') or ''
-                                if title and len(title) > 3:
-                                    location = job_obj.get('location') or 'India'
-                                    city, state, _ = self.parse_location(location)
-                                    job_id = job_obj.get('id') or f"flipkart_{idx}"
-                                    
-                                    jobs.append({
-                                        'external_id': self.generate_external_id(str(job_id), self.company_name),
-                                        'company_name': self.company_name,
-                                        'title': title,
-                                        'description': job_obj.get('description', '')[:2000],
-                                        'location': location,
-                                        'city': city,
-                                        'state': state,
-                                        'country': 'India',
-                                        'employment_type': job_obj.get('employmentType', ''),
-                                        'department': job_obj.get('department', ''),
-                                        'apply_url': job_obj.get('url') or self.base_url,
-                                        'posted_date': job_obj.get('postedDate', ''),
-                                        'job_function': '',
-                                        'experience_level': '',
-                                        'salary_range': '',
-                                        'remote_type': '',
-                                        'status': 'active'
-                                    })
-                        except Exception as e:
-                            logger.debug(f"Error parsing job object: {e}")
-                    
-                    if jobs:
-                        logger.info(f"Successfully extracted {len(jobs)} jobs from page data")
-                        return jobs
-            except Exception as e:
-                logger.debug(f"Could not extract from page data: {e}")
-            
-            # STRATEGY 2: Find job links
-            logger.info("Looking for job links...")
-            all_links = driver.find_elements(By.TAG_NAME, 'a')
-            job_links = []
-            
-            for link in all_links:
-                try:
-                    text = link.text.strip()
-                    if text and 10 < len(text) < 200:
-                        # Exclude navigation links
-                        exclude_words = ['home', 'about', 'contact', 'login', 'register', 
-                                       'facebook', 'twitter', 'linkedin', 'privacy', 'terms',
-                                       'all jobs', 'view jobs', 'search', 'filter', 'apply filter']
-                        if not any(word in text.lower() for word in exclude_words):
-                            href = link.get_attribute('href') or ''
-                            # Include if href suggests job or text looks like job title
-                            job_url_patterns = ['job', 'career', 'position', 'opening', 'requisition']
-                            job_title_words = ['engineer', 'manager', 'developer', 'analyst', 'designer',
-                                             'architect', 'lead', 'specialist', 'consultant', 'director',
-                                             'associate', 'executive', 'coordinator', 'scientist', 'intern']
-                            if any(p in href.lower() for p in job_url_patterns) or any(word in text.lower() for word in job_title_words):
-                                job_links.append(link)
-                except:
-                    continue
-            
-            if len(job_links) >= 1:
-                logger.info(f"Found {len(job_links)} potential job links")
-                for idx, link in enumerate(job_links):
-                    try:
-                        title = link.text.strip()
-                        href = link.get_attribute('href') or ''
-                        
-                        # Try to get more context from parent
-                        try:
-                            parent = link.find_element(By.XPATH, '..')
-                            parent_text = parent.text.strip()
-                        except:
-                            parent_text = title
-                        
-                        location = 'India'
-                        for city in ['Bangalore', 'Bengaluru', 'Mumbai', 'Delhi', 'Hyderabad', 'Chennai', 'Pune']:
-                            if city in parent_text:
-                                location = city
-                                break
-                        
-                        city, state, _ = self.parse_location(location)
-                        job_id = href.split('#')[-1] if '#' in href else f"flipkart_link_{idx}"
-                        
-                        jobs.append({
-                            'external_id': self.generate_external_id(job_id, self.company_name),
-                            'company_name': self.company_name,
-                            'title': title,
-                            'description': '',
-                            'location': location,
-                            'city': city,
-                            'state': state,
-                            'country': 'India',
-                            'employment_type': '',
-                            'department': '',
-                            'apply_url': href if href.startswith('http') else self.base_url,
-                            'posted_date': '',
-                            'job_function': '',
-                            'experience_level': '',
-                            'salary_range': '',
-                            'remote_type': '',
-                            'status': 'active'
-                        })
-                    except Exception as e:
-                        logger.debug(f"Error extracting job from link: {e}")
-                
-                if jobs:
-                    logger.info(f"Extracted {len(jobs)} jobs from links")
-                    return jobs
-            
-            # STRATEGY 3: Table-based jobs
-            logger.info("Looking for table rows...")
-            tables = driver.find_elements(By.TAG_NAME, 'table')
-            for table in tables:
-                rows = table.find_elements(By.CSS_SELECTOR, 'tbody tr, tr')
-                valid_rows = []
-                for row in rows:
-                    try:
-                        if row.text.strip() and len(row.text.strip()) > 30:
-                            links = row.find_elements(By.TAG_NAME, 'a')
-                            if links:
-                                valid_rows.append(row)
-                    except:
-                        pass
-                
-                if len(valid_rows) >= 5:
-                    logger.info(f"Found {len(valid_rows)} table rows")
-                    for idx, row in enumerate(valid_rows):
-                        try:
-                            cells = row.find_elements(By.TAG_NAME, 'td')
-                            if cells:
-                                title = cells[0].text.strip()
-                                location = cells[1].text.strip() if len(cells) > 1 else 'India'
-                                links = row.find_elements(By.TAG_NAME, 'a')
-                                apply_url = links[0].get_attribute('href') if links else self.base_url
-                                
-                                if title and len(title) > 3:
-                                    city, state, _ = self.parse_location(location)
-                                    jobs.append({
-                                        'external_id': self.generate_external_id(f"flipkart_table_{idx}", self.company_name),
-                                        'company_name': self.company_name,
-                                        'title': title,
-                                        'description': '',
-                                        'location': location,
-                                        'city': city,
-                                        'state': state,
-                                        'country': 'India',
-                                        'employment_type': '',
-                                        'department': '',
-                                        'apply_url': apply_url,
-                                        'posted_date': '',
-                                        'job_function': '',
-                                        'experience_level': '',
-                                        'salary_range': '',
-                                        'remote_type': '',
-                                        'status': 'active'
-                                    })
-                        except Exception as e:
-                            logger.debug(f"Error extracting from row: {e}")
-                    
-                    if jobs:
-                        return jobs
-            
-            # If nothing found
-            if not jobs:
-                logger.warning("No jobs found with any strategy")
-                try:
-                    # Save debug info
-                    import os
-                    debug_file = f'/tmp/flipkart_debug_{int(time.time())}.html'
-                    with open(debug_file, 'w') as f:
-                        f.write(driver.page_source)
-                    logger.info(f"Saved page source to {debug_file}")
-                    
-                    screenshot_file = f'/tmp/flipkart_debug_{int(time.time())}.png'
-                    driver.save_screenshot(screenshot_file)
-                    logger.info(f"Saved screenshot to {screenshot_file}")
-                    
-                    body_text = driver.find_element(By.TAG_NAME, 'body').text
-                    logger.info(f"Page text (first 1000 chars): {body_text[:1000]}")
-                except:
-                    pass
-        
+            job_id = source.get('id')
+            job_url_slug = source.get('jobUrl')
+            if not job_id or not job_url_slug:
+                return None
+
+            if '?id=' in job_url_slug:
+                job_url_param = job_url_slug
+            else:
+                job_url_param = f"{job_url_slug}?id={job_id}"
+
+            script = """
+                const done = arguments[arguments.length - 1];
+                const payload = {
+                    jobUrl: arguments[0],
+                    externalSource: 'CareerSite',
+                    campusUrl: 'empty',
+                    companyId: '15110',
+                    jobId: String(arguments[1])
+                };
+
+                fetch('https://public.zwayam.com/jobs-service/v1/jobs/careersite', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(payload)
+                })
+                .then(r => r.json())
+                .then(j => done(j))
+                .catch(e => done({error: String(e)}));
+            """
+
+            detail = driver.execute_async_script(script, job_url_param, str(job_id))
+            if isinstance(detail, dict) and detail.get('error'):
+                logger.warning(f"jobs/careersite detail API error for {job_id}: {detail.get('error')}")
+                return None
+            return detail if isinstance(detail, dict) else None
         except Exception as e:
-            logger.error(f"Error in _scrape_page: {str(e)}")
-            import traceback
-            logger.error(traceback.format_exc())
-        
-        return jobs
-    def _extract_job_from_element(self, elem, driver, idx):
-        """Extract job data from a single element"""
+            logger.warning(f"Error fetching detail API for job {source.get('id')}: {str(e)}")
+            return None
+
+    def _build_job_record(self, source, detail):
+        """Normalize listing/detail payloads into standard job schema."""
         try:
-            elem_text = elem.text.strip()
-            if not elem_text or len(elem_text) < 10:
+            merged = {}
+            merged.update(source or {})
+            merged.update(detail or {})
+
+            cfg = merged.get('jobConfigurationData') if isinstance(merged.get('jobConfigurationData'), dict) else {}
+
+            job_id = merged.get('id')
+            title = (merged.get('jobTitle') or merged.get('Requisition Title') or '').strip()
+            if not title:
                 return None
-            
-            # Get job title
-            job_title = ""
-            job_link = ""
-            
-            # Try to find title and link
-            title_selectors = [
-                (By.TAG_NAME, 'h3'),
-                (By.TAG_NAME, 'h4'),
-                (By.TAG_NAME, 'h2'),
-                (By.CSS_SELECTOR, '[class*="title"]'),
-                (By.CSS_SELECTOR, '[class*="heading"]'),
-                (By.TAG_NAME, 'a'),
-            ]
-            
-            for selector_type, selector_value in title_selectors:
-                try:
-                    title_elem = elem.find_element(selector_type, selector_value)
-                    text = title_elem.text.strip()
-                    if text and len(text) > 5:
-                        job_title = text.split('\n')[0].strip()
-                        # Try to get link
-                        if title_elem.tag_name == 'a':
-                            job_link = title_elem.get_attribute('href') or ''
-                        else:
-                            try:
-                                link_elem = title_elem.find_element(By.XPATH, './/a | ./ancestor::a')
-                                job_link = link_elem.get_attribute('href') or ''
-                            except:
-                                pass
-                        break
-                except:
-                    continue
-            
-            # Fallback: use first line as title
-            if not job_title:
-                lines = elem_text.split('\n')
-                for line in lines:
-                    line = line.strip()
-                    if line and len(line) > 5 and len(line) < 150:
-                        job_title = line
-                        break
-            
-            if not job_title or len(job_title) < 3:
-                return None
-            
-            # Try to find link if not found yet
-            if not job_link:
-                try:
-                    link_elem = elem.find_element(By.TAG_NAME, 'a')
-                    job_link = link_elem.get_attribute('href') or ''
-                except:
-                    pass
-            
-            # Extract Job ID
-            job_id = f"flipkart_{idx}_{hashlib.md5(job_title.encode()).hexdigest()[:8]}"
-            if job_link:
-                # Try to extract ID from URL
-                for pattern in ['/job/', '/jobview/', '?id=', '&id=']:
-                    if pattern in job_link:
-                        try:
-                            parts = job_link.split(pattern)[-1].split('?')[0].split('&')[0].split('/')[0]
-                            if parts:
-                                job_id = parts
-                                break
-                        except:
-                            pass
-            
-            # Extract location
-            location = ""
-            city = ""
-            state = ""
-            lines = elem_text.split('\n')
-            for line in lines[1:]:  # Skip title line
-                line = line.strip()
-                # Look for location indicators
-                if any(indicator in line for indicator in ['India', 'Bangalore', 'Bengaluru', 'Mumbai', 'Delhi', 
-                                                            'Hyderabad', 'Chennai', 'Pune', 'Gurgaon', 'Gurugram',
-                                                            'Noida', 'Kolkata']):
-                    location = line
-                    city, state, _ = self.parse_location(location)
-                    break
-            
-            # Extract department/category
-            department = ""
-            for line in lines[1:]:
-                line = line.strip()
-                if line and line != location and line != job_title:
-                    # Check if it looks like a department
-                    if len(line) < 80 and not any(x in line.lower() for x in ['http', 'www', 'apply', 'posted']):
-                        department = line
-                        break
-            
-            # Extract posted date
-            posted_date = ""
-            for line in lines:
-                line_lower = line.lower()
-                if 'ago' in line_lower or 'posted' in line_lower or 'day' in line_lower:
-                    posted_date = line.strip()
-                    break
-            
-            job_data = {
-                'external_id': self.generate_external_id(job_id, self.company_name),
+
+            location = (merged.get('location') or merged.get('Location') or cfg.get('Location') or '').strip()
+            city, state, country = self.parse_location(location)
+
+            job_url_slug = merged.get('jobUrl') or source.get('jobUrl')
+            if job_url_slug:
+                if '?id=' in job_url_slug:
+                    apply_url = f"{self.base_url}/flipkart/jobview/{job_url_slug}"
+                else:
+                    apply_url = f"{self.base_url}/flipkart/jobview/{job_url_slug}?id={job_id}"
+            else:
+                apply_url = self.url
+
+            description = (
+                merged.get('longDescription')
+                or merged.get('mediumDescriptionWithoutHtml')
+                or cfg.get('Description')
+                or merged.get('Description')
+                or ''
+            )
+            description = self._strip_html(description).strip()[:12000]
+
+            experience_level = (
+                merged.get('experienceUIField')
+                or cfg.get('Years Of Exp')
+                or self._format_experience(merged.get('minYrsOfExperience'), merged.get('maxYrsOfExperience'))
+            )
+
+            posted_date = self._format_timestamp(merged.get('modifiedDate') or merged.get('createdDate'))
+
+            return {
+                'external_id': self.generate_external_id(str(job_id), self.company_name),
                 'company_name': self.company_name,
-                'title': job_title,
-                'description': '',
-                'location': location or 'India',
+                'title': title,
+                'description': description,
+                'location': location,
                 'city': city,
                 'state': state,
-                'country': 'India',
-                'employment_type': '',
-                'department': department,
-                'apply_url': job_link if job_link else self.url,
+                'country': country,
+                'employment_type': (merged.get('jobType') or merged.get('employeeType') or '').strip(),
+                'department': (merged.get('departmentName') or merged.get('DepartmentName') or '').strip(),
+                'apply_url': apply_url,
                 'posted_date': posted_date,
-                'job_function': '',
-                'experience_level': '',
-                'salary_range': '',
+                'job_function': (merged.get('jobFunction') or merged.get('skillSet') or merged.get('metaKeywords') or cfg.get('Skills Required') or '').strip(),
+                'experience_level': (experience_level or '').strip(),
+                'salary_range': self._format_salary(merged.get('minJobSalary'), merged.get('maxJobSalary')),
                 'remote_type': '',
                 'status': 'active'
             }
-            
-            # Fetch full details if enabled
-            if FETCH_FULL_JOB_DETAILS and job_link and 'http' in job_link:
-                try:
-                    full_details = self._fetch_job_details(driver, job_link)
-                    job_data.update(full_details)
-                except Exception as e:
-                    logger.warning(f"Could not fetch details for {job_title}: {e}")
-            
-            return job_data
-            
         except Exception as e:
-            logger.error(f"Error extracting job from element: {str(e)}")
+            logger.warning(f"Error normalizing Flipkart job record: {str(e)}")
             return None
-    
-    def _fetch_job_details(self, driver, job_url):
-        """Fetch full job details by visiting the job page"""
+
+    def _fetch_job_page_details(self, driver, job_url):
+        """Open jobview page and parse rich fields displayed in the UI."""
         details = {}
+        original_window = None
         
         try:
-            # Open job in new tab to avoid losing search results page
             original_window = driver.current_window_handle
-            driver.execute_script("window.open('');")
+            driver.execute_script("window.open(arguments[0], '_blank');", job_url)
             driver.switch_to.window(driver.window_handles[-1])
-            
-            driver.get(job_url)
-            time.sleep(3)
-            
-            # Extract description
+            time.sleep(4)
+
+            # Sometimes a cookie notice overlays content.
             try:
-                desc_elem = driver.find_element(By.CSS_SELECTOR, 'div[class*="description"]')
-                details['description'] = desc_elem.text.strip()[:2000]
-            except:
+                cookie_btns = driver.find_elements(By.XPATH, "//button[contains(., 'Continue')]")
+                if cookie_btns:
+                    driver.execute_script("arguments[0].click();", cookie_btns[0])
+                    time.sleep(0.5)
+            except Exception:
                 pass
-            
-            # Extract department
+
+            # Parse labeled attributes in the job details section.
+            attr_rows = driver.find_elements(By.CSS_SELECTOR, ".job-view__attribute .row")
+            attr_map = {}
+            for row in attr_rows:
+                try:
+                    label_el = row.find_element(By.CSS_SELECTOR, ".attribute-label .attribute-text")
+                    value_el = row.find_element(By.CSS_SELECTOR, ".attribute-data")
+                    key = label_el.text.strip().rstrip(':')
+                    val = self._strip_html(value_el.get_attribute('innerHTML') or '').strip()
+                    if key and val:
+                        attr_map[key] = val
+                except Exception:
+                    continue
+
+            # Posted date appears in the page header.
+            posted_text = ''
             try:
-                dept_elem = driver.find_element(By.CSS_SELECTOR, 'span[class*="department"]')
-                details['department'] = dept_elem.text.strip()
-            except:
-                pass
-            
-            # Close tab and return to search results
-            driver.close()
-            driver.switch_to.window(original_window)
-            
+                posted_el = driver.find_element(By.CSS_SELECTOR, "h2.theme-posted")
+                posted_text = posted_el.text.strip()
+            except Exception:
+                posted_text = ''
+
+            location = attr_map.get('Location', '').strip()
+            skills = attr_map.get('Skills Required', '').strip()
+            years = attr_map.get('Years Of Exp', '').strip()
+
+            # Build a rich description by combining top narrative sections.
+            description_parts = []
+            for key in [
+                'Job Description',
+                'About the Role',
+                'About the team',
+                'You are Responsible for',
+                'To succeed in this role – you should have the following'
+            ]:
+                value = attr_map.get(key, '').strip()
+                if value:
+                    description_parts.append(f"{key}: {value}")
+
+            details['description'] = "\n\n".join(description_parts)[:15000] if description_parts else ''
+            details['experience_level'] = years
+            details['job_function'] = skills
+            details['location'] = location
+            details['department'] = attr_map.get('Function', '').strip()
+            details['posted_date'] = self._parse_posted_text(posted_text)
+
         except Exception as e:
-            logger.error(f"Error fetching job details: {str(e)}")
-            # Make sure we return to original window
+            logger.debug(f"Error enriching from jobview page {job_url}: {e}")
+        finally:
             try:
                 if len(driver.window_handles) > 1:
                     driver.close()
-                    driver.switch_to.window(driver.window_handles[0])
-            except:
+                    if original_window:
+                        driver.switch_to.window(original_window)
+            except Exception:
                 pass
-        
+
         return details
+
+    def _parse_posted_text(self, posted_text):
+        """Convert text like 'Posted 3 months ago' to a best-effort date."""
+        if not posted_text:
+            return ''
+        match = re.search(r'(\d+)\s+(day|days|month|months|year|years)\s+ago', posted_text.lower())
+        if not match:
+            return ''
+        qty = int(match.group(1))
+        unit = match.group(2)
+        now = datetime.utcnow()
+        if 'day' in unit:
+            dt = now.timestamp() - (qty * 86400)
+        elif 'month' in unit:
+            dt = now.timestamp() - (qty * 30 * 86400)
+        else:
+            dt = now.timestamp() - (qty * 365 * 86400)
+        return datetime.utcfromtimestamp(dt).strftime('%Y-%m-%d')
+
+    def _strip_html(self, text):
+        """Remove basic HTML tags and collapse whitespace."""
+        if not text:
+            return ''
+        cleaned = re.sub(r'<[^>]+>', ' ', str(text))
+        cleaned = re.sub(r'\s+', ' ', cleaned)
+        cleaned = html.unescape(cleaned)
+        return cleaned.strip()
+
+    def _format_timestamp(self, value):
+        """Convert epoch milliseconds or timestamp-like values to YYYY-MM-DD."""
+        if not value:
+            return ''
+        try:
+            ts = int(value)
+            if ts > 10**12:
+                ts = ts / 1000
+            return datetime.utcfromtimestamp(ts).strftime('%Y-%m-%d')
+        except Exception:
+            return ''
+
+    def _format_experience(self, min_exp, max_exp):
+        """Build readable experience range."""
+        if min_exp is None and max_exp is None:
+            return ''
+        if min_exp is None:
+            return f"Up to {max_exp} years"
+        if max_exp is None:
+            return f"{min_exp}+ years"
+        return f"{min_exp}-{max_exp} years"
+
+    def _format_salary(self, min_salary, max_salary):
+        """Build salary range string when both values exist."""
+        if min_salary in (None, '') and max_salary in (None, ''):
+            return ''
+        if min_salary in (None, ''):
+            return str(max_salary)
+        if max_salary in (None, ''):
+            return str(min_salary)
+        return f"{min_salary} - {max_salary}"
     
     def parse_location(self, location_str):
         """Parse location string into city, state, country"""
