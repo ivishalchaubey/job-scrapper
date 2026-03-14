@@ -6,6 +6,7 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 import hashlib
 import time
+import re
 from datetime import datetime
 from pathlib import Path
 
@@ -109,6 +110,7 @@ class CognizantScraper:
     def _scrape_page(self, driver, wait):
         """Scrape jobs from current page"""
         jobs = []
+        seen_links = set()
         time.sleep(2)  # Wait for page content
         
         # Try multiple selectors for job listings
@@ -153,7 +155,19 @@ class CognizantScraper:
                 
                 if not job_title or len(job_title) < 3:
                     continue
-                
+
+                # Skip non-job widgets and duplicates.
+                title_l = job_title.lower()
+                if 'be the first to know about new jobs' in title_l:
+                    continue
+                if 'join our talent community' in title_l:
+                    continue
+                if not job_link or '/india-en/jobs/' not in job_link or '/india-en/jobs/?' in job_link:
+                    continue
+                if job_link in seen_links:
+                    continue
+                seen_links.add(job_link)
+
                 # Extract Job ID
                 job_id = f"cognizant_{idx}"
                 if job_link:
@@ -190,10 +204,30 @@ class CognizantScraper:
                     'status': 'active'
                 }
                 
-                # Fetch full details if enabled
-                if FETCH_FULL_JOB_DETAILS and job_link:
+                # Cognizant list pages are incomplete; always enrich from detail page.
+                if job_link:
+                    base_location = job_data.get('location', '')
+                    base_city = job_data.get('city', '')
+                    base_state = job_data.get('state', '')
+
                     full_details = self._fetch_job_details(driver, job_link)
-                    job_data.update(full_details)
+                    if full_details:
+                        job_data.update(full_details)
+
+                        # Keep richer listing location when detail location is less specific.
+                        detail_location = full_details.get('location', '')
+                        if base_location and (
+                            not detail_location or base_location.count(',') > detail_location.count(',')
+                        ):
+                            job_data['location'] = base_location
+                            job_data['city'] = base_city
+                            job_data['state'] = base_state
+
+                        if job_data.get('location'):
+                            city, state, country = self.parse_location(job_data['location'])
+                            job_data['city'] = city
+                            job_data['state'] = state
+                            job_data['country'] = country
                 
                 jobs.append(job_data)
                 
@@ -214,26 +248,70 @@ class CognizantScraper:
             driver.switch_to.window(driver.window_handles[-1])
             
             driver.get(job_url)
-            time.sleep(3)
+            WebDriverWait(driver, SCRAPE_TIMEOUT).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, 'main#content, div#js-job-detail'))
+            )
             
-            # Extract description
+            # Extract full article content/description.
             try:
-                desc_selectors = [
-                    (By.CSS_SELECTOR, 'div[class*="description"]'),
-                    (By.XPATH, "//h2[contains(text(), 'Description')]/following-sibling::div"),
-                    (By.CSS_SELECTOR, 'div.job-description'),
-                ]
-                
-                for selector_type, selector_value in desc_selectors:
-                    try:
-                        desc_elem = driver.find_element(selector_type, selector_value)
-                        if desc_elem and desc_elem.text.strip():
-                            details['description'] = desc_elem.text.strip()[:2000]
-                            break
-                    except:
-                        continue
-            except:
+                content_elem = driver.find_element(By.CSS_SELECTOR, 'div#js-job-detail article.cms-content')
+                desc_text = driver.execute_script("return arguments[0].innerText;", content_elem) or ''
+                if desc_text.strip():
+                    details['description'] = desc_text.strip()
+            except Exception:
                 pass
+
+            # Title and stable job id from detail page attributes.
+            try:
+                job_container = driver.find_element(By.CSS_SELECTOR, 'div#js-job-detail')
+                page_job_id = (job_container.get_attribute('data-id') or '').strip()
+                if page_job_id:
+                    details['external_id'] = self.generate_external_id(page_job_id, self.company_name)
+            except Exception:
+                pass
+
+            # Apply URL from sidebar button.
+            try:
+                apply_elem = driver.find_element(By.CSS_SELECTOR, 'a#js-apply-external, a.js-apply-now')
+                apply_href = (apply_elem.get_attribute('href') or '').strip()
+                if apply_href:
+                    details['apply_url'] = apply_href
+            except Exception:
+                pass
+
+            # Hero metadata: date/location/category/work model.
+            try:
+                meta_items = driver.find_elements(By.CSS_SELECTOR, 'ul.job-meta li.job-meta-item')
+                for li in meta_items:
+                    li_text = (li.text or '').strip().lower()
+                    strong_text = ''
+                    try:
+                        strong = li.find_element(By.TAG_NAME, 'strong')
+                        strong_text = (strong.text or '').strip()
+                    except Exception:
+                        strong_text = (li.text or '').strip()
+
+                    if not strong_text:
+                        continue
+
+                    if 'date published' in li_text:
+                        details['posted_date'] = self._normalize_posted_date(strong_text)
+                    elif 'location' in li_text:
+                        details['location'] = self._normalize_location_text(strong_text)
+                    elif 'job category' in li_text:
+                        details['department'] = strong_text
+                        details['job_function'] = strong_text
+                    elif 'work model' in li_text:
+                        details['remote_type'] = strong_text
+            except Exception:
+                pass
+
+            # Extract experience from full text (e.g., "minimum of 7 years").
+            if details.get('description'):
+                exp = self._extract_experience_level(details['description'])
+                if exp:
+                    details['experience_level'] = exp
+                logger.info(f"Fetched Cognizant full description length={len(details['description'])} for {job_url}")
             
             # Close tab and return to search results
             driver.close()
@@ -250,14 +328,75 @@ class CognizantScraper:
                 pass
         
         return details
+
+    def _normalize_posted_date(self, posted_text):
+        if not posted_text:
+            return ''
+
+        txt = posted_text.strip().replace('.', '')
+        for fmt in ('%b %d %Y', '%B %d %Y', '%Y-%m-%d'):
+            try:
+                return datetime.strptime(txt, fmt).strftime('%Y-%m-%d')
+            except Exception:
+                continue
+        return posted_text.strip()
+
+    def _normalize_location_text(self, loc_text):
+        if not loc_text:
+            return ''
+
+        # Example: "Gandhi Nagar / COIMBATORE / India"
+        parts = [p.strip() for p in loc_text.split('/') if p.strip()]
+        if not parts:
+            return loc_text.strip()
+        return ', '.join(parts)
+
+    def _extract_experience_level(self, text):
+        if not text:
+            return ''
+
+        patterns = [
+            r'(\b\d+\s*(?:-|to)\s*\d+\+?\s*years?\b)',
+            r'(\b\d+\+?\s*years?\b)\s+(?:of\s+)?(?:relevant\s+)?experience',
+            r'minimum\s+of\s+(\d+\+?\s*years?\b)',
+            r'over\s+(\d+\+?\s*years?\b)',
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, text, flags=re.IGNORECASE)
+            if not match:
+                continue
+            value = (match.group(1) or '').strip()
+            value = re.sub(r'\s+', ' ', value)
+            if value:
+                return value.replace(' to ', '-')
+
+        return ''
     
     def parse_location(self, location_str):
         """Parse location string into city, state, country"""
         if not location_str:
             return '', '', 'India'
-        
-        parts = [p.strip() for p in location_str.split(',')]
+
+        # For multi-location strings, parse the first location block only.
+        # Example: "Gandhi Nagar, Gujarat, India / COIMBATORE, Tamil Nadu, India"
+        primary = location_str.split('/')[0].strip()
+        parts = [p.strip() for p in primary.split(',') if p.strip()]
+
+        if not parts:
+            return '', '', 'India'
+
+        # Format: City, State, India
+        if len(parts) >= 3 and parts[2].lower() == 'india':
+            return parts[0], parts[1], 'India'
+
+        # Format: State, India
+        if len(parts) == 2 and parts[1].lower() == 'india':
+            return '', parts[0], 'India'
+
         city = parts[0] if len(parts) > 0 else ''
         state = parts[1] if len(parts) > 1 else ''
-        
+        if state.lower() == 'india':
+            state = ''
+
         return city, state, 'India'
