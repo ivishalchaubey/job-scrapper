@@ -8,8 +8,10 @@ import hashlib
 import time
 import json
 import re
+import requests
 from datetime import datetime
 from pathlib import Path
+from html import unescape
 
 from core.logging import setup_logger
 from core.webdriver_utils import setup_chrome_driver
@@ -60,47 +62,90 @@ class PwCScraper:
 
             # Extract jsondata from page source
             page_source = driver.page_source
-            jsondata_match = re.search(r'var\s+jsondata\s*=\s*(\[.*?\])\s*;', page_source, re.DOTALL)
+            jsondata_match = re.search(r'var\s+jsondata\s*=\s*(\{.*?\}|\[.*?\])\s*;', page_source, re.DOTALL)
 
             if jsondata_match:
                 try:
                     raw_json = jsondata_match.group(1)
-                    job_list = json.loads(raw_json)
+                    parsed = json.loads(raw_json)
+                    # jsondata may be a single object or an array
+                    if isinstance(parsed, dict):
+                        job_list = [parsed]
+                    else:
+                        job_list = parsed
                     logger.info(f"Found {len(job_list)} jobs in jsondata")
 
+                    session = requests.Session()
                     for job_entry in job_list:
                         title = job_entry.get('title', '').strip()
                         location = job_entry.get('location', '').strip()
-                        job_req_id = job_entry.get('jobreqid', '').strip()
+                        # Workday payload uses 'id' not jobreqid in this embed
+                        job_req_id = job_entry.get('jobreqid', '') or job_entry.get('id', '')
+                        job_req_id = str(job_req_id).strip()
                         iso = job_entry.get('iso', '').strip()
                         jobsite = job_entry.get('jobsite', '').strip()
+                        apply_href = job_entry.get('apply', '') or job_entry.get('absoluteUrl', '')
+                        desc_html = job_entry.get('desc', '')
 
                         if not title or not job_req_id:
                             continue
 
-                        # Build apply URL using PwC's description page pattern
-                        apply_url = (
-                            f'https://www.pwc.in/in/en/careers/experienced-jobs/description.html'
-                            f'?wdjobreqid={job_req_id}&wdcountry=IND'
-                        )
+                        # Prefer embedded apply link when present
+                        if apply_href:
+                            apply_url = apply_href
+                        else:
+                            apply_url = (
+                                f'https://www.pwc.in/in/en/careers/experienced-jobs/description.html'
+                                f'?wdjobreqid={job_req_id}&wdcountry=IND'
+                            )
+
+                        # Clean description HTML into plain text (limit length)
+                        description = ''
+                        if desc_html:
+                            description = self._clean_text(desc_html)
+
+                        detail_data = {}
+                        if FETCH_FULL_JOB_DETAILS or not description:
+                            detail_url = (
+                                f'https://www.pwc.in/in/en/careers/experienced-jobs/description.html'
+                                f'?wdjobreqid={job_req_id}&wdcountry=IND'
+                            )
+                            detail_data = self._fetch_job_details_http(session, detail_url)
+
+                        if detail_data.get('_expired'):
+                            continue
+
+                        if detail_data.get('title'):
+                            title = detail_data['title']
+                        if detail_data.get('location'):
+                            location = detail_data['location']
+                        if detail_data.get('description'):
+                            description = detail_data['description']
+                        if detail_data.get('apply_url'):
+                            apply_url = detail_data['apply_url']
 
                         city, state, _ = self.parse_location(location)
+
+                        department = detail_data.get('department', '')
+                        job_function = detail_data.get('job_function', '')
+                        employment_type = detail_data.get('employment_type', '')
+                        experience_level = detail_data.get('experience_level', '')
 
                         job_data = {
                             'external_id': self.generate_external_id(job_req_id, self.company_name),
                             'company_name': self.company_name,
                             'title': title,
-                            'description': '',
+                            'description': description,
                             'location': location,
                             'city': city,
                             'state': state,
                             'country': 'India',
-                            'employment_type': '',
-                            'department': '',
+                            'employment_type': employment_type,
+                            'department': department,
                             'apply_url': apply_url,
                             'posted_date': '',
-                            'job_function': '',
-                            'experience_level': '',
+                            'job_function': job_function,
+                            'experience_level': experience_level,
                             'salary_range': '',
                             'remote_type': '',
                             'status': 'active'
@@ -234,25 +279,32 @@ class PwCScraper:
 
             # Now extract from the redirected results page
             page_source = driver.page_source
-            jsondata_match = re.search(r'var\s+jsondata\s*=\s*(\[.*?\])\s*;', page_source, re.DOTALL)
+            jsondata_match = re.search(r'var\s+jsondata\s*=\s*(\{.*?\}|\[.*?\])\s*;', page_source, re.DOTALL)
 
             if jsondata_match:
                 try:
-                    job_list = json.loads(jsondata_match.group(1))
+                    parsed = json.loads(jsondata_match.group(1))
+                    if isinstance(parsed, dict):
+                        job_list = [parsed]
+                    else:
+                        job_list = parsed
                     logger.info(f"Form submission: found {len(job_list)} jobs in jsondata")
 
                     for job_entry in job_list:
                         title = job_entry.get('title', '').strip()
                         location = job_entry.get('location', '').strip()
-                        job_req_id = job_entry.get('jobreqid', '').strip()
+                        job_req_id = job_entry.get('jobreqid', '') or job_entry.get('id', '')
+                        job_req_id = str(job_req_id).strip()
 
                         if not title or not job_req_id:
                             continue
 
-                        apply_url = (
-                            f'https://www.pwc.in/in/en/careers/experienced-jobs/description.html'
-                            f'?wdjobreqid={job_req_id}&wdcountry=IND'
-                        )
+                        apply_url = (job_entry.get('apply') or '').strip()
+                        if not apply_url:
+                            apply_url = (
+                                f'https://www.pwc.in/in/en/careers/experienced-jobs/description.html'
+                                f'?wdjobreqid={job_req_id}&wdcountry=IND'
+                            )
 
                         city, state, _ = self.parse_location(location)
 
@@ -301,23 +353,44 @@ class PwCScraper:
             driver.get(job_url)
             time.sleep(3)
 
+            # First, try to extract embedded jsondata from the page (Workday embed)
             try:
-                desc_selectors = [
-                    (By.CSS_SELECTOR, 'div[class*="description"]'),
-                    (By.XPATH, "//h2[contains(text(), 'Description')]/following-sibling::div"),
-                    (By.CSS_SELECTOR, 'div.job-description'),
-                ]
-
-                for selector_type, selector_value in desc_selectors:
+                page_source = driver.page_source
+                jsondata_match = re.search(r'var\s+jsondata\s*=\s*(\{.*?\}|\[.*?\])\s*;', page_source, re.DOTALL)
+                if jsondata_match:
                     try:
-                        desc_elem = driver.find_element(selector_type, selector_value)
-                        if desc_elem and desc_elem.text.strip():
-                            details['description'] = desc_elem.text.strip()[:2000]
-                            break
-                    except:
-                        continue
-            except:
+                        parsed = json.loads(jsondata_match.group(1))
+                        if isinstance(parsed, list):
+                            parsed = parsed[0] if parsed else {}
+                        desc_html = parsed.get('desc', '')
+                        if desc_html:
+                            details['description'] = re.sub(r'<[^>]+>', '', desc_html).strip()[:2000]
+                    except Exception:
+                        pass
+            except Exception:
                 pass
+
+            # Fallback: try common description selectors if embedded JSON didn't yield content
+            if not details.get('description'):
+                try:
+                    desc_selectors = [
+                        (By.CSS_SELECTOR, 'div[class*="description"]'),
+                        (By.XPATH, "//h2[contains(text(), 'Description')]/following-sibling::div"),
+                        (By.CSS_SELECTOR, 'div.job-description'),
+                        (By.CSS_SELECTOR, 'div#wd-jobdescr'),
+                    ]
+
+                    for selector_type, selector_value in desc_selectors:
+                        try:
+                            desc_elem = driver.find_element(selector_type, selector_value)
+                            text = desc_elem.text if desc_elem else ''
+                            if text and text.strip():
+                                details['description'] = text.strip()[:2000]
+                                break
+                        except:
+                            continue
+                except:
+                    pass
 
             driver.close()
             driver.switch_to.window(original_window)
@@ -332,6 +405,71 @@ class PwCScraper:
                 pass
 
         return details
+
+    def _fetch_job_details_http(self, session, detail_url):
+        """Fetch job description page and parse embedded jsondata."""
+        try:
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+            response = session.get(detail_url, headers=headers, timeout=SCRAPE_TIMEOUT)
+            response.raise_for_status()
+            html = response.text
+
+            match = re.search(r'var\s+jsondata\s*=\s*(\{.*?\})\s*;', html, re.DOTALL)
+            if not match:
+                if 'This job posting is no longer available' in html:
+                    return {'_expired': True}
+                return {}
+
+            detail = json.loads(match.group(1))
+            description = self._clean_text(detail.get('desc', ''))
+
+            employment_type = (detail.get('timetype') or '').strip()
+            if not employment_type:
+                employment_type = (detail.get('workersubtype') or '').strip()
+
+            return {
+                'title': (detail.get('title') or '').strip(),
+                'location': (detail.get('location') or '').strip(),
+                'description': description,
+                'apply_url': (detail.get('apply') or '').strip(),
+                'department': (detail.get('service') or '').strip(),
+                'job_function': (detail.get('specialism') or '').strip(),
+                'employment_type': employment_type,
+                'experience_level': self._extract_experience_level(description),
+            }
+        except Exception as e:
+            logger.debug(f"HTTP detail fetch failed for {detail_url}: {str(e)}")
+            return {}
+
+    def _clean_text(self, value):
+        if not value:
+            return ''
+        text = re.sub(r'<br\s*/?>', '\n', str(value), flags=re.IGNORECASE)
+        text = re.sub(r'</p\s*>', '\n', text, flags=re.IGNORECASE)
+        text = re.sub(r'</li\s*>', '\n', text, flags=re.IGNORECASE)
+        text = re.sub(r'<[^>]+>', ' ', text)
+        text = unescape(text)
+        text = re.sub(r'\s+', ' ', text).strip()
+        if len(text) > 6000:
+            text = text[:6000]
+        return text
+
+    def _extract_experience_level(self, text):
+        if not text:
+            return ''
+        patterns = [
+            r'(\d+\s*(?:to|-|–)\s*\d+\s*years?)',
+            r'(\d+\+\s*years?)',
+            r'(minimum\s+of\s+\d+\s*years?)',
+            r'(at\s*least\s+\d+\s*years?)',
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, text, flags=re.IGNORECASE)
+            if match:
+                return match.group(1)
+        return ''
 
     def parse_location(self, location_str):
         """Parse location string into city, state, country"""
