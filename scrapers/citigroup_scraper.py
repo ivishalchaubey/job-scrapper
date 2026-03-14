@@ -6,6 +6,7 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 import hashlib
 import time
+import re
 from datetime import datetime
 from pathlib import Path
 
@@ -174,9 +175,16 @@ class CitigroupScraper:
                     'status': 'active'
                 }
 
-                if FETCH_FULL_JOB_DETAILS and url:
+                # Citi listing pages are incomplete; always enrich from detail page.
+                if url:
                     full_details = self._fetch_job_details(driver, url)
-                    job_data.update(full_details)
+                    if full_details:
+                        job_data.update(full_details)
+                        if full_details.get('location'):
+                            city, state, country = self.parse_location(full_details['location'])
+                            job_data['city'] = city
+                            job_data['state'] = state
+                            job_data['country'] = country
 
                 jobs.append(job_data)
 
@@ -197,26 +205,83 @@ class CitigroupScraper:
             driver.switch_to.window(driver.window_handles[-1])
             
             driver.get(job_url)
-            time.sleep(3)
+            WebDriverWait(driver, SCRAPE_TIMEOUT).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, 'section.job-description[data-selector-name="jobdetails"]'))
+            )
             
-            # Extract description
+            # Extract full description/content block.
             try:
-                desc_selectors = [
-                    (By.CSS_SELECTOR, 'div[class*="description"]'),
-                    (By.XPATH, "//h2[contains(text(), 'Description')]/following-sibling::div"),
-                    (By.CSS_SELECTOR, 'div.job-description'),
-                ]
-                
-                for selector_type, selector_value in desc_selectors:
-                    try:
-                        desc_elem = driver.find_element(selector_type, selector_value)
-                        if desc_elem and desc_elem.text.strip():
-                            details['description'] = desc_elem.text.strip()[:2000]
-                            break
-                    except:
-                        continue
-            except:
+                desc_elem = driver.find_element(By.CSS_SELECTOR, 'section.job-description .ats-description')
+                desc_text = driver.execute_script("return arguments[0].innerText;", desc_elem) or ''
+                if desc_text.strip():
+                    details['description'] = desc_text.strip()
+            except Exception:
                 pass
+
+            # Extract apply URL from detail page Apply button.
+            try:
+                apply_elem = driver.find_element(By.CSS_SELECTOR, 'a.button.job-apply')
+                apply_url = (apply_elem.get_attribute('data-apply-url') or apply_elem.get_attribute('href') or '').strip()
+                if apply_url:
+                    details['apply_url'] = apply_url
+            except Exception:
+                pass
+
+            # Extract structured details from definition list.
+            try:
+                info_map = {}
+                rows = driver.find_elements(By.CSS_SELECTOR, 'section.job-description dl.job-description__desc-list > div')
+                for row in rows:
+                    try:
+                        term = row.find_element(By.CSS_SELECTOR, 'dt.job-description__desc-term').text.strip().rstrip(':')
+                        value = row.find_element(By.CSS_SELECTOR, 'dd.job-description__desc-detail').text.strip()
+                        if term and value:
+                            info_map[term.lower()] = value
+                    except Exception:
+                        continue
+
+                # Location(s)
+                loc_val = info_map.get('location(s)') or info_map.get('location')
+                if loc_val:
+                    details['location'] = loc_val
+
+                # Remote type / Job type
+                job_type_val = info_map.get('job type')
+                if job_type_val:
+                    details['remote_type'] = job_type_val
+
+                # Posted date
+                posted_val = info_map.get('posted')
+                if posted_val:
+                    details['posted_date'] = self._normalize_posted_date(posted_val)
+
+                # External id from Job Req Id (more stable than URL hash)
+                req_id = info_map.get('job req id')
+                if req_id:
+                    details['external_id'] = self.generate_external_id(req_id, self.company_name)
+            except Exception:
+                pass
+
+            # Parse additional semantics from long description text.
+            desc_for_parse = details.get('description', '')
+            if desc_for_parse:
+                exp = self._extract_experience_level(desc_for_parse)
+                if exp:
+                    details['experience_level'] = exp
+
+                job_family_group = self._extract_label_value(desc_for_parse, 'Job Family Group')
+                job_family = self._extract_label_value(desc_for_parse, 'Job Family')
+                time_type = self._extract_label_value(desc_for_parse, 'Time Type')
+
+                if job_family_group and not details.get('department'):
+                    details['department'] = job_family_group
+                if job_family and not details.get('job_function'):
+                    details['job_function'] = job_family
+                if time_type and not details.get('employment_type'):
+                    details['employment_type'] = time_type
+
+            if details.get('description'):
+                logger.info(f"Fetched Citi full description length={len(details['description'])} for {job_url}")
             
             # Close tab and return to search results
             driver.close()
@@ -233,14 +298,78 @@ class CitigroupScraper:
                 pass
         
         return details
+
+    def _normalize_posted_date(self, posted_text):
+        """Convert formats like 'Mar. 13, 2026' to YYYY-MM-DD when possible."""
+        if not posted_text:
+            return ''
+
+        txt = posted_text.strip().replace('.', '')
+        for fmt in ('%b %d, %Y', '%B %d, %Y', '%d %b %Y', '%Y-%m-%d'):
+            try:
+                return datetime.strptime(txt, fmt).strftime('%Y-%m-%d')
+            except Exception:
+                continue
+        return posted_text.strip()
+
+    def _extract_label_value(self, text, label):
+        """Extract value that follows labels like 'Job Family Group:' in plain text."""
+        if not text:
+            return ''
+
+        pattern = rf'{re.escape(label)}\s*:\s*\n?\s*([^\n]+)'
+        m = re.search(pattern, text, flags=re.IGNORECASE)
+        return (m.group(1).strip() if m else '')
+
+    def _extract_experience_level(self, text):
+        """Extract experience strings like '8+ years of relevant experience'."""
+        if not text:
+            return ''
+
+        patterns = [
+            r'(\b\d+\s*(?:-|to)\s*\d+\+?\s*years?\b)',
+            r'(\b\d+\+?\s*years?\b)\s+(?:of\s+)?(?:relevant\s+)?experience',
+            r'experience\s*(?:of|:)?\s*(\d+\s*(?:-|to)\s*\d+\+?\s*years?\b)',
+            r'experience\s*(?:of|:)?\s*(\d+\+?\s*years?\b)',
+        ]
+
+        for pattern in patterns:
+            m = re.search(pattern, text, flags=re.IGNORECASE)
+            if not m:
+                continue
+            val = (m.group(1) or '').strip()
+            val = re.sub(r'\s+', ' ', val)
+            if val:
+                return val.replace(' to ', '-')
+
+        return ''
     
     def parse_location(self, location_str):
         """Parse location string into city, state, country"""
         if not location_str:
             return '', '', 'India'
-        
-        parts = [p.strip() for p in location_str.split(',')]
+
+        parts = [p.strip() for p in location_str.split(',') if p.strip()]
+        if not parts:
+            return '', '', 'India'
+
+        # Format: "City, State, India"
+        if len(parts) >= 3:
+            # Format like "Haryana, India, Remote" -> state-level location
+            if parts[1].lower() == 'india':
+                return '', parts[0], 'India'
+            city = parts[0]
+            state = parts[1]
+            return city, state, 'India'
+
+        # Format: "State, India"
+        if len(parts) == 2 and parts[1].lower() == 'india':
+            return '', parts[0], 'India'
+
         city = parts[0] if len(parts) > 0 else ''
         state = parts[1] if len(parts) > 1 else ''
-        
+
+        if city.lower() in {'india', 'remote'}:
+            city = ''
+
         return city, state, 'India'
