@@ -8,7 +8,9 @@ import hashlib
 import time
 import json
 import os
+import re
 from pathlib import Path
+from urllib.parse import urlencode
 
 from core.logging import setup_logger
 from core.webdriver_utils import setup_chrome_driver
@@ -121,17 +123,32 @@ class TataAdminScraper:
                             job_type = jp.get('jobType', '').strip()
                             posted_date = jp.get('publishedDate', '').strip()
 
-                            loc_data = self.parse_location(location)
+                            detail_url = self._build_job_detail_url(job_id, company, title, location)
+
+                            detail_data = self._fetch_job_details(driver, detail_url)
+
+                            final_title = detail_data.get('title', title)
+                            final_location = detail_data.get('location', location)
+                            final_description = detail_data.get('description', jp.get('shortDescription', '').strip())
+                            final_apply_url = detail_data.get('apply_url', detail_url)
+                            final_posted_date = detail_data.get('posted_date', posted_date)
+                            final_employment_type = detail_data.get('employment_type', job_type)
+                            final_experience_level = detail_data.get('experience_level', '')
+                            if not final_experience_level:
+                                final_experience_level = self._extract_experience_level(final_description)
+
+                            loc_data = self.parse_location(final_location)
+
                             all_jobs.append({
                                 'external_id': self.generate_external_id(job_id, self.company_name),
-                                'company_name': self.company_name, 'title': title,
-                                'apply_url': self.url, 'location': location,
-                                'department': company, 'employment_type': job_type,
-                                'description': jp.get('shortDescription', '').strip(),
-                                'posted_date': posted_date, 'city': loc_data.get('city', ''),
+                                'company_name': self.company_name, 'title': final_title,
+                                'apply_url': final_apply_url, 'location': final_location,
+                                'department': company, 'employment_type': final_employment_type,
+                                'description': final_description,
+                                'posted_date': final_posted_date, 'city': loc_data.get('city', ''),
                                 'state': loc_data.get('state', ''),
                                 'country': loc_data.get('country', 'India'),
-                                'job_function': '', 'experience_level': '', 'salary_range': '',
+                                'job_function': '', 'experience_level': final_experience_level, 'salary_range': '',
                                 'remote_type': '', 'status': 'active'
                             })
                             new_jobs_this_page += 1
@@ -155,6 +172,124 @@ class TataAdminScraper:
             if driver:
                 driver.quit()
         return all_jobs
+
+    def _build_job_detail_url(self, job_id, company, title, location):
+        params = {
+            'jobId': str(job_id or ''),
+            'company': company or '',
+            'jobTitle': title or '',
+            'location': location or '',
+        }
+        return f"{self.base_url}/careers/jobs/jobdetails?{urlencode(params)}"
+
+    def _fetch_job_details(self, driver, detail_url):
+        """Open Tata job detail page and extract full content fields."""
+        details = {}
+        original_window = None
+
+        try:
+            original_window = driver.current_window_handle
+            driver.execute_script("window.open(arguments[0], '_blank');", detail_url)
+            driver.switch_to.window(driver.window_handles[-1])
+
+            wait = WebDriverWait(driver, 20)
+            wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, '.job-details, .jobDesc, .detailDesc')))
+
+            title = self._safe_text(driver, By.CSS_SELECTOR, 'h1.bannerJobTitle')
+            if not title:
+                title = self._safe_text(driver, By.CSS_SELECTOR, '#jobPrimaryDetail .jobTitle')
+
+            location = self._safe_text(driver, By.CSS_SELECTOR, '#jobPrimaryDetail .details div:nth-child(2)')
+            posted_date = self._safe_text(driver, By.CSS_SELECTOR, '#datePublished')
+
+            apply_url = self._safe_attr(driver, By.CSS_SELECTOR, 'a.buttonMr[href], a.simButton.buttonMore[href]', 'href')
+
+            desc_html = self._safe_attr(driver, By.CSS_SELECTOR, '.jobDesc .detailDesc', 'innerHTML')
+            description = self._clean_description(desc_html)
+            experience_level = self._extract_experience_level(description)
+
+            if title:
+                details['title'] = title
+            if location:
+                details['location'] = location
+            if posted_date:
+                details['posted_date'] = posted_date
+            if apply_url:
+                details['apply_url'] = apply_url
+            if description:
+                details['description'] = description
+            if experience_level:
+                details['experience_level'] = experience_level
+
+        except Exception as e:
+            logger.debug(f"Failed to fetch Tata detail page {detail_url}: {str(e)}")
+        finally:
+            try:
+                if len(driver.window_handles) > 1:
+                    driver.close()
+                if original_window:
+                    driver.switch_to.window(original_window)
+            except Exception:
+                pass
+
+        return details
+
+    def _safe_text(self, driver, by, selector):
+        try:
+            return (driver.find_element(by, selector).text or '').strip()
+        except Exception:
+            return ''
+
+    def _safe_attr(self, driver, by, selector, attr):
+        try:
+            return (driver.find_element(by, selector).get_attribute(attr) or '').strip()
+        except Exception:
+            return ''
+
+    def _clean_description(self, html):
+        if not html:
+            return ''
+
+        text = re.sub(r'<br\s*/?>', '\n', html, flags=re.IGNORECASE)
+        text = re.sub(r'</(p|li|ul|ol|div)\s*>', '\n', text, flags=re.IGNORECASE)
+        text = re.sub(r'<[^>]+>', ' ', text)
+        text = text.replace('&amp;', '&').replace('&nbsp;', ' ')
+        text = re.sub(r'\s*\n\s*', '\n', text)
+        text = re.sub(r'\n{3,}', '\n\n', text)
+        text = re.sub(r'[ \t]{2,}', ' ', text).strip()
+
+        text = re.sub(r'^Job Description\s*', '', text, flags=re.IGNORECASE)
+        # Remove metadata header lines when present in imported descriptions.
+        text = re.sub(r'^(Role\s*:\s*.+?)\n', '', text, flags=re.IGNORECASE)
+        text = re.sub(r'^(Location\s*:\s*.+?)\n', '', text, flags=re.IGNORECASE)
+        text = re.sub(r'^(Years\s+of\s+Experience\s*:\s*.+?)\n', '', text, flags=re.IGNORECASE)
+        text = re.sub(r'^(JOB\s+TITLE\s*:\s*.+?)\n', '', text, flags=re.IGNORECASE)
+        return text.strip()[:6000]
+
+    def _extract_experience_level(self, text):
+        if not text:
+            return ''
+
+        patterns = [
+            r'years?\s+of\s+experience\s*:\s*(\d+\s*(?:\+|plus)?\s*(?:-|to|–)?\s*\d*\s*years?)',
+            r'(?:minimum\s+of|min(?:imum)?\.?\s*)\s*(\d+\s*(?:-|to|–)\s*\d+\s*years?)',
+            r'(\d+\s*(?:-|to|–)\s*\d+\s*years?)',
+            r'(\d+\s*\+\s*years?)',
+            r'(\d+\s*plus\s*years?)',
+            r'(at least\s*\d+\s*years?)',
+            r'(\d+\s*years?\s+of\s+experience)',
+            r'(?:minimum\s+of|min(?:imum)?\.?\s*)(\d+\s*yrs?)',
+            r'(\d+\s*yrs?)',
+        ]
+        for pattern in patterns:
+            m = re.search(pattern, text, flags=re.IGNORECASE)
+            if m:
+                val = m.group(1).strip()
+                val = re.sub(r'\s+', ' ', val)
+                val = re.sub(r'\byrs\b', 'years', val, flags=re.IGNORECASE)
+                val = re.sub(r'\s*\+\s*', '+', val)
+                return val
+        return ''
 
     def _extract_jobs(self, driver):
         """Legacy method kept for compatibility - API approach used in scrape() instead."""
