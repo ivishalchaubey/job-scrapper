@@ -8,6 +8,8 @@ import hashlib
 import time
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urljoin
+import re
 
 from core.logging import setup_logger
 from core.webdriver_utils import setup_chrome_driver
@@ -84,6 +86,20 @@ class GodrejGroupScraper:
             # Extract jobs from the table using JavaScript
             jobs = self._extract_jobs_js(driver)
 
+            # Enrich each job with detail page content when available
+            for j in jobs:
+                try:
+                    href = j.get('apply_url') or j.get('href')
+                    if href:
+                        details = self._fetch_job_details(driver, href)
+                        if details:
+                            # only overwrite keys if details provide values
+                            for k, v in details.items():
+                                if v:
+                                    j[k] = v
+                except Exception as e:
+                    logger.debug(f"Failed to fetch details for {j.get('apply_url')}: {e}")
+
             logger.info(f"Successfully scraped {len(jobs)} total jobs from {self.company_name}")
 
         except Exception as e:
@@ -95,6 +111,120 @@ class GodrejGroupScraper:
                 driver.quit()
 
         return jobs
+
+    def _fetch_job_details(self, driver, job_url):
+        """Open job detail page and extract rich fields (description, experience, posted_date, department)."""
+        details = {}
+        try:
+            original = driver.current_window_handle
+            driver.execute_script("window.open('');")
+            driver.switch_to.window(driver.window_handles[-1])
+            driver.get(job_url)
+            time.sleep(2)
+
+            # Extract description blocks (many pages use <pre> for content)
+            try:
+                pres = driver.find_elements(By.TAG_NAME, 'pre')
+                desc_parts = []
+                for p in pres:
+                    try:
+                        t = driver.execute_script('return arguments[0].innerText;', p)
+                        if t:
+                            desc_parts.append(t.strip())
+                    except:
+                        try:
+                            if p.text:
+                                desc_parts.append(p.text.strip())
+                        except:
+                            continue
+                if desc_parts:
+                    details['description'] = '\n\n'.join(desc_parts)[:20000]
+            except Exception:
+                pass
+
+            # Extract summary fields (Company Name, Business, Function, Designation, Location)
+            try:
+                # function / department
+                func = ''
+                func_els = driver.find_elements(By.CSS_SELECTOR, 'span.valuetext')
+                if func_els and len(func_els) >= 3:
+                    # known order from template: Company, Business, Function, Designation, Location
+                    func = func_els[2].text.strip()
+                if func:
+                    details['department'] = func
+                    details['job_function'] = func
+                # location
+                try:
+                    loc_el = driver.find_element(By.CSS_SELECTOR, 'span.valuetext')
+                    if loc_el and loc_el.text:
+                        # the last valuetext is location in template; fallback keep original
+                        details['location'] = loc_el.text.strip()
+                        city, state, country = self.parse_location(details['location'])
+                        details['city'] = city
+                        details['state'] = state
+                        details['country'] = country
+                except Exception:
+                    pass
+            except Exception:
+                pass
+
+            # Experience: look for 'Experience Details' pre or keywords
+            try:
+                exp_text = ''
+                try:
+                    exp_header = driver.find_element(By.XPATH, "//h4[contains(., 'Experience Details')]")
+                    # next sibling pre
+                    exp_pre = exp_header.find_element(By.XPATH, 'following-sibling::div//pre')
+                    exp_text = exp_pre.text.strip() if exp_pre.text else ''
+                except Exception:
+                    # try to search for 'Experience' headings or sections
+                    pres = driver.find_elements(By.TAG_NAME, 'pre')
+                    for p in pres:
+                        txt = p.text or ''
+                        if 'experience' in txt.lower() or re.search(r'\d{1,2}\s*-\s*\d{1,2}\s*years', txt.lower()):
+                            exp_text = txt
+                            break
+
+                if exp_text:
+                    # capture patterns like '8-9 years' or '6-7 years' or '8 years'
+                    matches = re.findall(r"\d{1,2}\s*-\s*\d{1,2}\s*years|\d{1,2}\+?\s*years", exp_text, flags=re.IGNORECASE)
+                    if matches:
+                        details['experience_level'] = '; '.join([m.strip() for m in matches])
+                    else:
+                        # store raw if no explicit pattern
+                        details['experience_level'] = exp_text.strip()[:200]
+            except Exception:
+                pass
+
+            # Posted date: try to find date patterns on page
+            try:
+                page = driver.page_source
+                m = re.search(r"\b(\d{1,2}/\d{1,2}/\d{2,4})\b", page)
+                if m:
+                    pd = self._normalize_posted_date(m.group(1))
+                    if pd:
+                        details['posted_date'] = pd
+            except Exception:
+                pass
+
+            # Normalize apply_url
+            try:
+                details['apply_url'] = urljoin(job_url, driver.current_url)
+            except:
+                details['apply_url'] = job_url
+
+            driver.close()
+            driver.switch_to.window(original)
+        except Exception as e:
+            logger.debug(f"Error fetching Godrej details {job_url}: {e}")
+            try:
+                if len(driver.window_handles) > 1:
+                    driver.close()
+                    driver.switch_to.window(driver.window_handles[0])
+            except:
+                pass
+
+        return details
 
     def _extract_jobs_js(self, driver):
         """Extract jobs from the Godrej Enterprises careers table using JavaScript"""
