@@ -6,8 +6,10 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 import hashlib
 import time
+import re
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urljoin
 
 from core.logging import setup_logger
 from core.webdriver_utils import setup_chrome_driver
@@ -260,6 +262,16 @@ class AppleScraper:
                         'status': 'active'
                     }
 
+                    # Apple search page has partial data; always enrich from details page.
+                    detail_data = self._fetch_job_details(driver, url)
+                    if detail_data:
+                        job.update(detail_data)
+                        if detail_data.get('location'):
+                            city, state, country = self.parse_location(detail_data['location'])
+                            job['city'] = city
+                            job['state'] = state
+                            job['country'] = country
+
                     jobs.append(job)
 
                 except Exception as e:
@@ -367,69 +379,94 @@ class AppleScraper:
             driver.switch_to.window(driver.window_handles[-1])
 
             driver.get(job_url)
-            time.sleep(3)
+            WebDriverWait(driver, 20).until(
+                EC.presence_of_element_located((By.ID, 'jobdetails-wrapper'))
+            )
 
             # Extract description
             try:
-                desc_selectors = [
-                    (By.CSS_SELECTOR, '#jd-description'),
-                    (By.CSS_SELECTOR, '[id*="description"]'),
-                    (By.CSS_SELECTOR, '[class*="description"]'),
-                    (By.CSS_SELECTOR, '[role="article"]'),
+                section_ids = [
+                    'jobdetails-jobdetails-jobsummary-content-row',
+                    'jobdetails-jobdetails-jobdescription-content-row',
+                    'jobdetails-jobdetails-minimumqualifications-content-row',
+                    'jobdetails-jobdetails-preferredqualifications-content-row',
                 ]
 
-                for selector_type, selector_value in desc_selectors:
+                section_texts = []
+                for section_id in section_ids:
                     try:
-                        desc_elem = driver.find_element(selector_type, selector_value)
-                        desc_text = desc_elem.text.strip()
-                        if desc_text and len(desc_text) > 50:
-                            details['description'] = desc_text[:2000]
-                            break
+                        section = driver.find_element(By.ID, section_id)
+                        txt = driver.execute_script("return arguments[0].innerText;", section) or ""
+                        txt = txt.strip()
+                        if txt:
+                            section_texts.append(txt)
                     except Exception:
                         continue
+
+                if section_texts:
+                    details['description'] = "\n\n".join(section_texts)
+                else:
+                    fallback_el = driver.find_element(By.CSS_SELECTOR, '#jobdetails-jobdescription .white-space-pre-wrap')
+                    fallback_txt = driver.execute_script("return arguments[0].innerText;", fallback_el) or ""
+                    if fallback_txt.strip():
+                        details['description'] = fallback_txt.strip()
             except Exception as e:
                 logger.debug(f"Could not extract description: {str(e)}")
 
-            # Extract location if not already present
+            # Extract location
             try:
-                loc_selectors = [
-                    (By.CSS_SELECTOR, '[id*="location"]'),
-                    (By.CSS_SELECTOR, '[class*="location"]'),
-                ]
-
-                for selector_type, selector_value in loc_selectors:
-                    try:
-                        loc_elem = driver.find_element(selector_type, selector_value)
-                        loc_text = loc_elem.text.strip()
-                        if loc_text and len(loc_text) > 2:
-                            details['location'] = loc_text
-                            city, state, _ = self.parse_location(loc_text)
-                            details['city'] = city
-                            details['state'] = state
-                            break
-                    except Exception:
-                        continue
+                loc_elem = driver.find_element(By.ID, 'jobdetails-joblocation')
+                loc_text = (loc_elem.text or '').strip()
+                if loc_text:
+                    details['location'] = loc_text
             except Exception:
                 pass
 
             # Extract team/department
             try:
-                team_selectors = [
-                    (By.CSS_SELECTOR, '[id*="team"]'),
-                    (By.CSS_SELECTOR, '[class*="team"]'),
-                ]
-
-                for selector_type, selector_value in team_selectors:
-                    try:
-                        team_elem = driver.find_element(selector_type, selector_value)
-                        team_text = team_elem.text.strip()
-                        if team_text and len(team_text) > 2:
-                            details['department'] = team_text
-                            break
-                    except Exception:
-                        continue
+                team_elem = driver.find_element(By.ID, 'jobdetails-teamname')
+                team_text = (team_elem.text or '').strip()
+                if team_text:
+                    details['department'] = team_text
+                    details['job_function'] = team_text
             except Exception:
                 pass
+
+            # Extract role number and regenerate stable external id from role number.
+            try:
+                role_elem = driver.find_element(By.ID, 'jobdetails-jobnumber')
+                role_num = (role_elem.text or '').strip()
+                if role_num:
+                    details['external_id'] = self.generate_external_id(role_num, self.company_name)
+            except Exception:
+                pass
+
+            # Extract canonical apply URL from detail page action.
+            try:
+                apply_elem = driver.find_element(
+                    By.CSS_SELECTOR,
+                    'a[id*="jobdetailheader-actions-jobdetailssubmitresume"], a[id*="jobdetailfooter-actions-jobdetailssubmitresume"]'
+                )
+                apply_href = (apply_elem.get_attribute('href') or '').strip()
+                if apply_href:
+                    details['apply_url'] = urljoin('https://jobs.apple.com', apply_href)
+            except Exception:
+                pass
+
+            # Extract posted date as ISO when available.
+            try:
+                postdate_elem = driver.find_element(By.ID, 'jobdetails-jobpostdate')
+                iso_date = (postdate_elem.get_attribute('datetime') or '').strip()
+                if iso_date:
+                    details['posted_date'] = iso_date
+            except Exception:
+                pass
+
+            if details.get('description'):
+                exp = self._extract_experience_level(details['description'])
+                if exp:
+                    details['experience_level'] = exp
+                logger.info(f"Fetched Apple full description length={len(details['description'])} for {job_url}")
 
             driver.close()
             driver.switch_to.window(original_window)
@@ -458,4 +495,33 @@ class AppleScraper:
         city = parts[0] if len(parts) > 0 else ''
         state = parts[1] if len(parts) > 1 else ''
 
+        if city.lower() in {'india', 'remote'}:
+            city = ''
+
         return city, state, 'India'
+
+    def _extract_experience_level(self, text):
+        """Extract experience patterns like '2-3 years' from job detail text."""
+        if not text:
+            return ''
+
+        patterns = [
+            r'(\b\d+\s*(?:-|to)\s*\d+\+?\s*years?\b)',
+            r'(\b\d+\+?\s*years?\b)\s+(?:of\s+)?(?:relevant\s+)?experience',
+            r'experience\s*(?:of|:)?\s*(\d+\s*(?:-|to)\s*\d+\+?\s*years?\b)',
+            r'experience\s*(?:of|:)?\s*(\d+\+?\s*years?\b)',
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, text, flags=re.IGNORECASE)
+            if not match:
+                continue
+
+            value = (match.group(1) or '').strip()
+            value = re.sub(r'\s+', ' ', value)
+            if value:
+                # Normalize separators for consistency.
+                value = value.replace(' to ', '-')
+                return value
+
+        return ''
