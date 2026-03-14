@@ -8,6 +8,7 @@ import hashlib
 import time
 from pathlib import Path
 import os
+from urllib.parse import urljoin
 
 from core.logging import setup_logger
 from core.webdriver_utils import setup_chrome_driver
@@ -190,6 +191,15 @@ class AdobeScraper:
                         'status': 'active'
                     }
                     job_data.update(self.parse_location(location))
+
+                    # Adobe list pages do not include full JD, so always fetch detail page fields.
+                    if url:
+                        details = self._fetch_job_details(driver, url)
+                        if details:
+                            job_data.update(details)
+                            if details.get('location'):
+                                job_data.update(self.parse_location(details['location']))
+
                     jobs.append(job_data)
 
         except Exception as e:
@@ -236,6 +246,87 @@ class AdobeScraper:
             return False
         except:
             return False
+
+    def _fetch_job_details(self, driver, job_url):
+        details = {}
+        original_window = None
+
+        try:
+            original_window = driver.current_window_handle
+            driver.execute_script("window.open('');")
+            driver.switch_to.window(driver.window_handles[-1])
+            driver.get(job_url)
+
+            WebDriverWait(driver, 20).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, '[data-ph-at-id="jobdescription-text"], .jd-info'))
+            )
+
+            # Full job description
+            try:
+                desc_el = driver.find_element(By.CSS_SELECTOR, '[data-ph-at-id="jobdescription-text"], .jd-info')
+                desc = driver.execute_script("return arguments[0].innerText;", desc_el) or ""
+                if desc.strip():
+                    details['description'] = desc.strip()
+            except Exception:
+                pass
+
+            # Prefer detail page apply link if available
+            try:
+                apply_el = driver.find_element(By.CSS_SELECTOR, 'a[data-ph-at-id="apply-link"]')
+                href = (apply_el.get_attribute('href') or '').strip()
+                if href:
+                    details['apply_url'] = href
+
+                # Often contains department/function hint in Adobe pages
+                trait = (apply_el.get_attribute('data-ph-tevent-attr-trait14') or '').strip()
+                if trait:
+                    details['department'] = trait
+                    if not details.get('job_function'):
+                        details['job_function'] = trait
+            except Exception:
+                pass
+
+            # Try to capture any visible location block from detail page
+            try:
+                loc_candidates = driver.find_elements(
+                    By.CSS_SELECTOR,
+                    '[data-ph-at-id*="location" i], .job-location, [class*="location"]'
+                )
+                for el in loc_candidates:
+                    txt = (el.text or '').strip()
+                    if not txt:
+                        continue
+                    if len(txt) > 120:
+                        continue
+                    low = txt.lower()
+                    if 'location' in low and ':' in txt:
+                        txt = txt.split(':', 1)[1].strip()
+                    txt = txt.replace('\r', '\n')
+                    txt = '\n'.join([p.strip() for p in txt.split('\n') if p.strip()])
+                    if txt.lower().startswith('location'):
+                        txt = txt[len('location'):].strip(' :\n\t')
+                    txt = txt.replace('\n', ', ')
+                    if 'india' in low or 'remote' in low or ',' in txt:
+                        details['location'] = txt
+                        break
+            except Exception:
+                pass
+
+            if details.get('description'):
+                logger.info(f"Fetched Adobe full description length={len(details['description'])} for {job_url}")
+
+        except Exception as e:
+            logger.warning(f"Error fetching Adobe job details for {job_url}: {str(e)}")
+        finally:
+            try:
+                if len(driver.window_handles) > 1:
+                    driver.close()
+                if original_window:
+                    driver.switch_to.window(original_window)
+            except Exception:
+                pass
+
+        return details
 
     def parse_location(self, location_str):
         result = {'city': '', 'state': '', 'country': 'India'}
