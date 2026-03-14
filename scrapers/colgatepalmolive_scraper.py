@@ -8,6 +8,8 @@ import hashlib
 import time
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urljoin
+import re
 
 from core.logging import setup_logger
 from core.webdriver_utils import setup_chrome_driver
@@ -217,6 +219,14 @@ class ColgatePalmoliveScraper:
                 if FETCH_FULL_JOB_DETAILS and url:
                     full_details = self._fetch_job_details(driver, url)
                     job_data.update(full_details)
+                # Enrich with full job details regardless of global flag (ensures full descriptions)
+                if url and not job_data.get('description'):
+                    try:
+                        full_details = self._fetch_job_details(driver, url)
+                        if full_details:
+                            job_data.update(full_details)
+                    except Exception:
+                        logger.debug('Detail fetch failed for %s', url)
 
                 jobs.append(job_data)
 
@@ -236,25 +246,104 @@ class ColgatePalmoliveScraper:
             driver.switch_to.window(driver.window_handles[-1])
             
             driver.get(job_url)
-            time.sleep(3)
-            
+            # small wait for JS-rendered content
+            time.sleep(2)
+
+            page_src = driver.page_source
+
+            # Extract description(s) using common selectors and itemprop
+            desc_texts = []
             try:
-                desc_selectors = [
-                    (By.CSS_SELECTOR, 'div[class*="description"]'),
-                    (By.XPATH, "//div[contains(@class, 'job-description')]"),
-                    (By.CSS_SELECTOR, 'div.description'),
-                ]
-                
-                for selector_type, selector_value in desc_selectors:
+                desc_elems = driver.find_elements(By.CSS_SELECTOR, '[itemprop="description"], div[class*="description"], div.job-description')
+                for el in desc_elems:
                     try:
-                        desc_elem = driver.find_element(selector_type, selector_value)
-                        details['description'] = desc_elem.text.strip()[:2000]
-                        break
+                        text = driver.execute_script('return arguments[0].innerText;', el)
+                        if text:
+                            desc_texts.append(text.strip())
+                    except:
+                        try:
+                            text = el.text
+                            if text:
+                                desc_texts.append(text.strip())
+                        except:
+                            continue
+            except Exception:
+                pass
+
+            # fallback: try pulling a large text blob from body if nothing found
+            if not desc_texts:
+                try:
+                    body = driver.find_element(By.TAG_NAME, 'body')
+                    body_text = driver.execute_script('return arguments[0].innerText;', body)
+                    if body_text:
+                        desc_texts.append(body_text.strip())
+                except:
+                    pass
+
+            if desc_texts:
+                details['description'] = '\n\n'.join(desc_texts)[:20000]
+
+            # Apply link: look for common apply button patterns
+            try:
+                apply_el = None
+                candidates = driver.find_elements(By.CSS_SELECTOR, 'a.unify-apply-now, a.apply, a[href*="/apply"], a[href*="talentcommunity"], a[href*="/job/"]')
+                for a in candidates:
+                    try:
+                        href = a.get_attribute('href')
+                        if href and ('apply' in href or 'talentcommunity' in href):
+                            apply_el = a
+                            break
                     except:
                         continue
+
+                if not apply_el and candidates:
+                    apply_el = candidates[0]
+
+                if apply_el:
+                    href = apply_el.get_attribute('href')
+                    if href:
+                        details['apply_url'] = urljoin(job_url, href)
+            except Exception:
+                pass
+
+            # Posted date: try regex first on visible text
+            try:
+                m = re.search(r"\b(\d{1,2}/\d{1,2}/\d{2,4})\b", page_src)
+                if m:
+                    norm = self._normalize_posted_date(m.group(1))
+                    if norm:
+                        details['posted_date'] = norm
+            except Exception:
+                pass
+
+            # Remote type / employment hints
+            try:
+                if 'On-site' in page_src or 'On-site' in driver.page_source:
+                    details['remote_type'] = 'On-site'
+                elif 'Remote' in page_src or 'Remote' in driver.page_source:
+                    details['remote_type'] = 'Remote'
             except:
                 pass
-            
+
+            # Try extracting visible location tokens to enrich city/state/country
+            try:
+                loc_match = re.search(r'([A-Za-z\s]+),\s*([A-Za-z\s]+),\s*([A-Za-z\s]+)', page_src)
+                if loc_match:
+                    city = loc_match.group(1).strip()
+                    state = loc_match.group(2).strip()
+                    country = loc_match.group(3).strip()
+                    details['city'] = city
+                    details['state'] = state
+                    details['country'] = country
+                else:
+                    if 'Barcelona' in page_src:
+                        details['city'] = 'Barcelona'
+                        details['country'] = 'Spain'
+                    elif 'Spain' in page_src:
+                        details['country'] = 'Spain'
+            except:
+                pass
+
             driver.close()
             driver.switch_to.window(original_window)
             
@@ -273,9 +362,33 @@ class ColgatePalmoliveScraper:
         """Parse location string into city, state, country"""
         if not location_str:
             return '', '', 'India'
-        
-        parts = [p.strip() for p in location_str.split(',')]
+
+        parts = [p.strip() for p in location_str.split(',') if p.strip()]
         city = parts[0] if len(parts) > 0 else ''
         state = parts[1] if len(parts) > 1 else ''
-        
-        return city, state, 'India'
+
+        # detect country heuristics
+        country = 'India'
+        loc_lower = location_str.lower()
+        if 'spain' in loc_lower or 'barcelona' in loc_lower or 'catal' in loc_lower:
+            country = 'Spain'
+        elif 'india' in loc_lower or 'bengaluru' in loc_lower or 'mumbai' in loc_lower:
+            country = 'India'
+
+        return city, state, country
+
+    def _normalize_posted_date(self, date_str):
+        """Normalize various short date formats to YYYY-MM-DD. Returns empty string on failure."""
+        if not date_str:
+            return ''
+        date_str = date_str.strip()
+        for fmt in ('%m/%d/%y', '%d/%m/%y', '%m/%d/%Y', '%d/%m/%Y'):
+            try:
+                dt = datetime.strptime(date_str, fmt)
+                if dt.year < 1970:
+                    if dt.year < 100:
+                        dt = dt.replace(year=dt.year + 2000)
+                return dt.strftime('%Y-%m-%d')
+            except Exception:
+                continue
+        return ''
