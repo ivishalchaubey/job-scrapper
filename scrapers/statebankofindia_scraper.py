@@ -5,14 +5,20 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 import hashlib
+import html
 import time
 import re
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urljoin
+
+import requests
+from bs4 import BeautifulSoup
 
 from core.logging import setup_logger
 from core.webdriver_utils import setup_chrome_driver
 from config.scraper import SCRAPE_TIMEOUT, HEADLESS_MODE, FETCH_FULL_JOB_DETAILS, MAX_PAGES_TO_SCRAPE
+from scrapers.csv_url_resolver import get_company_url
 
 logger = setup_logger('statebankofindia_scraper')
 
@@ -20,7 +26,8 @@ class StateBankOfIndiaScraper:
     def __init__(self):
         self.company_name = "State Bank of India"
         # sbi.co.in/web/careers/current-openings redirects to sbi.bank.in/web/careers/current-openings
-        self.url = "https://sbi.bank.in/web/careers/current-openings"
+        default_url = "https://sbi.bank.in/web/careers/current-openings"
+        self.url = get_company_url(self.company_name, default_url)
     
     def setup_driver(self):
         """Set up Chrome driver using cross-platform utility"""
@@ -31,37 +38,183 @@ class StateBankOfIndiaScraper:
         unique_string = f"{company}_{job_id}"
         return hashlib.md5(unique_string.encode()).hexdigest()
 
+    def _get_headers(self):
+        return {
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) '
+                          'AppleWebKit/537.36 (KHTML, like Gecko) '
+                          'Chrome/131.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9',
+        }
+
+    def _clean_text(self, value):
+        if not value:
+            return ''
+        text = html.unescape(value)
+        text = re.sub(r'[ \t\r\f\v]+', ' ', text)
+        text = re.sub(r'\n\s*\n+', '\n\n', text)
+        return text.strip()
+
+    def _extract_apply_start_date(self, text):
+        if not text:
+            return ''
+
+        match = re.search(
+            r'apply\s+online\s+from\s+(\d{2}[.-]\d{2}[.-]\d{4})\s+to\s+\d{2}[.-]\d{2}[.-]\d{4}',
+            text,
+            re.IGNORECASE,
+        )
+        return match.group(1) if match else ''
+
+    def _normalize_date(self, value):
+        if not value:
+            return ''
+
+        value = str(value).strip()
+        for fmt in ('%d.%m.%Y', '%d-%m-%Y', '%Y-%m-%d'):
+            try:
+                return datetime.strptime(value, fmt).strftime('%Y-%m-%d')
+            except ValueError:
+                continue
+        return value
+
+    def _clean_title(self, title):
+        if not title:
+            return ''
+        title = re.sub(r'\s*\((?:Apply Online|Online Registration).*?\)\s*$', '', title, flags=re.IGNORECASE)
+        title = re.sub(r'\s+', ' ', title)
+        return title.strip()
+
+    def _is_current_opening(self, description, apply_url):
+        if not description or not apply_url:
+            return False
+        upper_description = description.upper()
+        return (
+            'APPLY ONLINE' in upper_description or
+            'PRINT APPLICATION' in upper_description or
+            'APPLY NOW' in upper_description
+        )
+
+    def _scrape_page_html(self, page_html):
+        jobs = []
+        soup = BeautifulSoup(page_html, 'html.parser')
+        cards = soup.select('div.card')
+
+        for card in cards:
+            accordion = card.select_one('div.accordion.lateral')
+            if not accordion:
+                continue
+
+            header = accordion.select_one('div.text-uppercase')
+            content = card.select_one('div.accordion-content')
+            if not header:
+                continue
+
+            header_paragraphs = header.find_all('p')
+            if not header_paragraphs:
+                continue
+
+            raw_title = self._clean_text(header_paragraphs[0].get_text(' ', strip=True))
+            if not raw_title:
+                continue
+            title = self._clean_title(raw_title)
+
+            adv_no = ''
+            for paragraph in header_paragraphs[1:]:
+                text = self._clean_text(paragraph.get_text(' ', strip=True))
+                adv_match = re.search(r'ADVERTISEMENT\s+NO:\s*(.+)$', text, re.IGNORECASE)
+                if adv_match:
+                    adv_no = adv_match.group(1).strip()
+                    break
+
+            article_id = (accordion.get('data-articleid') or '').strip()
+            job_id = adv_no or article_id or hashlib.md5(raw_title.encode()).hexdigest()[:12]
+
+            button = accordion.select_one('button')
+            last_date = ''
+            if button:
+                button_text = self._clean_text(button.get_text(' ', strip=True))
+                last_date_match = re.search(r'LAST DATE TO APPLY\s*:\s*(.+)$', button_text, re.IGNORECASE)
+                if last_date_match:
+                    last_date = last_date_match.group(1).strip()
+
+            apply_url = ''
+            description = ''
+            if content:
+                links = content.select('a[href]')
+                for link in links:
+                    link_text = self._clean_text(link.get_text(' ', strip=True))
+                    if 'APPLY' in link_text.upper():
+                        apply_url = urljoin(self.url, link.get('href', ''))
+                        break
+
+                description = self._clean_text(content.get_text('\n', strip=True))
+
+            if not apply_url:
+                continue
+
+            apply_period_text = self._clean_text(header.get_text(' ', strip=True))
+            posted_date = self._normalize_date(self._extract_apply_start_date(apply_period_text))
+            if not self._is_current_opening(description, apply_url):
+                continue
+
+            job = {
+                'external_id': self.generate_external_id(job_id, self.company_name),
+                'job_id': job_id,
+                'company_name': self.company_name,
+                'title': title,
+                'description': description,
+                'location': '',
+                'city': '',
+                'state': '',
+                'country': '',
+                'employment_type': '',
+                'department': (accordion.get('data-type-department') or '').strip(),
+                'apply_url': apply_url,
+                'posted_date': posted_date,
+                'job_function': (accordion.get('data-type-role') or '').strip(),
+                'experience_level': '',
+                'salary_range': '',
+                'remote_type': '',
+                'status': 'active'
+            }
+            jobs.append(job)
+
+        return jobs
+
     def scrape(self, max_pages=MAX_PAGES_TO_SCRAPE):
         """Scrape recruitment openings from SBI careers page"""
-        jobs = []
-        driver = None
-
         try:
             logger.info(f"Starting scrape for {self.company_name}")
+            response = requests.get(self.url, headers=self._get_headers(), timeout=SCRAPE_TIMEOUT)
+            response.raise_for_status()
+            jobs = self._scrape_page_html(response.text)
+            if jobs:
+                logger.info(f"Successfully scraped {len(jobs)} total recruitment notices from {self.company_name}")
+                return jobs
+            logger.warning("HTML parser found no recruitment notices, falling back to Selenium")
+        except Exception as e:
+            logger.warning(f"HTML scraping failed for {self.company_name}: {str(e)}")
+
+        jobs = []
+        driver = None
+        try:
             driver = self.setup_driver()
             driver.get(self.url)
-
-            # Wait for page to load
             time.sleep(15)
 
-            # Scroll to trigger lazy-loaded content
             for scroll_i in range(5):
                 driver.execute_script("window.scrollTo(0, document.body.scrollHeight * %s);" % str((scroll_i + 1) / 5))
                 time.sleep(2)
             driver.execute_script("window.scrollTo(0, 0);")
             time.sleep(2)
 
-            # SBI does not have typical job cards - it has recruitment notices/advertisements
-            # Each notice has a title, advertisement number, and last date to apply
             page_jobs = self._scrape_page_js(driver)
             jobs.extend(page_jobs)
-
             logger.info(f"Successfully scraped {len(jobs)} total recruitment notices from {self.company_name}")
-
         except Exception as e:
             logger.error(f"Error scraping {self.company_name}: {str(e)}")
             raise
-
         finally:
             if driver:
                 driver.quit()
@@ -234,15 +387,16 @@ class StateBankOfIndiaScraper:
 
                     job = {
                         'external_id': self.generate_external_id(job_id, self.company_name),
+                        'job_id': job_id,
                         'company_name': self.company_name,
                         'title': clean_title,
-                        'description': f"Advertisement No: {adv_no}. Last Date to Apply: {last_date}",
+                        'description': '',
                         'location': '',
                         'city': '',
                         'state': '',
-                        'country': 'India',
-                        'employment_type': 'Full-time',
-                        'department': 'CRPD',
+                        'country': '',
+                        'employment_type': '',
+                        'department': '',
                         'apply_url': apply_url if apply_url else self.url,
                         'posted_date': '',
                         'job_function': '',

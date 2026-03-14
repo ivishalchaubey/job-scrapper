@@ -5,6 +5,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 import hashlib
+import re
 import time
 from pathlib import Path
 import os
@@ -18,6 +19,7 @@ except ImportError:
 from core.logging import setup_logger
 from core.webdriver_utils import setup_chrome_driver
 from config.scraper import SCRAPE_TIMEOUT, HEADLESS_MODE, FETCH_FULL_JOB_DETAILS, MAX_PAGES_TO_SCRAPE
+from scrapers.csv_url_resolver import get_company_url
 
 logger = setup_logger('morganstanley_scraper')
 
@@ -27,7 +29,8 @@ class MorganStanleyScraper:
     def __init__(self):
         self.company_name = "Morgan Stanley"
         # Eightfold AI platform
-        self.url = "https://morganstanley.eightfold.ai/careers?source=mscom&start=0&pid=549795398771&sort_by=timestamp&filter_city=Mumbai%2CBengaluru"
+        default_url = "https://morganstanley.eightfold.ai/careers?source=mscom&start=0&pid=549795398771&sort_by=timestamp&filter_city=Mumbai%2CBengaluru"
+        self.url = get_company_url(self.company_name, default_url)
 
     def setup_driver(self):
         chrome_options = Options()
@@ -69,24 +72,38 @@ class MorganStanleyScraper:
         unique_string = f"{company}_{job_id}"
         return hashlib.md5(unique_string.encode()).hexdigest()
 
+    def _clean_text(self, value):
+        if not value:
+            return ''
+        text = re.sub(r'\r', '\n', value)
+        text = re.sub(r'[ \t\f\v]+', ' ', text)
+        text = re.sub(r'\n\s*\n+', '\n\n', text)
+        return text.strip()[:15000]
+
+    def _has_detail_body(self, text):
+        if not text:
+            return False
+        markers = [
+            'Company Profile',
+            'Department Profile',
+            'About Us:',
+            'Position Summary:',
+            'Required Qualifications:',
+        ]
+        if any(marker in text for marker in markers):
+            return True
+
+        # Some pages start immediately after the metadata block instead of with labeled sections.
+        posted_idx = text.find('Posted Date')
+        if posted_idx != -1:
+            tail = text[posted_idx:]
+            return len(tail) > 300
+
+        return False
+
     def scrape(self, max_pages=MAX_PAGES_TO_SCRAPE):
-        all_jobs = []
-
-        # Primary method: Eightfold AI API via requests
-        if requests is not None:
-            try:
-                api_jobs = self._scrape_via_api(max_pages)
-                if api_jobs:
-                    logger.info(f"API method returned {len(api_jobs)} jobs")
-                    return api_jobs
-                else:
-                    logger.warning("API method returned 0 jobs, falling back to Selenium")
-            except Exception as e:
-                logger.error(f"API method failed: {str(e)}, falling back to Selenium")
-        else:
-            logger.warning("requests library not available, using Selenium only")
-
-        # Fallback: Selenium-based scraping
+        # The direct Eightfold endpoint currently returns 404 for Morgan Stanley,
+        # so Selenium is the stable primary path here.
         return self._scrape_via_selenium(max_pages)
 
     def _scrape_via_api(self, max_pages=MAX_PAGES_TO_SCRAPE):
@@ -199,6 +216,7 @@ class MorganStanleyScraper:
 
         job_data = {
             'external_id': self.generate_external_id(job_id, self.company_name),
+            'job_id': job_id,
             'company_name': self.company_name,
             'title': title,
             'apply_url': apply_url,
@@ -209,7 +227,7 @@ class MorganStanleyScraper:
             'posted_date': str(posted_date),
             'city': '',
             'state': '',
-            'country': 'India',
+            'country': '',
             'job_function': '',
             'experience_level': str(experience_level),
             'salary_range': '',
@@ -440,6 +458,8 @@ class MorganStanleyScraper:
         job_id = ''
         if 'pid=' in job_url:
             job_id = job_url.split('pid=')[-1].split('&')[0]
+        elif '/job/' in job_url:
+            job_id = job_url.split('/job/')[-1].split('?')[0].split('/')[0]
         elif 'job-card-' in (elem.get_attribute('id') or ''):
             # Parse from id like "job-card-549795520602-job-list"
             elem_id = elem.get_attribute('id')
@@ -456,6 +476,7 @@ class MorganStanleyScraper:
 
         job_data = {
             'external_id': self.generate_external_id(job_id, self.company_name),
+            'job_id': job_id,
             'company_name': self.company_name,
             'title': title,
             'apply_url': job_url,
@@ -466,7 +487,7 @@ class MorganStanleyScraper:
             'posted_date': '',
             'city': '',
             'state': '',
-            'country': 'India',
+            'country': '',
             'job_function': '',
             'experience_level': '',
             'salary_range': '',
@@ -474,7 +495,7 @@ class MorganStanleyScraper:
             'status': 'active'
         }
 
-        if FETCH_FULL_JOB_DETAILS and job_url:
+        if job_url:
             try:
                 details = self._fetch_job_details(driver, job_url)
                 if details:
@@ -577,6 +598,8 @@ class MorganStanleyScraper:
                     if not job_id:
                         if 'pid=' in url:
                             job_id = url.split('pid=')[-1].split('&')[0]
+                        elif '/job/' in url:
+                            job_id = url.split('/job/')[-1].split('?')[0].split('/')[0]
                         else:
                             job_id = f"ms_js_{hashlib.md5(url.encode()).hexdigest()[:8]}"
 
@@ -586,6 +609,7 @@ class MorganStanleyScraper:
 
                     job_data = {
                         'external_id': ext_id,
+                        'job_id': job_id,
                         'company_name': self.company_name,
                         'title': title,
                         'apply_url': url,
@@ -596,13 +620,21 @@ class MorganStanleyScraper:
                         'posted_date': '',
                         'city': '',
                         'state': '',
-                        'country': 'India',
+                        'country': '',
                         'job_function': '',
                         'experience_level': '',
                         'salary_range': '',
                         'remote_type': '',
                         'status': 'active'
                     }
+
+                    if url:
+                        try:
+                            details = self._fetch_job_details(driver, url)
+                            if details:
+                                job_data.update(details)
+                        except Exception as e:
+                            logger.warning(f"Could not fetch details for {title}: {str(e)}")
 
                     location_parts = self.parse_location(location)
                     job_data.update(location_parts)
@@ -674,41 +706,78 @@ class MorganStanleyScraper:
     def _fetch_job_details(self, driver, job_url):
         """Fetch full job details by opening the job detail page."""
         details = {}
+        original_window = None
         try:
             original_window = driver.current_window_handle
             driver.execute_script("window.open('');")
             driver.switch_to.window(driver.window_handles[-1])
 
             driver.get(job_url)
-            time.sleep(5)
+            WebDriverWait(driver, 20).until(
+                lambda d: 'Job description' in d.find_element(By.TAG_NAME, 'body').text
+            )
 
-            desc_selectors = [
-                "[class*='position-job-description']",
-                "[class*='job-description']",
-                "[class*='description']",
-                "[role='main']",
-                "main"
-            ]
-            for selector in desc_selectors:
-                try:
-                    desc_elem = driver.find_element(By.CSS_SELECTOR, selector)
-                    text = desc_elem.text.strip()
-                    if text and len(text) > 50:
-                        details['description'] = text[:3000]
-                        break
-                except Exception:
-                    continue
+            try:
+                driver.execute_script("""
+                    const candidates = Array.from(document.querySelectorAll('button,a,[role="tab"]'));
+                    const tab = candidates.find(el => (el.innerText || '').trim() === 'Job description');
+                    if (tab) tab.click();
+                """)
+            except Exception:
+                pass
 
-            # Employment type
-            for selector in ["[class*='employment']", "[class*='job-type']"]:
-                try:
-                    elem = driver.find_element(By.CSS_SELECTOR, selector)
-                    text = elem.text.strip()
-                    if text and len(text) < 50:
-                        details['employment_type'] = text
+            WebDriverWait(driver, 20).until(
+                lambda d: self._has_detail_body(d.find_element(By.TAG_NAME, 'body').text)
+            )
+            time.sleep(1)
+
+            page_text = driver.execute_script("""
+                const root = document.querySelector('main,[role="main"]') || document.body;
+                return root ? root.innerText : '';
+            """) or ''
+
+            if page_text:
+                start_markers = [
+                    'Company Profile',
+                    'About Us:',
+                    'Department Profile',
+                    'Department:',
+                    'Position Summary:',
+                    'Required Qualifications:',
+                ]
+                start_positions = [page_text.find(marker) for marker in start_markers if page_text.find(marker) != -1]
+                start_idx = min(start_positions) if start_positions else -1
+
+                if start_idx == -1:
+                    posted_match = re.search(r'Posted Date\s+([^\n]+)\s+', page_text)
+                    if posted_match:
+                        start_idx = posted_match.end()
+
+                description = page_text[start_idx:] if start_idx != -1 else page_text
+                end_markers = [
+                    '\nInsights from previous hires',
+                    '\nTop skills',
+                    '\nPreviously worked at',
+                    '\nPreviously worked as',
+                    '\nShare this job',
+                ]
+                for marker in end_markers:
+                    idx = description.find(marker)
+                    if idx != -1:
+                        description = description[:idx]
                         break
-                except Exception:
-                    continue
+
+                description = self._clean_text(description)
+                if description:
+                    details['description'] = description
+
+                emp_match = re.search(r'Employment Type\s+([^\n]+)', page_text)
+                if emp_match:
+                    details['employment_type'] = emp_match.group(1).strip()
+
+                posted_match = re.search(r'Posted Date\s+([^\n]+)', page_text)
+                if posted_match:
+                    details['posted_date'] = posted_match.group(1).strip()
 
             driver.close()
             driver.switch_to.window(original_window)
@@ -725,7 +794,7 @@ class MorganStanleyScraper:
         return details
 
     def parse_location(self, location_str):
-        result = {'city': '', 'state': '', 'country': 'India'}
+        result = {'city': '', 'state': '', 'country': ''}
         if not location_str:
             return result
 
@@ -738,7 +807,10 @@ class MorganStanleyScraper:
             result['state'] = parts[1]
             result['country'] = parts[2]
         elif len(parts) == 2:
-            result['country'] = parts[1]
+            if parts[1].upper() in ('IN', 'IND', 'INDIA'):
+                result['country'] = 'India'
+            else:
+                result['state'] = parts[1]
 
         if 'India' in location_str or 'IND' in location_str:
             result['country'] = 'India'

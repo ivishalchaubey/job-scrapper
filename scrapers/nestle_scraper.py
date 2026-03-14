@@ -1,11 +1,13 @@
 import requests
 import hashlib
+import html
 import re
 from pathlib import Path
 
 from core.logging import setup_logger
 from core.webdriver_utils import setup_chrome_driver
 from config.scraper import SCRAPE_TIMEOUT, HEADLESS_MODE, FETCH_FULL_JOB_DETAILS, MAX_PAGES_TO_SCRAPE
+from scrapers.csv_url_resolver import get_company_url
 
 logger = setup_logger('nestle_scraper')
 
@@ -13,7 +15,8 @@ class NestleScraper:
     def __init__(self):
         self.company_name = "Nestl\u00e9"
         # Original URL (Cloudflare-blocked, kept for reference)
-        self.url = "https://www.nestle.in/jobs/search-jobs?keyword=&country=IN"
+        default_url = "https://www.nestle.in/jobs/search-jobs?keyword=&country=IN"
+        self.url = get_company_url(self.company_name, default_url)
         # SuccessFactors API URL that bypasses Cloudflare
         self._api_base = 'https://jobdetails.nestle.com'
         self._search_url = f'{self._api_base}/job/search'
@@ -35,6 +38,70 @@ class NestleScraper:
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
             'Accept-Language': 'en-US,en;q=0.9',
         }
+
+    def _clean_rich_text(self, value):
+        if not value:
+            return ''
+        text = html.unescape(value)
+        text = re.sub(r'<br\s*/?>', '\n', text, flags=re.IGNORECASE)
+        text = re.sub(r'</p\s*>', '\n', text, flags=re.IGNORECASE)
+        text = re.sub(r'<li[^>]*>', '\n- ', text, flags=re.IGNORECASE)
+        text = re.sub(r'<[^>]+>', ' ', text)
+        text = re.sub(r'[ \t\r\f\v]+', ' ', text)
+        text = re.sub(r'\n\s*\n+', '\n\n', text)
+        return text.strip()[:15000]
+
+    def _strip_metadata_prefix(self, description):
+        if not description:
+            return ''
+
+        cleaned_lines = []
+        skip_prefixes = ('function :', 'job location :')
+
+        for line in description.splitlines():
+            normalized = re.sub(r'\s+', ' ', line).strip()
+            if not normalized:
+                if cleaned_lines:
+                    cleaned_lines.append('')
+                continue
+
+            if not cleaned_lines and normalized.lower().startswith(skip_prefixes):
+                continue
+
+            cleaned_lines.append(normalized)
+
+        return '\n'.join(cleaned_lines).strip()
+
+    def _fetch_job_details(self, apply_url):
+        details = {}
+        try:
+            response = requests.get(apply_url, headers=self._get_headers(), timeout=SCRAPE_TIMEOUT)
+            if response.status_code != 200:
+                return details
+
+            page = response.text
+            desc_match = re.search(
+                r'<span class="jobdescription">(.*?)</span>\s*</span>',
+                page,
+                re.DOTALL,
+            )
+            if desc_match:
+                content_html = desc_match.group(1)
+                description = self._strip_metadata_prefix(self._clean_rich_text(content_html))
+                if description:
+                    details['description'] = description
+
+                loc_match = re.search(r'<strong>\s*Job Location\s*</strong>\s*:\s*([^<]+)', content_html, re.IGNORECASE)
+                if loc_match:
+                    details['location'] = html.unescape(loc_match.group(1)).strip()
+
+                dept_match = re.search(r'<strong>\s*Function\s*</strong>\s*:\s*([^<]+)', content_html, re.IGNORECASE)
+                if dept_match:
+                    details['department'] = html.unescape(dept_match.group(1)).strip()
+        except Exception as e:
+            logger.warning(f"Could not fetch Nestlé job details for {apply_url}: {str(e)}")
+
+        return details
 
     def scrape(self, max_pages=MAX_PAGES_TO_SCRAPE):
         """Scrape Nestle India jobs via SuccessFactors HTML API (bypasses Cloudflare)."""
@@ -182,6 +249,10 @@ class NestleScraper:
                 if dept_match:
                     department = re.sub(r'<[^>]+>', '', dept_match.group(1)).strip()
                     department = re.sub(r'\s+', ' ', department)
+                    if re.search(r'\b\d+\.\d+\s*mi\b', department, re.IGNORECASE):
+                        department = ''
+                    elif re.match(r'^[A-Z][a-z]{2}\s+\d{1,2},\s+\d{4}', department):
+                        department = ''
 
                 # Extract date from jobDate cell
                 posted_date = ''
@@ -200,6 +271,7 @@ class NestleScraper:
 
                 job_data = {
                     'external_id': self.generate_external_id(job_id, self.company_name),
+                    'job_id': job_id,
                     'company_name': self.company_name,
                     'title': title,
                     'apply_url': apply_url,
@@ -218,6 +290,13 @@ class NestleScraper:
                     'status': 'active'
                 }
 
+                details = self._fetch_job_details(apply_url)
+                if details:
+                    job_data.update(details)
+                    if details.get('location'):
+                        location_parts = self.parse_location(details['location'])
+                        job_data.update(location_parts)
+
                 jobs.append(job_data)
 
             except Exception as e:
@@ -227,16 +306,28 @@ class NestleScraper:
         return jobs
 
     def parse_location(self, location_str):
-        result = {'city': '', 'state': '', 'country': 'India'}
+        result = {'city': '', 'state': '', 'country': ''}
         if not location_str:
             return result
 
+        india_states = {
+            'andhra pradesh', 'arunachal pradesh', 'assam', 'bihar', 'chhattisgarh', 'goa',
+            'gujarat', 'haryana', 'himachal pradesh', 'jharkhand', 'karnataka', 'kerala',
+            'madhya pradesh', 'maharashtra', 'manipur', 'meghalaya', 'mizoram', 'nagaland',
+            'odisha', 'punjab', 'rajasthan', 'sikkim', 'tamil nadu', 'telangana', 'tripura',
+            'uttar pradesh', 'uttarakhand', 'west bengal', 'andaman and nicobar islands',
+            'chandigarh', 'dadra and nagar haveli and daman and diu', 'delhi', 'jammu and kashmir',
+            'ladakh', 'lakshadweep', 'puducherry'
+        }
         location_str = location_str.strip()
         # Remove postal codes (e.g., "560103")
         location_str = re.sub(r'\b\d{6}\b', '', location_str).strip().rstrip(',').strip()
 
         parts = [p.strip() for p in location_str.split(',')]
 
+        if len(parts) == 1 and parts[0].lower() in india_states:
+            result['state'] = parts[0]
+            return result
         if len(parts) >= 1:
             result['city'] = parts[0]
         if len(parts) == 3:

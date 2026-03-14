@@ -5,25 +5,32 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 import hashlib
+import html
+import json
+import re
+import subprocess
 import time
 import traceback
 from pathlib import Path
 from datetime import datetime
 import os
 import stat
+from urllib.request import Request, urlopen
 
 from core.logging import setup_logger
 from core.webdriver_utils import setup_chrome_driver
 from config.scraper import SCRAPE_TIMEOUT, HEADLESS_MODE, FETCH_FULL_JOB_DETAILS, MAX_PAGES_TO_SCRAPE
+from scrapers.csv_url_resolver import get_company_url
 
 logger = setup_logger('microsoft_scraper')
 
 class MicrosoftScraper:
     def __init__(self):
         self.company_name = "Microsoft"
-        self.url = "https://apply.careers.microsoft.com/careers?location=India&hl=en"
+        default_url = "https://apply.careers.microsoft.com/careers?location=India&hl=en"
+        self.url = get_company_url(self.company_name, default_url)
         # Microsoft careers moved to Eightfold AI PCSX platform (Nov 2026)
-        self.search_url = 'https://apply.careers.microsoft.com/careers?hl=en&location=India'
+        self.search_url = self.url
         self.pcsx_api_path = '/api/pcsx/search?domain=microsoft.com&query=&location=India&start={start}&hl=en'
         self.base_job_url = 'https://apply.careers.microsoft.com/careers/job'
     
@@ -34,6 +41,176 @@ class MicrosoftScraper:
     def generate_external_id(self, job_id, company):
         unique_string = f"{company}_{job_id}"
         return hashlib.md5(unique_string.encode()).hexdigest()
+
+    def _clean_text(self, value):
+        if not value:
+            return ''
+        text = html.unescape(value)
+        text = re.sub(r'<br\s*/?>', '\n', text, flags=re.IGNORECASE)
+        text = re.sub(r'</p\s*>', '\n', text, flags=re.IGNORECASE)
+        text = re.sub(r'<li[^>]*>', '\n- ', text, flags=re.IGNORECASE)
+        text = re.sub(r'<[^>]+>', ' ', text)
+        text = re.sub(r'[ \t\r\f\v]+', ' ', text)
+        text = re.sub(r'\n\s*\n+', '\n\n', text)
+        return text.strip()[:15000]
+
+    def _fetch_text(self, url):
+        try:
+            request = Request(
+                url,
+                headers={
+                    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                },
+            )
+            with urlopen(request, timeout=SCRAPE_TIMEOUT) as response:
+                return response.read().decode('utf-8', errors='ignore')
+        except Exception:
+            pass
+
+        try:
+            result = subprocess.run(
+                ['curl', '-L', '-s', url],
+                capture_output=True,
+                text=True,
+                timeout=SCRAPE_TIMEOUT,
+                check=False,
+            )
+            if result.stdout:
+                return result.stdout
+        except Exception:
+            pass
+
+        return ''
+
+    def _fetch_job_details_from_html(self, apply_url):
+        details = {}
+        page = self._fetch_text(apply_url)
+        if not page:
+            return details
+
+        ld_match = re.search(
+            r'<script type="application/ld\+json">\s*(\{.*?\})\s*</script>',
+            page,
+            flags=re.DOTALL,
+        )
+        if ld_match:
+            try:
+                payload = json.loads(ld_match.group(1))
+                description = self._clean_text(payload.get('description', ''))
+                if description:
+                    details['description'] = description
+
+                employment_type = payload.get('employmentType', '')
+                if isinstance(employment_type, list):
+                    employment_type = ', '.join([str(item) for item in employment_type if item])
+                if employment_type:
+                    details['employment_type'] = str(employment_type).replace('_', '-').title()
+            except Exception:
+                pass
+
+        if not details.get('description'):
+            meta_match = re.search(r'<meta name="description" content="([^"]+)"', page, flags=re.IGNORECASE)
+            if meta_match:
+                description = self._clean_text(meta_match.group(1))
+                if description:
+                    details['description'] = description
+
+        return details
+
+    def _fetch_job_details(self, driver, apply_url):
+        details = {}
+        original_window = None
+
+        try:
+            original_window = driver.current_window_handle
+            driver.execute_script("window.open('');")
+            driver.switch_to.window(driver.window_handles[-1])
+            driver.get(apply_url)
+
+            WebDriverWait(driver, 20).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, '#pcsx, main, [role="main"]'))
+            )
+
+            # Ensure the job description tab content is rendered, not just the page shell.
+            try:
+                WebDriverWait(driver, 20).until(
+                    lambda d: 'Overview' in d.find_element(By.TAG_NAME, 'body').text
+                    or 'Responsibilities' in d.find_element(By.TAG_NAME, 'body').text
+                )
+            except Exception:
+                try:
+                    driver.execute_script("""
+                        const candidates = Array.from(document.querySelectorAll('button,a,[role="tab"]'));
+                        const tab = candidates.find(el => (el.innerText || '').trim() === 'Job description');
+                        if (tab) tab.click();
+                    """)
+                    WebDriverWait(driver, 15).until(
+                        lambda d: 'Overview' in d.find_element(By.TAG_NAME, 'body').text
+                        or 'Responsibilities' in d.find_element(By.TAG_NAME, 'body').text
+                    )
+                except Exception:
+                    time.sleep(2)
+
+            page_text = driver.execute_script("""
+                const root = document.querySelector('main,[role="main"],#pcsx') || document.body;
+                return root ? root.innerText : '';
+            """) or ''
+
+            if page_text:
+                start_idx = page_text.find('Overview')
+                if start_idx == -1:
+                    start_idx = page_text.find('Responsibilities')
+                if start_idx != -1:
+                    description = page_text[start_idx:]
+                else:
+                    description = page_text
+
+                end_markers = [
+                    '\nSimilar jobs',
+                    '\nExplore other jobs',
+                    '\nBenefits/perks',
+                    '\nShare this job',
+                    '\nYour Privacy Choices',
+                    '\nEnglish (United States)',
+                ]
+                for marker in end_markers:
+                    marker_idx = description.find(marker)
+                    if marker_idx != -1:
+                        description = description[:marker_idx]
+                        break
+
+                description = self._clean_text(description)
+                if description:
+                    details['description'] = description
+
+            # Extract employment type from rendered detail fields if present.
+            rendered_text = page_text or ''
+            emp_match = re.search(r'Employment type\s+([^\n]+)', rendered_text)
+            if emp_match:
+                details['employment_type'] = emp_match.group(1).strip()
+
+        except Exception as exc:
+            logger.debug(f"Rendered Microsoft detail extraction failed for {apply_url}: {exc}")
+        finally:
+            try:
+                if driver.current_window_handle != original_window:
+                    driver.close()
+                    driver.switch_to.window(original_window)
+            except Exception:
+                try:
+                    if len(driver.window_handles) > 1:
+                        driver.close()
+                        driver.switch_to.window(driver.window_handles[0])
+                except Exception:
+                    pass
+
+        if not details.get('description') or not details.get('employment_type'):
+            fallback = self._fetch_job_details_from_html(apply_url)
+            if fallback:
+                details.update({k: v for k, v in fallback.items() if v and not details.get(k)})
+
+        return details
 
     def scrape(self, max_pages=MAX_PAGES_TO_SCRAPE):
         """Scrape jobs - try Selenium PCSX API first, then DOM scraping fallback."""
@@ -123,7 +300,7 @@ class MicrosoftScraper:
                 new_count = 0
                 for pos in positions:
                     try:
-                        job_data = self._parse_pcsx_position(pos)
+                        job_data = self._parse_pcsx_position(pos, driver=driver)
                         if job_data and job_data['external_id'] not in scraped_ids:
                             all_jobs.append(job_data)
                             scraped_ids.add(job_data['external_id'])
@@ -151,7 +328,7 @@ class MicrosoftScraper:
         logger.info(f"PCSX API total: {len(all_jobs)}")
         return all_jobs
 
-    def _parse_pcsx_position(self, pos):
+    def _parse_pcsx_position(self, pos, driver=None):
         """Parse a single position from the PCSX search API response."""
         name = pos.get('name', '').strip()
         if not name:
@@ -175,7 +352,7 @@ class MicrosoftScraper:
         elif isinstance(locations, str):
             location = locations
         else:
-            location = 'India'
+            location = ''
 
         # Department
         department = pos.get('department', '')
@@ -194,15 +371,16 @@ class MicrosoftScraper:
 
         loc = self.parse_location(location)
 
-        return {
+        job_data = {
             'external_id': self.generate_external_id(job_id, self.company_name),
+            'job_id': job_id,
             'company_name': self.company_name,
             'title': name,
             'description': '',
             'location': location,
             'city': loc.get('city', ''),
             'state': loc.get('state', ''),
-            'country': loc.get('country', 'India'),
+            'country': loc.get('country', ''),
             'employment_type': '',
             'department': department,
             'apply_url': apply_url,
@@ -213,6 +391,13 @@ class MicrosoftScraper:
             'remote_type': work_location,
             'status': 'active'
         }
+
+        if driver is not None and apply_url:
+            details = self._fetch_job_details(driver, apply_url)
+            if details:
+                job_data.update(details)
+
+        return job_data
 
     def _scrape_via_selenium(self, max_pages=MAX_PAGES_TO_SCRAPE):
         """Fallback: scrape Microsoft jobs using Selenium DOM scraping with PCSX selectors."""
@@ -320,18 +505,19 @@ class MicrosoftScraper:
                         continue
                     scraped_ids.add(ext_id)
 
-                    location = job.get('location', '') or 'India'
+                    location = job.get('location', '') or ''
                     loc = self.parse_location(location)
 
-                    all_jobs.append({
+                    job_data = {
                         'external_id': ext_id,
+                        'job_id': job_id,
                         'company_name': self.company_name,
                         'title': job['title'],
                         'description': '',
                         'location': location,
                         'city': loc.get('city', ''),
                         'state': loc.get('state', ''),
-                        'country': loc.get('country', 'India'),
+                        'country': loc.get('country', ''),
                         'employment_type': '',
                         'department': '',
                         'apply_url': job['url'],
@@ -341,7 +527,14 @@ class MicrosoftScraper:
                         'salary_range': '',
                         'remote_type': '',
                         'status': 'active'
-                    })
+                    }
+
+                    if job['url']:
+                        details = self._fetch_job_details(driver, job['url'])
+                        if details:
+                            job_data.update(details)
+
+                    all_jobs.append(job_data)
                     new_count += 1
 
                 logger.info(f"Page {page + 1}: {new_count} new jobs (total: {len(all_jobs)})")
@@ -363,23 +556,44 @@ class MicrosoftScraper:
                 logger.info("Browser closed")
 
     def parse_location(self, location_str):
-        result = {'city': '', 'state': '', 'country': 'India'}
+        result = {'city': '', 'state': '', 'country': ''}
         if not location_str:
             return result
 
         location_str = location_str.strip()
         parts = [p.strip() for p in location_str.split(',')]
 
-        if len(parts) >= 1:
+        if not parts:
+            return result
+
+        if parts[0].upper() in ('IN', 'IND', 'INDIA'):
+            result['country'] = 'India'
+            if len(parts) >= 2:
+                result['city'] = parts[1]
+            if len(parts) >= 3:
+                result['state'] = parts[2]
+            return result
+
+        if len(parts) >= 4:
+            result['city'] = parts[-2]
+            if parts[-1].upper() in ('IN', 'IND', 'INDIA'):
+                result['country'] = 'India'
+            else:
+                result['country'] = parts[-1]
+        elif len(parts) == 3:
             result['city'] = parts[0]
-        if len(parts) == 3:
             result['state'] = parts[1]
             result['country'] = parts[2]
         elif len(parts) == 2:
-            result['country'] = parts[1]
+            result['city'] = parts[0]
+            if parts[1].upper() in ('IN', 'IND', 'INDIA'):
+                result['country'] = 'India'
+            else:
+                result['state'] = parts[1]
+        else:
+            result['city'] = parts[0]
 
         if 'India' in location_str or 'IND' in location_str:
             result['country'] = 'India'
 
         return result
-

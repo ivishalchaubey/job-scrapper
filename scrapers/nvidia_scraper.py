@@ -5,7 +5,11 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 import hashlib
+import html
+import json
+import re
 import time
+from datetime import datetime
 from pathlib import Path
 import os
 import stat
@@ -18,6 +22,7 @@ except ImportError:
 from core.logging import setup_logger
 from core.webdriver_utils import setup_chrome_driver
 from config.scraper import SCRAPE_TIMEOUT, HEADLESS_MODE, FETCH_FULL_JOB_DETAILS, MAX_PAGES_TO_SCRAPE
+from scrapers.csv_url_resolver import get_company_url
 
 logger = setup_logger('nvidia_scraper')
 
@@ -25,7 +30,8 @@ class NvidiaScraper:
     def __init__(self):
         self.company_name = "Nvidia"
         # Workday platform
-        self.url = "https://nvidia.eightfold.ai/careers?start=0&location=India&pid=893392494148&sort_by=distance&filter_include_remote=0"
+        default_url = "https://nvidia.eightfold.ai/careers?start=0&location=India&pid=893392494148&sort_by=distance&filter_include_remote=0"
+        self.url = get_company_url(self.company_name, default_url)
         self.api_url = 'https://nvidia.wd5.myworkdayjobs.com/wday/cxs/nvidia/NVIDIAExternalCareerSite/jobs'
         self.base_job_url = 'https://nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite'
     
@@ -36,6 +42,130 @@ class NvidiaScraper:
     def generate_external_id(self, job_id, company):
         unique_string = f"{company}_{job_id}"
         return hashlib.md5(unique_string.encode()).hexdigest()
+
+    def _clean_text(self, value):
+        if not value:
+            return ''
+        text = html.unescape(value)
+        text = re.sub(r'<br\s*/?>', '\n', text, flags=re.IGNORECASE)
+        text = re.sub(r'</p\s*>', '\n', text, flags=re.IGNORECASE)
+        text = re.sub(r'<li[^>]*>', '\n- ', text, flags=re.IGNORECASE)
+        text = re.sub(r'<[^>]+>', ' ', text)
+        text = re.sub(r'[ \t\r\f\v]+', ' ', text)
+        text = re.sub(r'\n\s*\n+', '\n\n', text)
+        return text.strip()[:15000]
+
+    def _normalize_posted_date(self, value):
+        if not value:
+            return ''
+
+        value = str(value).strip()
+        if re.match(r'^\d{4}-\d{2}-\d{2}$', value):
+            return value
+
+        for fmt in ('%b %d, %Y', '%B %d, %Y'):
+            try:
+                return datetime.strptime(value, fmt).strftime('%Y-%m-%d')
+            except ValueError:
+                continue
+
+        if value.lower().startswith('posted '):
+            return ''
+
+        return value
+
+    def _extract_location_details(self, job_location):
+        details = {}
+        if not job_location:
+            return details
+
+        locations = job_location if isinstance(job_location, list) else [job_location]
+        for location in locations:
+            if not isinstance(location, dict):
+                continue
+
+            address = location.get('address', {}) or {}
+            locality = str(address.get('addressLocality', '') or '').strip()
+            country = str(address.get('addressCountry', '') or '').strip()
+            region = str(address.get('addressRegion', '') or '').strip()
+
+            parts = [part.strip() for part in locality.split(',') if part.strip()]
+            city = ''
+            normalized_country = ''
+
+            for part in parts:
+                if part.upper() in ('IN', 'IND', 'INDIA'):
+                    normalized_country = 'India'
+                elif not city:
+                    city = part
+
+            if not normalized_country and country:
+                normalized_country = 'India' if country.upper() in ('IN', 'IND', 'INDIA') else country
+
+            location_parts = [value for value in (city, region, normalized_country) if value]
+            if location_parts:
+                details['location'] = ', '.join(location_parts)
+            if city:
+                details['city'] = city
+            if region:
+                details['state'] = region
+            if normalized_country:
+                details['country'] = normalized_country
+
+            if details.get('location'):
+                break
+
+        return details
+
+    def _fetch_job_details_from_page(self, job_url):
+        details = {}
+        try:
+            response = requests.get(
+                job_url,
+                headers={'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'},
+                timeout=SCRAPE_TIMEOUT,
+            )
+            if response.status_code != 200:
+                return details
+            response.encoding = response.apparent_encoding or response.encoding
+
+            page = response.text
+            ld_match = re.search(
+                r'<script type="application/ld\+json">\s*(\{.*?\})\s*</script>',
+                page,
+                flags=re.DOTALL,
+            )
+            if ld_match:
+                try:
+                    payload = json.loads(ld_match.group(1))
+                    description = self._clean_text(payload.get('description', ''))
+                    if description:
+                        details['description'] = description
+
+                    employment_type = payload.get('employmentType', '')
+                    if employment_type:
+                        details['employment_type'] = str(employment_type).replace('_', '-').title()
+
+                    posted_date = self._normalize_posted_date(payload.get('datePosted', ''))
+                    if posted_date:
+                        details['posted_date'] = posted_date
+
+                    location_details = self._extract_location_details(payload.get('jobLocation'))
+                    if location_details:
+                        details.update(location_details)
+                except Exception:
+                    pass
+
+            if not details.get('description'):
+                meta_match = re.search(r'<meta name="description"[^>]*content="([^"]+)"', page, flags=re.IGNORECASE)
+                if meta_match:
+                    description = self._clean_text(meta_match.group(1))
+                    if description:
+                        details['description'] = description
+        except Exception as e:
+            logger.warning(f"Could not fetch Nvidia job details for {job_url}: {str(e)}")
+
+        return details
 
     def scrape(self, max_pages=MAX_PAGES_TO_SCRAPE):
         all_jobs = []
@@ -103,7 +233,7 @@ class NvidiaScraper:
                         apply_url = f"{self.base_job_url}{external_path}" if external_path else self.url
 
                         location = posting.get('locationsText', '')
-                        posted_date = posting.get('postedOn', '')
+                        posted_date = self._normalize_posted_date(posting.get('postedOn', ''))
 
                         # Extract job ID from externalPath (e.g., /en-US/job/JR1234567)
                         job_id = ''
@@ -129,13 +259,14 @@ class NvidiaScraper:
 
                         job_data = {
                             'external_id': self.generate_external_id(job_id, self.company_name),
+                            'job_id': job_id,
                             'company_name': self.company_name,
                             'title': title,
                             'description': '',
                             'location': location,
                             'city': location_parts.get('city', ''),
                             'state': location_parts.get('state', ''),
-                            'country': 'India',
+                            'country': location_parts.get('country', ''),
                             'employment_type': employment_type,
                             'department': '',
                             'apply_url': apply_url,
@@ -146,6 +277,11 @@ class NvidiaScraper:
                             'remote_type': remote_type,
                             'status': 'active'
                         }
+
+                        if apply_url:
+                            details = self._fetch_job_details_from_page(apply_url)
+                            if details:
+                                job_data.update(details)
 
                         all_jobs.append(job_data)
                         logger.info(f"Added job: {title}")
@@ -355,13 +491,14 @@ class NvidiaScraper:
 
                 job_data = {
                     'external_id': self.generate_external_id(job_id, self.company_name),
+                    'job_id': job_id,
                     'company_name': self.company_name,
                     'title': job_title,
                     'description': '',
                     'location': location,
                     'city': city,
                     'state': state,
-                    'country': 'India',
+                    'country': '',
                     'employment_type': '',
                     'department': '',
                     'apply_url': job_link if job_link else self.url,
@@ -457,20 +594,42 @@ class NvidiaScraper:
         return details
 
     def parse_location(self, location_str):
-        result = {'city': '', 'state': '', 'country': 'India'}
+        result = {'city': '', 'state': '', 'country': ''}
         if not location_str:
             return result
 
         location_str = location_str.strip()
         parts = [p.strip() for p in location_str.split(',')]
 
-        if len(parts) >= 1:
+        if not parts:
+            return result
+
+        if parts[0].upper() in ('IN', 'IND', 'INDIA'):
+            result['country'] = 'India'
+            if len(parts) >= 2:
+                result['city'] = parts[1]
+            if len(parts) >= 3:
+                result['state'] = parts[2]
+            return result
+
+        if len(parts) >= 4:
+            result['city'] = parts[-2]
+            if parts[-1].upper() in ('IN', 'IND', 'INDIA'):
+                result['country'] = 'India'
+            else:
+                result['country'] = parts[-1]
+        elif len(parts) == 3:
             result['city'] = parts[0]
-        if len(parts) == 3:
             result['state'] = parts[1]
             result['country'] = parts[2]
         elif len(parts) == 2:
-            result['country'] = parts[1]
+            result['city'] = parts[0]
+            if parts[1].upper() in ('IN', 'IND', 'INDIA'):
+                result['country'] = 'India'
+            else:
+                result['state'] = parts[1]
+        else:
+            result['city'] = parts[0]
 
         if 'India' in location_str or 'IND' in location_str:
             result['country'] = 'India'

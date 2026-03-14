@@ -5,7 +5,11 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 import hashlib
+import html
+import json
+import re
 import time
+from datetime import datetime
 from pathlib import Path
 import os
 import stat
@@ -18,6 +22,7 @@ except ImportError:
 from core.logging import setup_logger
 from core.webdriver_utils import setup_chrome_driver
 from config.scraper import SCRAPE_TIMEOUT, HEADLESS_MODE, FETCH_FULL_JOB_DETAILS, MAX_PAGES_TO_SCRAPE
+from scrapers.csv_url_resolver import get_company_url
 
 logger = setup_logger('samsung_scraper')
 
@@ -25,7 +30,8 @@ class SamsungScraper:
     def __init__(self):
         self.company_name = "Samsung"
         # Workday platform - India locations
-        self.url = "https://sec.wd3.myworkdayjobs.com/Samsung_Careers?locations=0c974e8c1228010867596ab21b3c3469&locations=189767dd6c9201004b83aa89a5295a80"
+        default_url = "https://sec.wd3.myworkdayjobs.com/Samsung_Careers?locations=0c974e8c1228010867596ab21b3c3469&locations=189767dd6c9201004b83aa89a5295a80"
+        self.url = get_company_url(self.company_name, default_url)
         self.api_url = 'https://sec.wd3.myworkdayjobs.com/wday/cxs/sec/Samsung_Careers/jobs'
         self.base_job_url = 'https://sec.wd3.myworkdayjobs.com/Samsung_Careers'
     
@@ -36,6 +42,83 @@ class SamsungScraper:
     def generate_external_id(self, job_id, company):
         unique_string = f"{company}_{job_id}"
         return hashlib.md5(unique_string.encode()).hexdigest()
+
+    def _clean_text(self, value):
+        if not value:
+            return ''
+        text = html.unescape(value)
+        text = re.sub(r'<br\s*/?>', '\n', text, flags=re.IGNORECASE)
+        text = re.sub(r'</p\s*>', '\n', text, flags=re.IGNORECASE)
+        text = re.sub(r'<li[^>]*>', '\n- ', text, flags=re.IGNORECASE)
+        text = re.sub(r'<[^>]+>', ' ', text)
+        text = re.sub(r'[ \t\r\f\v]+', ' ', text)
+        text = re.sub(r'\n\s*\n+', '\n\n', text)
+        return text.strip()[:15000]
+
+    def _normalize_posted_date(self, value):
+        if not value:
+            return ''
+
+        value = str(value).strip()
+        if re.match(r'^\d{4}-\d{2}-\d{2}$', value):
+            return value
+
+        for fmt in ('%b %d, %Y', '%B %d, %Y'):
+            try:
+                return datetime.strptime(value, fmt).strftime('%Y-%m-%d')
+            except ValueError:
+                continue
+
+        if value.lower().startswith('posted '):
+            return ''
+
+        return value
+
+    def _fetch_job_details_from_page(self, job_url):
+        details = {}
+        try:
+            response = requests.get(
+                job_url,
+                headers={'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'},
+                timeout=SCRAPE_TIMEOUT,
+            )
+            if response.status_code != 200:
+                return details
+            response.encoding = response.apparent_encoding or response.encoding
+
+            page = response.text
+            ld_match = re.search(
+                r'<script type="application/ld\+json">\s*(\{.*?\})\s*</script>',
+                page,
+                flags=re.DOTALL,
+            )
+            if ld_match:
+                try:
+                    payload = json.loads(ld_match.group(1))
+                    description = self._clean_text(payload.get('description', ''))
+                    if description:
+                        details['description'] = description
+
+                    employment_type = payload.get('employmentType', '')
+                    if employment_type and employment_type != 'OTHER':
+                        details['employment_type'] = str(employment_type).replace('_', '-').title()
+
+                    posted_date = self._normalize_posted_date(payload.get('datePosted', ''))
+                    if posted_date:
+                        details['posted_date'] = posted_date
+                except Exception:
+                    pass
+
+            if not details.get('description'):
+                meta_match = re.search(r'<meta name="description"[^>]*content="([^"]+)"', page, flags=re.IGNORECASE)
+                if meta_match:
+                    description = self._clean_text(meta_match.group(1))
+                    if description:
+                        details['description'] = description
+        except Exception as e:
+            logger.warning(f"Could not fetch Samsung job details for {job_url}: {str(e)}")
+
+        return details
 
     def scrape(self, max_pages=MAX_PAGES_TO_SCRAPE):
         all_jobs = []
@@ -108,7 +191,7 @@ class SamsungScraper:
                         apply_url = f"{self.base_job_url}{external_path}" if external_path else self.url
 
                         location = posting.get('locationsText', '')
-                        posted_date = posting.get('postedOn', '')
+                        posted_date = self._normalize_posted_date(posting.get('postedOn', ''))
 
                         # Extract job ID from externalPath (e.g., /en-US/job/R12345)
                         job_id = ''
@@ -134,13 +217,14 @@ class SamsungScraper:
 
                         job_data = {
                             'external_id': self.generate_external_id(job_id, self.company_name),
+                            'job_id': job_id,
                             'company_name': self.company_name,
                             'title': title,
                             'description': '',
                             'location': location,
                             'city': location_parts.get('city', ''),
                             'state': location_parts.get('state', ''),
-                            'country': 'India',
+                            'country': location_parts.get('country', ''),
                             'employment_type': employment_type,
                             'department': '',
                             'apply_url': apply_url,
@@ -151,6 +235,11 @@ class SamsungScraper:
                             'remote_type': remote_type,
                             'status': 'active'
                         }
+
+                        if apply_url:
+                            details = self._fetch_job_details_from_page(apply_url)
+                            if details:
+                                job_data.update(details)
 
                         all_jobs.append(job_data)
                         logger.info(f"Added job: {title}")
@@ -358,13 +447,14 @@ class SamsungScraper:
 
                 job_data = {
                     'external_id': self.generate_external_id(job_id, self.company_name),
+                    'job_id': job_id,
                     'company_name': self.company_name,
                     'title': job_title,
                     'description': '',
                     'location': location,
                     'city': city,
                     'state': state,
-                    'country': 'India',
+                    'country': '',
                     'employment_type': '',
                     'department': '',
                     'apply_url': job_link if job_link else self.url,
@@ -462,20 +552,42 @@ class SamsungScraper:
         return details
 
     def parse_location(self, location_str):
-        result = {'city': '', 'state': '', 'country': 'India'}
+        result = {'city': '', 'state': '', 'country': ''}
         if not location_str:
             return result
 
         location_str = location_str.strip()
         parts = [p.strip() for p in location_str.split(',')]
 
-        if len(parts) >= 1:
+        if not parts:
+            return result
+
+        if parts[0].upper() in ('IN', 'IND', 'INDIA'):
+            result['country'] = 'India'
+            if len(parts) >= 2:
+                result['city'] = parts[1]
+            if len(parts) >= 3:
+                result['state'] = parts[2]
+            return result
+
+        if len(parts) >= 4:
+            result['city'] = parts[-2]
+            if parts[-1].upper() in ('IN', 'IND', 'INDIA'):
+                result['country'] = 'India'
+            else:
+                result['country'] = parts[-1]
+        elif len(parts) == 3:
             result['city'] = parts[0]
-        if len(parts) == 3:
             result['state'] = parts[1]
             result['country'] = parts[2]
         elif len(parts) == 2:
-            result['country'] = parts[1]
+            result['city'] = parts[0]
+            if parts[1].upper() in ('IN', 'IND', 'INDIA'):
+                result['country'] = 'India'
+            else:
+                result['state'] = parts[1]
+        else:
+            result['city'] = parts[0]
 
         if 'India' in location_str or 'IND' in location_str:
             result['country'] = 'India'
