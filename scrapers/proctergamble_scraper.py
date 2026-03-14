@@ -6,8 +6,10 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 import hashlib
 import time
+import re
 from datetime import datetime
 from pathlib import Path
+from html import unescape
 
 from core.logging import setup_logger
 from core.webdriver_utils import setup_chrome_driver
@@ -19,6 +21,12 @@ class ProcterGambleScraper:
     def __init__(self):
         self.company_name = "Procter & Gamble"
         self.url = "https://www.pgcareers.com/in/en/search-results?m=3"
+        self.india_keywords = [
+            'india', 'hyderabad', 'mumbai', 'bangalore', 'bengaluru',
+            'chennai', 'pune', 'gurugram', 'gurgaon', 'noida', 'kolkata',
+            'delhi', 'andhra pradesh', 'telangana', 'karnataka',
+            'maharashtra', 'tamil nadu', 'uttar pradesh'
+        ]
     
     def setup_driver(self):
         """Set up Chrome driver using cross-platform utility"""
@@ -45,9 +53,9 @@ class ProcterGambleScraper:
 
             # Detect platform: NAS/Radancy vs Phenom redirect
             has_nas = 'search-results-list' in driver.page_source
-            is_phenom = 'pgcareers.com' in current_url and 'search-jobs' not in current_url
+            is_phenom = 'pgcareers.com' in current_url and '/job/' not in current_url
 
-            if is_phenom:
+            if is_phenom and '/in/en/search-results' not in current_url:
                 logger.info("Detected Phenom platform redirect, navigating to search-results")
                 # P&G Phenom search results page (shows all jobs)
                 driver.get('https://www.pgcareers.com/global/en/search-results')
@@ -81,6 +89,8 @@ class ProcterGambleScraper:
                     time.sleep(2)
                 driver.execute_script("window.scrollTo(0, 0);")
                 time.sleep(2)
+            else:
+                logger.info("Using India search results page without redirect")
 
             current_page = 1
 
@@ -287,9 +297,25 @@ class ProcterGambleScraper:
                     'status': 'active'
                 }
 
-                if FETCH_FULL_JOB_DETAILS and url:
+                if url and (
+                    FETCH_FULL_JOB_DETAILS
+                    or not job_data['description']
+                    or not job_data['location']
+                    or not job_data['posted_date']
+                    or not job_data['experience_level']
+                ):
                     full_details = self._fetch_job_details(driver, url)
-                    job_data.update(full_details)
+                    for key, value in full_details.items():
+                        if value:
+                            job_data[key] = value
+
+                    location = job_data.get('location', '')
+                    city, state, _ = self.parse_location(location)
+                    job_data['city'] = city
+                    job_data['state'] = state
+
+                if not self._is_india_location(job_data.get('location', '')):
+                    continue
 
                 jobs.append(job_data)
 
@@ -309,24 +335,58 @@ class ProcterGambleScraper:
             driver.switch_to.window(driver.window_handles[-1])
             
             driver.get(job_url)
-            time.sleep(3)
-            
-            try:
-                desc_selectors = [
-                    (By.CSS_SELECTOR, 'div[class*="description"]'),
-                    (By.XPATH, "//div[contains(@class, 'job-description')]"),
-                    (By.CSS_SELECTOR, 'div.description'),
-                ]
-                
-                for selector_type, selector_value in desc_selectors:
-                    try:
-                        desc_elem = driver.find_element(selector_type, selector_value)
-                        details['description'] = desc_elem.text.strip()[:2000]
+            wait = WebDriverWait(driver, 20)
+            wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, 'div.phs-job-details-area, div.job-page-external, div.job-header-block')))
+
+            header_info = None
+            header_selectors = [
+                'div.job-header-block .job-info[data-ph-at-id="job-info"]',
+                'div.job-info[data-ph-at-id="job-info"]',
+            ]
+            for selector in header_selectors:
+                try:
+                    header_info = driver.find_element(By.CSS_SELECTOR, selector)
+                    if header_info:
                         break
-                    except:
-                        continue
-            except:
-                pass
+                except Exception:
+                    continue
+
+            if header_info:
+                title = (header_info.get_attribute('data-ph-at-job-title-text') or '').strip()
+                location = (header_info.get_attribute('data-ph-at-job-location-text') or '').strip()
+                department = (header_info.get_attribute('data-ph-at-job-category-text') or '').strip()
+                job_id = (header_info.get_attribute('data-ph-at-job-id-text') or '').strip()
+                employment_type = (header_info.get_attribute('data-ph-at-job-type-text') or '').strip()
+                posted_date = self._format_date(header_info.get_attribute('data-ph-at-job-post-date-text') or '')
+
+                if title:
+                    details['title'] = title
+                if location:
+                    details['location'] = location
+                if department:
+                    details['department'] = department
+                if employment_type:
+                    details['employment_type'] = employment_type
+                if posted_date:
+                    details['posted_date'] = posted_date
+                if job_id:
+                    details['external_id'] = self.generate_external_id(job_id, self.company_name)
+
+            details['apply_url'] = self._safe_attr(driver, By.CSS_SELECTOR, 'a[data-ph-at-id="apply-link"]', 'href')
+
+            experience = self._safe_text(driver, By.CSS_SELECTOR, 'span.experienceLevel')
+            if experience:
+                details['experience_level'] = experience
+
+            desc_html = self._safe_attr(driver, By.CSS_SELECTOR, 'div.jd-info[data-ph-at-id="jobdescription-text"]', 'innerHTML')
+            desc_text = self._extract_description_only(desc_html)
+            if desc_text:
+                details['description'] = desc_text[:6000]
+
+            if not details.get('experience_level'):
+                extracted = self._extract_experience_level(desc_text)
+                if extracted:
+                    details['experience_level'] = extracted
             
             driver.close()
             driver.switch_to.window(original_window)
@@ -341,6 +401,104 @@ class ProcterGambleScraper:
                 pass
         
         return details
+
+    def _safe_text(self, driver, by, selector):
+        try:
+            return (driver.find_element(by, selector).text or '').strip()
+        except Exception:
+            return ''
+
+    def _safe_attr(self, driver, by, selector, attribute):
+        try:
+            return (driver.find_element(by, selector).get_attribute(attribute) or '').strip()
+        except Exception:
+            return ''
+
+    def _clean_html_text(self, html):
+        if not html:
+            return ''
+        text = re.sub(r'<br\s*/?>', '\n', html, flags=re.IGNORECASE)
+        text = re.sub(r'</p\s*>', '\n', text, flags=re.IGNORECASE)
+        text = re.sub(r'</li\s*>', '\n', text, flags=re.IGNORECASE)
+        text = re.sub(r'</h\d\s*>', '\n', text, flags=re.IGNORECASE)
+        text = re.sub(r'<[^>]+>', ' ', text)
+        text = unescape(text)
+        text = re.sub(r'\s*\n\s*', '\n', text)
+        text = re.sub(r'\n{3,}', '\n\n', text)
+        text = re.sub(r'[ \t]{2,}', ' ', text)
+        return text.strip()
+
+    def _extract_description_only(self, html):
+        if not html:
+            return ''
+
+        text = self._clean_html_text(html)
+        if not text:
+            return ''
+
+        start_markers = [
+            'Job Description',
+        ]
+        end_markers = [
+            'Job Qualifications',
+            'Job Schedule',
+            'Job Number',
+            'Job Segmentation',
+            'Just so you know:',
+        ]
+
+        start_index = 0
+        for marker in start_markers:
+            marker_index = text.find(marker)
+            if marker_index != -1:
+                start_index = marker_index + len(marker)
+                break
+
+        trimmed = text[start_index:].strip()
+
+        end_index = len(trimmed)
+        for marker in end_markers:
+            marker_index = trimmed.find(marker)
+            if marker_index != -1:
+                end_index = min(end_index, marker_index)
+
+        trimmed = trimmed[:end_index].strip()
+
+        trimmed = re.sub(r'^Job Description\s*', '', trimmed, flags=re.IGNORECASE)
+        trimmed = re.sub(r'^Job Location\s+.*?\s+Job Description\s*', '', trimmed, flags=re.IGNORECASE | re.DOTALL)
+        trimmed = re.sub(r'\bJob Description\b\s*', '', trimmed, count=1, flags=re.IGNORECASE)
+        trimmed = re.sub(r'\n{3,}', '\n\n', trimmed)
+        return trimmed.strip()
+
+    def _extract_experience_level(self, text):
+        if not text:
+            return ''
+        patterns = [
+            r'(\b\d+\s*(?:-|to|–)\s*\d+\s*years?\b)',
+            r'(\b\d+\+\s*years?\b)',
+            r'(\bentry level\b)',
+            r'(\bexperienced professionals\b)',
+            r'(\b0\s*[–-]\s*2\s*years?\b)',
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, text, flags=re.IGNORECASE)
+            if match:
+                return match.group(1)
+        return ''
+
+    def _format_date(self, value):
+        if not value:
+            return ''
+        value = value.strip()
+        for fmt in ('%Y-%m-%dT%H:%M:%S.%f%z', '%Y-%m-%d', '%d/%m/%Y'):
+            try:
+                return datetime.strptime(value, fmt).strftime('%Y-%m-%d')
+            except ValueError:
+                continue
+        match = re.match(r'^(\d{4}-\d{2}-\d{2})', value)
+        if match:
+            return match.group(1)
+        return ''
     
     def parse_location(self, location_str):
         """Parse location string into city, state, country"""
@@ -352,3 +510,9 @@ class ProcterGambleScraper:
         state = parts[1] if len(parts) > 1 else ''
         
         return city, state, 'India'
+
+    def _is_india_location(self, location_text):
+        if not location_text:
+            return False
+        text = location_text.lower()
+        return any(keyword in text for keyword in self.india_keywords)
