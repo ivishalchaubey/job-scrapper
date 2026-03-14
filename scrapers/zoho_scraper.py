@@ -8,6 +8,7 @@ import hashlib
 import time
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urljoin
 
 from core.logging import setup_logger
 from core.webdriver_utils import setup_chrome_driver
@@ -112,19 +113,16 @@ class ZohoScraper:
             return False
     
     def _scrape_page(self, driver):
-        """Scrape jobs from current page"""
+        """Scrape jobs from the current page"""
         jobs = []
         time.sleep(3)  # Wait for page content to load
-        
+
         # Look for job cards
         job_cards = []
         selectors = [
-            (By.CSS_SELECTOR, 'div.job-card'),
-            (By.CSS_SELECTOR, 'div[class*="job"]'),
-            (By.CSS_SELECTOR, 'div.search-result'),
-            (By.XPATH, '//div[contains(@class, "result")]'),
+            (By.CSS_SELECTOR, 'ul.rec-job-info'),
         ]
-        
+
         for selector_type, selector_value in selectors:
             try:
                 job_cards = driver.find_elements(selector_type, selector_value)
@@ -133,60 +131,74 @@ class ZohoScraper:
                     break
             except:
                 continue
-        
+
         if not job_cards:
             logger.warning("No job cards found")
             return jobs
-        
+
         # Process each job card
         for idx, card in enumerate(job_cards):
             try:
-                card_text = card.text
-                if not card_text or len(card_text) < 10:
-                    continue
-                
-                # Extract job title
+                # Extract job title and link
                 job_title = ""
                 job_link = ""
                 try:
-                    title_elem = card.find_element(By.TAG_NAME, 'a')
+                    title_elem = card.find_element(By.CSS_SELECTOR, 'li.rec-job-title a')
                     job_title = title_elem.text.strip()
-                    job_link = title_elem.get_attribute('href')
-                except:
-                    job_title = card_text.split('\n')[0].strip()
-                
+                    raw_link = title_elem.get_attribute('href')
+                    job_link = urljoin(self.url, raw_link) if raw_link else ""
+                except Exception as e:
+                    logger.warning(f"Error extracting title or link: {str(e)}")
+                    continue
+
                 if not job_title or len(job_title) < 3:
                     continue
-                
+
+                # Extract brief description
+                brief_description = ""
+                try:
+                    desc_elem = card.find_element(By.CSS_SELECTOR, 'li.zrsite_Job_Description span')
+                    brief_description = desc_elem.text.strip()
+                except:
+                    pass
+
+                # Extract employment type
+                employment_type = ""
+                try:
+                    type_elem = card.find_element(By.CSS_SELECTOR, 'div.typescontainer span.jbtype')
+                    employment_type = type_elem.text.strip()
+                except:
+                    pass
+
                 # Generate job ID
                 job_id = f"zoho_{idx}"
                 if job_link:
                     try:
-                        job_id = job_link.split('/')[-1].split('?')[0]
+                        job_id = job_link.split('job_id=')[-1].split('&')[0]
                     except:
                         pass
-                
-                # Extract location
+
+                # Extract location (if available)
                 location = ""
                 city = ""
                 state = ""
-                lines = card_text.split('\n')
-                for line in lines:
-                    if 'India' in line or any(city_name in line for city_name in ['Mumbai', 'Delhi', 'Bangalore', 'Chennai', 'Hyderabad', 'Kolkata', 'Pune', 'Gurgaon']):
-                        location = line.strip()
-                        city, state, _ = self.parse_location(location)
-                        break
-                
+                try:
+                    location_elem = card.find_element(By.CSS_SELECTOR, 'li.zrsite_City span')
+                    location = location_elem.text.strip()
+                    city, state, _ = self.parse_location(location)
+                except:
+                    pass
+
                 job_data = {
                     'external_id': self.generate_external_id(job_id, self.company_name),
                     'company_name': self.company_name,
                     'title': job_title,
-                    'description': '',
+                    'description': brief_description,
                     'location': location,
                     'city': city,
                     'state': state,
                     'country': 'India',
-                    'employment_type': '',
+                    'employment_type': employment_type,
                     'department': '',
                     'apply_url': job_link if job_link else self.url,
                     'posted_date': '',
@@ -196,57 +208,92 @@ class ZohoScraper:
                     'remote_type': '',
                     'status': 'active'
                 }
-                
-                # Fetch full details if enabled
-                if FETCH_FULL_JOB_DETAILS and job_link:
+
+                # Zoho listing page provides truncated snippets, so always fetch detail page.
+                if job_link:
                     full_details = self._fetch_job_details(driver, job_link)
-                    job_data.update(full_details)
-                
+                    if full_details:
+                        job_data.update(full_details)
+
+                    # Ensure full detail text replaces the truncated listing snippet.
+                    if full_details.get('description'):
+                        job_data['description'] = full_details['description']
+
                 jobs.append(job_data)
-                
+
             except Exception as e:
                 logger.error(f"Error extracting job {idx}: {str(e)}")
                 continue
-        
+
         return jobs
-    
+
     def _fetch_job_details(self, driver, job_url):
         """Fetch full job details by visiting the job page"""
         details = {}
-        
+
         try:
             # Open job in new tab
             original_window = driver.current_window_handle
             driver.execute_script("window.open('');")
             driver.switch_to.window(driver.window_handles[-1])
-            
+
             driver.get(job_url)
-            time.sleep(4)
-            
-            # Extract description
+
+            # Wait for the job description to load fully
+            WebDriverWait(driver, 30).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, 'div#jobdescription_data span#spandesc'))
+            )
+
+            # Extract full description
             try:
-                desc_selectors = [
-                    (By.CSS_SELECTOR, 'div.job-description'),
-                    (By.CSS_SELECTOR, 'div[class*="description"]'),
-                    (By.XPATH, '//div[contains(@class, "description")]'),
-                ]
-                
-                for selector_type, selector_value in desc_selectors:
+                desc_elem = driver.find_element(By.CSS_SELECTOR, 'div#jobdescription_data span#spandesc')
+                if desc_elem:
+                    # Use innerText from details page body so line breaks from lists are preserved.
+                    full_text = driver.execute_script("return arguments[0].innerText;", desc_elem) or ""
+                    details['description'] = full_text.strip()
+            except Exception as e:
+                logger.warning(f"Error extracting job description: {str(e)}")
+
+            # Fallback: if #spandesc is empty, read the full description container.
+            if not details.get('description'):
+                try:
+                    desc_block = driver.find_element(By.CSS_SELECTOR, 'div#jobdescription_data')
+                    block_text = driver.execute_script("return arguments[0].innerText;", desc_block) or ""
+                    if block_text.strip():
+                        details['description'] = block_text.strip()
+                except Exception:
+                    pass
+
+            # Extract additional fields (e.g., location, employment type)
+            try:
+                info_selectors = {
+                    'location': (By.CSS_SELECTOR, 'em#data_city'),
+                    'country': (By.CSS_SELECTOR, 'em#data_country'),
+                }
+
+                for field, (selector_type, selector_value) in info_selectors.items():
                     try:
-                        desc_elem = driver.find_element(selector_type, selector_value)
-                        if desc_elem and desc_elem.text.strip():
-                            details['description'] = desc_elem.text.strip()[:2000]
-                            break
+                        elem = driver.find_element(selector_type, selector_value)
+                        if elem and elem.text.strip():
+                            details[field] = elem.text.strip()
                     except:
                         continue
-            except:
-                pass
-            
+            except Exception as e:
+                logger.warning(f"Error extracting additional job details: {str(e)}")
+
+            # Parse city/state if region text was captured from details page.
+            if details.get('location'):
+                city, state, _ = self.parse_location(details['location'])
+                details['city'] = city
+                details['state'] = state
+
+            if details.get('description'):
+                logger.info(f"Fetched full description length={len(details['description'])} for {job_url}")
+
             # Close tab and return to search results
             driver.close()
             driver.switch_to.window(original_window)
-            time.sleep(1)
-            
+
         except Exception as e:
             logger.error(f"Error fetching job details: {str(e)}")
             # Make sure we return to original window
@@ -256,7 +303,7 @@ class ZohoScraper:
                     driver.switch_to.window(driver.window_handles[0])
             except:
                 pass
-        
+
         return details
     
     def parse_location(self, location_str):
