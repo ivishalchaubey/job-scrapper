@@ -1,351 +1,336 @@
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
 import hashlib
-import time
+import html
 import re
-from datetime import datetime
-from pathlib import Path
+import time
+
+import requests
 
 from core.logging import setup_logger
-from core.webdriver_utils import setup_chrome_driver
-from config.scraper import SCRAPE_TIMEOUT, HEADLESS_MODE, FETCH_FULL_JOB_DETAILS, MAX_PAGES_TO_SCRAPE
+from config.scraper import MAX_PAGES_TO_SCRAPE
 
 logger = setup_logger('kpmg_scraper')
 
+
 class KPMGScraper:
     def __init__(self):
-        self.company_name = "KPMG"
-        self.url = "https://ejgk.fa.em2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/jobs?mode=location"
-    
-    def setup_driver(self):
-        """Set up Chrome driver using cross-platform utility"""
-        return setup_chrome_driver(headless_mode=HEADLESS_MODE)
-    
+        self.company_name = 'KPMG'
+        self.url = 'https://ejgk.fa.em2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/jobs?mode=location'
+        self.api_url = 'https://ejgk.fa.em2.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions'
+        self.site_number = 'CX_1'
+        self.page_size = 25
+        self.job_detail_base_url = 'https://ejgk.fa.em2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/job'
+        self.detail_api_url = 'https://ejgk.fa.em2.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitionDetails'
+        self.india_keywords = [
+            'india', 'bangalore', 'bengaluru', 'mumbai', 'delhi',
+            'hyderabad', 'chennai', 'pune', 'gurugram', 'gurgaon',
+            'noida', 'kolkata', 'ahmedabad', 'jaipur', 'kochi',
+            'thiruvananthapuram', 'chandigarh', 'lucknow', 'indore',
+            'new delhi', 'ncr', 'haryana', 'karnataka', 'maharashtra',
+            'tamil nadu', 'telangana', 'gujarat', 'rajasthan',
+            'uttar pradesh', 'west bengal', 'kerala'
+        ]
+
     def generate_external_id(self, job_id, company):
-        """Generate stable external ID"""
         unique_string = f"{company}_{job_id}"
         return hashlib.md5(unique_string.encode()).hexdigest()
-    
+
     def scrape(self, max_pages=MAX_PAGES_TO_SCRAPE):
-        """Scrape jobs from KPMG India careers page"""
-        jobs = []
-        driver = None
-        
+        all_jobs = []
+
         try:
-            logger.info(f"Starting scrape for {self.company_name}")
-            driver = self.setup_driver()
-            driver.get(self.url)
-            
-            wait = WebDriverWait(driver, SCRAPE_TIMEOUT)
-            logger.info("Waiting for KPMG careers page to load...")
-            time.sleep(12)
-            
-            # Scroll to load lazy-loaded content
-            logger.info("Scrolling page to load all content...")
-            last_height = driver.execute_script("return document.body.scrollHeight")
-            scroll_attempts = 0
-            max_scrolls = 5
-            
-            while scroll_attempts < max_scrolls:
-                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                time.sleep(3)
-                new_height = driver.execute_script("return document.body.scrollHeight")
-                if new_height == last_height:
-                    break
-                last_height = new_height
-                scroll_attempts += 1
-                logger.info(f"Scrolled {scroll_attempts} times")
-            
-            driver.execute_script("window.scrollTo(0, 0);")
-            time.sleep(2)
-            
-            # Check for iframes
-            iframes = driver.find_elements(By.TAG_NAME, 'iframe')
-            if iframes:
-                logger.info(f"Found {len(iframes)} iframes, checking for job listings...")
-                for idx, iframe in enumerate(iframes):
-                    try:
-                        src = iframe.get_attribute('src')
-                        logger.info(f"Iframe {idx}: {src}")
-                        driver.switch_to.frame(iframe)
-                        time.sleep(3)
-                        test_elements = driver.find_elements(By.CSS_SELECTOR, 'div[class*="job"], article, li[class*="job"]')
-                        if test_elements and len(test_elements) > 5:
-                            logger.info(f"Found {len(test_elements)} potential job elements in iframe {idx}")
-                            break
-                        driver.switch_to.default_content()
-                    except Exception as e:
-                        logger.debug(f"Error checking iframe {idx}: {e}")
-                        driver.switch_to.default_content()
-                        continue
-            
-            page_jobs = self._scrape_page(driver, wait)
-            jobs.extend(page_jobs)
-            
-            logger.info(f"Successfully scraped {len(jobs)} total jobs from {self.company_name}")
-            
-        except Exception as e:
-            logger.error(f"Error scraping {self.company_name}: {str(e)}")
-            import traceback
-            logger.error(traceback.format_exc())
-            raise
-        
-        finally:
-            if driver:
-                driver.quit()
-        
-        return jobs
-    
-    def _scrape_page(self, driver, wait):
-        """Scrape jobs from KPMG careers page"""
-        jobs = []
-        time.sleep(3)
-        
-        job_elements = []
-        selectors = [
-            (By.CSS_SELECTOR, 'div.job-tile, div.jobTile, div[class*="JobTile"]'),
-            (By.CSS_SELECTOR, 'div[class*="job-card"], div[class*="jobCard"], div[class*="JobCard"]'),
-            (By.CSS_SELECTOR, 'article[class*="job"], article.job'),
-            (By.CSS_SELECTOR, 'li[class*="job"], li.job-item'),
-            (By.CSS_SELECTOR, 'div[data-job], div[data-jobid]'),
-            (By.CSS_SELECTOR, 'div.career-opportunity, div[class*="career"]'),
-            (By.CSS_SELECTOR, 'div[class*="position"], div[class*="vacancy"]'),
-            (By.XPATH, '//div[contains(@class, "search-result")]//a'),
-            (By.CSS_SELECTOR, 'a[href*="/careers/"], a[href*="/job"]'),
-            (By.CSS_SELECTOR, 'a[href*="kpmg"][href*="career"]'),
-            (By.CSS_SELECTOR, 'tr[class*="data-row"]'),
-            (By.CSS_SELECTOR, 'a[href*="/job/"]'),
-            (By.TAG_NAME, 'article'),
-        ]
-        
-        for selector_type, selector_value in selectors:
-            try:
-                elements = driver.find_elements(selector_type, selector_value)
-                if elements and len(elements) >= 10:
-                    logger.info(f"Found {len(elements)} job elements using: {selector_value}")
-                    job_elements = elements
-                    break
-                elif elements and len(elements) >= 5:
-                    logger.info(f"Found {len(elements)} potential job elements using: {selector_value}")
-                    if not job_elements:
-                        job_elements = elements
-            except Exception as e:
-                logger.debug(f"Selector {selector_value} failed: {str(e)}")
-                continue
-        
-        if not job_elements:
-            logger.warning("No job elements found, trying alternative approach...")
-            try:
-                all_links = driver.find_elements(By.TAG_NAME, 'a')
-                job_links = []
-                seen_hrefs = set()
-                for link in all_links:
-                    try:
-                        href = link.get_attribute('href') or ''
-                        text = link.text.strip()
-                        if not text or len(text) < 3 or href in seen_hrefs:
-                            continue
-                        href_lower = href.lower()
-                        if any(keyword in href_lower for keyword in ['job', 'career', 'position', 'vacancy', '/job/', 'jobid']):
-                            # Skip navigation/footer links
-                            skip_texts = ['apply now', 'view all', 'next', 'previous', 'page', 'home', 'back', 'filter', 'sort', 'search', 'sign in', 'log in']
-                            if any(sk in text.lower() for sk in skip_texts) and len(text) < 25:
-                                continue
-                            job_links.append(link)
-                            seen_hrefs.add(href)
-                    except:
-                        continue
-                if job_links:
-                    logger.info(f"Found {len(job_links)} job links via fallback")
-                    job_elements = job_links
-            except:
-                pass
-        
-        if not job_elements:
-            logger.warning("No job elements found")
-            try:
-                page_text = driver.page_source[:3000]
-                logger.debug(f"Page source preview: {page_text}")
-            except:
-                pass
-            return jobs
-        
-        for idx, element in enumerate(job_elements):
-            try:
-                job_title = ""
-                job_link = ""
-                location = ""
-                
-                if element.tag_name == 'a':
-                    job_title = element.text.strip()
-                    job_link = element.get_attribute('href')
-                    if not job_title:
-                        try:
-                            parent = element.find_element(By.XPATH, '..')
-                            job_title = parent.text.strip().split('\n')[0]
-                        except:
-                            pass
-                else:
-                    try:
-                        link = element.find_element(By.TAG_NAME, 'a')
-                        job_title = link.text.strip()
-                        job_link = link.get_attribute('href')
-                    except:
-                        try:
-                            title_elem = element.find_element(By.CSS_SELECTOR, 'h2, h3, h4, span[class*="title"], div[class*="title"]')
-                            job_title = title_elem.text.strip()
-                        except:
-                            job_title = element.text.strip().split('\n')[0] if element.text else ""
-                        
-                        try:
-                            link_elem = element.find_element(By.TAG_NAME, 'a')
-                            job_link = link_elem.get_attribute('href')
-                        except:
-                            pass
-                
-                if not job_title or len(job_title) < 3:
-                    continue
-                
-                skip_keywords = ['apply now', 'view all', 'next', 'previous', 'page', 'home', 'back', 'filter', 'sort', 'search']
-                if any(keyword in job_title.lower() for keyword in skip_keywords) and len(job_title) < 25:
-                    continue
-                
-                job_id = f"kpmg_{idx}"
-                if job_link:
-                    try:
-                        match = re.search(r'/job/([^/]+)', job_link, re.IGNORECASE)
-                        if match:
-                            job_id = f"kpmg_{match.group(1)}"
-                        else:
-                            job_id = hashlib.md5(job_link.encode()).hexdigest()[:12]
-                    except:
-                        job_id = hashlib.md5(job_link.encode()).hexdigest()[:12]
-                
-                try:
-                    element_text = element.text if hasattr(element, 'text') else ""
-                    lines = element_text.split('\n')
-                    for line in lines:
-                        if any(city in line for city in ['Mumbai', 'Delhi', 'Bangalore', 'Bengaluru', 'Hyderabad', 'Chennai', 'Pune', 'Kolkata', 'Gurgaon', 'Gurugram', 'Noida', 'India']):
-                            location = line.strip()
-                            break
-                except:
-                    pass
-                
-                city, state, _ = self.parse_location(location)
-                
-                job_data = {
-                    'external_id': self.generate_external_id(job_id, self.company_name),
-                    'company_name': self.company_name,
-                    'title': job_title,
-                    'description': '',
-                    'location': location if location else 'India',
-                    'city': city,
-                    'state': state,
-                    'country': 'India',
-                    'employment_type': '',
-                    'department': '',
-                    'apply_url': job_link if job_link else self.url,
-                    'posted_date': '',
-                    'job_function': '',
-                    'experience_level': '',
-                    'salary_range': '',
-                    'remote_type': '',
-                    'status': 'active'
+            logger.info(f"Starting scrape for {self.company_name} via Oracle Cloud REST API")
+
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+                'Accept': 'application/json',
+            }
+            session = requests.Session()
+            session.headers.update(headers)
+
+            current_page = 0
+            total_jobs_count = None
+
+            while current_page < max_pages:
+                offset = current_page * self.page_size
+                logger.info(f"Fetching page {current_page + 1} (offset={offset})")
+
+                finder = (
+                    f'findReqs;siteNumber={self.site_number},'
+                    f'facetsList=LOCATIONS;WORK_LOCATIONS;WORKPLACE_TYPES;TITLES;CATEGORIES;ORGANIZATIONS;POSTING_DATES;FLEX_FIELDS,'
+                    f'limit={self.page_size},offset={offset},'
+                    f'sortBy=POSTING_DATES_DESC'
+                )
+
+                params = {
+                    'onlyData': 'true',
+                    'expand': 'requisitionList.secondaryLocations,flexFieldsFacet.values',
+                    'finder': finder,
                 }
-                
-                if FETCH_FULL_JOB_DETAILS and job_link and job_link != self.url:
-                    full_details = self._fetch_job_details(driver, job_link)
-                    job_data.update(full_details)
-                
-                jobs.append(job_data)
-                logger.info(f"Extracted job: {job_title}")
-                
-            except Exception as e:
-                logger.error(f"Error extracting job {idx}: {str(e)}")
-                continue
-        
-        return jobs
-    
-    def _fetch_job_details(self, driver, job_url):
-        """Fetch full job details by visiting the job page"""
-        details = {}
-        
+
+                try:
+                    response = session.get(self.api_url, params=params, timeout=30)
+                    response.raise_for_status()
+                    data = response.json()
+                except requests.exceptions.RequestException as exc:
+                    logger.error(f"API request failed on page {current_page + 1}: {str(exc)}")
+                    break
+                except ValueError as exc:
+                    logger.error(f"Failed to parse JSON on page {current_page + 1}: {str(exc)}")
+                    break
+
+                items = data.get('items', [])
+                if not items:
+                    logger.warning(f"No items in API response on page {current_page + 1}")
+                    break
+
+                item = items[0]
+
+                if total_jobs_count is None:
+                    total_jobs_count = item.get('TotalJobsCount', 0)
+                    logger.info(f"Total jobs available: {total_jobs_count}")
+                    if total_jobs_count == 0:
+                        break
+
+                requisitions = item.get('requisitionList', [])
+                if not requisitions:
+                    break
+
+                logger.info(f"Page {current_page + 1}: {len(requisitions)} requisitions")
+
+                for req in requisitions:
+                    try:
+                        job_data = self._parse_requisition(req, session)
+                        if job_data:
+                            all_jobs.append(job_data)
+                    except Exception as exc:
+                        logger.error(f"Error parsing requisition: {str(exc)}")
+                        continue
+
+                if offset + len(requisitions) >= total_jobs_count:
+                    logger.info('Reached end of available jobs')
+                    break
+
+                current_page += 1
+                time.sleep(1)
+
+            logger.info(f"Successfully scraped {len(all_jobs)} total jobs from {self.company_name}")
+
+        except Exception as exc:
+            logger.error(f"Error scraping {self.company_name}: {str(exc)}")
+
+        return all_jobs
+
+    def _parse_requisition(self, req, session):
+        job_id = req.get('Id', '')
+        title = req.get('Title', '')
+
+        if not title or not job_id:
+            return None
+
+        primary_location = req.get('PrimaryLocation', '') or ''
+        if not self._is_india_location(primary_location):
+            return None
+
+        detail = self._fetch_job_detail(session, job_id)
+        detail_location = detail.get('location', '')
+        if detail_location and self._is_india_location(detail_location):
+            primary_location = detail_location
+
+        apply_url = f"{self.job_detail_base_url}/{job_id}"
+        city, state, country = self.parse_location(primary_location)
+
+        description_parts = []
+        if detail.get('description'):
+            description_parts.append(detail['description'])
+        elif req.get('ShortDescriptionStr'):
+            description_parts.append(self._strip_html(req.get('ShortDescriptionStr', '')))
+
+        if detail.get('responsibilities'):
+            description_parts.append(f"Responsibilities:\n{detail['responsibilities']}")
+        elif req.get('ExternalResponsibilitiesStr'):
+            description_parts.append(
+                f"Responsibilities:\n{self._strip_html(req.get('ExternalResponsibilitiesStr', ''))}"
+            )
+
+        if detail.get('qualifications'):
+            description_parts.append(f"Qualifications:\n{detail['qualifications']}")
+        elif req.get('ExternalQualificationsStr'):
+            description_parts.append(
+                f"Qualifications:\n{self._strip_html(req.get('ExternalQualificationsStr', ''))}"
+            )
+
+        description = '\n\n'.join(part for part in description_parts if part).strip()[:6000]
+
+        workplace_type = detail.get('workplace_type') or req.get('WorkplaceType', '') or ''
+        remote_type = ''
+        workplace_type_lower = workplace_type.lower()
+        if 'remote' in workplace_type_lower:
+            remote_type = 'Remote'
+        elif 'hybrid' in workplace_type_lower:
+            remote_type = 'Hybrid'
+        elif workplace_type:
+            remote_type = 'On-site'
+
+        employment_type = ''
+        worker_type = detail.get('worker_type') or req.get('WorkerType', '') or ''
+        contract_type = detail.get('contract_type') or req.get('ContractType', '') or ''
+        if worker_type:
+            employment_type = worker_type
+        elif contract_type:
+            employment_type = contract_type
+
+        department = detail.get('department') or req.get('Department', '') or req.get('Organization', '') or ''
+        job_function = detail.get('job_function') or req.get('JobFunction', '') or req.get('JobFamily', '') or ''
+        posted_date = (
+            detail.get('posted_date')
+            or req.get('PostedDate', '')
+            or self._format_date(req.get('ExternalPostedStartDate', ''))
+        )
+        experience_level = detail.get('experience_level', '')
+
+        return {
+            'external_id': self.generate_external_id(str(job_id), self.company_name),
+            'company_name': self.company_name,
+            'title': title,
+            'description': description,
+            'location': primary_location,
+            'city': city,
+            'state': state,
+            'country': country if country else 'India',
+            'employment_type': employment_type,
+            'department': department,
+            'apply_url': apply_url,
+            'posted_date': posted_date,
+            'job_function': job_function,
+            'experience_level': experience_level,
+            'salary_range': '',
+            'remote_type': remote_type,
+            'status': 'active',
+        }
+
+    def _fetch_job_detail(self, session, job_id):
+        finder = f'ById;Id="{job_id}",siteNumber={self.site_number}'
+        params = {
+            'expand': 'all',
+            'onlyData': 'true',
+            'finder': finder,
+        }
+
         try:
-            original_window = driver.current_window_handle
-            driver.execute_script("window.open('');")
-            driver.switch_to.window(driver.window_handles[-1])
-            
-            driver.get(job_url)
-            time.sleep(4)
-            
-            try:
-                desc_selectors = [
-                    (By.CSS_SELECTOR, 'div[class*="jobDescription"], div[class*="job-description"]'),
-                    (By.CSS_SELECTOR, 'div[id*="description"]'),
-                    (By.XPATH, '//div[contains(@class, "description")]'),
-                    (By.CSS_SELECTOR, 'span[class*="jobDescriptionText"]'),
-                    (By.XPATH, "//h2[contains(text(), 'Description')]/following-sibling::div"),
-                ]
-                
-                for selector_type, selector_value in desc_selectors:
-                    try:
-                        desc_elem = driver.find_element(selector_type, selector_value)
-                        if desc_elem and desc_elem.text.strip():
-                            details['description'] = desc_elem.text.strip()[:2000]
-                            break
-                    except:
-                        continue
-            except:
-                pass
-            
-            try:
-                location_selectors = [
-                    (By.CSS_SELECTOR, 'span[class*="location"]'),
-                    (By.XPATH, "//label[contains(text(), 'Location')]/following-sibling::span"),
-                    (By.CSS_SELECTOR, 'div[class*="location"]'),
-                ]
-                
-                for selector_type, selector_value in location_selectors:
-                    try:
-                        loc_elem = driver.find_element(selector_type, selector_value)
-                        if loc_elem and loc_elem.text.strip():
-                            location_text = loc_elem.text.strip()
-                            if location_text:
-                                details['location'] = location_text
-                                city, state, _ = self.parse_location(location_text)
-                                details['city'] = city
-                                details['state'] = state
-                            break
-                    except:
-                        continue
-            except:
-                pass
-            
-            driver.close()
-            driver.switch_to.window(original_window)
-            
-        except Exception as e:
-            logger.error(f"Error fetching job details: {str(e)}")
-            try:
-                if len(driver.window_handles) > 1:
-                    driver.close()
-                    driver.switch_to.window(driver.window_handles[0])
-            except:
-                pass
-        
-        return details
-    
+            response = session.get(self.detail_api_url, params=params, timeout=30)
+            response.raise_for_status()
+            data = response.json()
+            items = data.get('items', [])
+            if not items:
+                return {}
+
+            item = items[0]
+            location_text = item.get('PrimaryLocation', '') or ''
+
+            responsibilities = self._strip_html(item.get('ExternalResponsibilitiesStr', '') or '')
+            qualifications = self._strip_html(item.get('ExternalQualificationsStr', '') or '')
+            description = self._strip_html(item.get('ExternalDescriptionStr', '') or '')
+            work_years = item.get('WorkYears')
+            work_months = item.get('WorkMonths')
+            experience_text = '\n'.join(part for part in [description, responsibilities, qualifications] if part)
+
+            experience_level = ''
+            if isinstance(work_years, int) and work_years > 0:
+                experience_level = f"{work_years} years"
+            elif isinstance(work_months, int) and work_months > 0:
+                experience_level = f"{work_months} months"
+            else:
+                experience_level = self._extract_experience_level(experience_text)
+
+            return {
+                'description': description,
+                'responsibilities': responsibilities,
+                'qualifications': qualifications,
+                'location': location_text,
+                'posted_date': self._format_date(item.get('ExternalPostedStartDate', '')),
+                'apply_before': self._format_date(item.get('ExternalPostedEndDate', '')),
+                'department': item.get('Department', '') or item.get('Organization', '') or '',
+                'job_function': item.get('JobFunction', '') or item.get('JobFamily', '') or '',
+                'worker_type': item.get('WorkerType', '') or '',
+                'contract_type': item.get('ContractType', '') or '',
+                'workplace_type': item.get('WorkplaceType', '') or '',
+                'experience_level': experience_level,
+            }
+        except Exception as exc:
+            logger.debug(f"Failed to fetch details for {job_id}: {str(exc)}")
+            return {}
+
+    def _extract_experience_level(self, text):
+        if not text:
+            return ''
+
+        normalized = re.sub(r'\s+', ' ', text)
+        patterns = [
+            r'\b(\d{1,2})\s*(?:to|-|–|—)\s*(\d{1,2})\s*(?:years?|yrs?)\b',
+            r'\b(\d{1,2})\s*(?:years?|yrs?)\s*(?:to|-|–|—)\s*(\d{1,2})\s*(?:years?|yrs?)\b',
+            r'\b(?:minimum of|minimum|at least|must have relevant experience of|must have experience of|relevant experience of)\s*(\d{1,2})\s*\+?\s*(?:years?|yrs?)\b',
+            r'\b(\d{1,2})\+\s*(?:years?|yrs?)\b',
+            r'\bexperience\s*(?:of|in)?\s*(\d{1,2})\s*(?:to|-|–|—)\s*(\d{1,2})\s*(?:years?|yrs?)\b',
+            r'\bexperience\s*(?:of|in)?\s*(\d{1,2})\s*\+?\s*(?:years?|yrs?)\b',
+        ]
+
+        for pattern in patterns[:2]:
+            match = re.search(pattern, normalized, re.IGNORECASE)
+            if match:
+                return f"{match.group(1)} to {match.group(2)} years"
+
+        for pattern in patterns[2:4]:
+            match = re.search(pattern, normalized, re.IGNORECASE)
+            if match:
+                return f"{match.group(1)}+ years"
+
+        match = re.search(patterns[4], normalized, re.IGNORECASE)
+        if match:
+            return f"{match.group(1)} to {match.group(2)} years"
+
+        match = re.search(patterns[5], normalized, re.IGNORECASE)
+        if match:
+            return f"{match.group(1)}+ years"
+
+        return ''
+
+    def _strip_html(self, value):
+        if not value:
+            return ''
+        text = re.sub(r'(?i)<br\s*/?>', '\n', value)
+        text = re.sub(r'(?i)</p>', '\n\n', text)
+        text = re.sub(r'(?i)</li>', '\n', text)
+        text = re.sub(r'<[^>]+>', ' ', text)
+        text = html.unescape(text)
+        text = text.replace('\r', '')
+        text = re.sub(r'[ \t\f\v]+', ' ', text)
+        text = re.sub(r' *\n *', '\n', text)
+        text = re.sub(r'\n{3,}', '\n\n', text)
+        return text.strip()
+
+    def _format_date(self, value):
+        if not value:
+            return ''
+        return str(value)[:10]
+
+    def _is_india_location(self, location_text):
+        if not location_text:
+            return True
+        location_lower = location_text.lower()
+        if 'indiana' in location_lower:
+            return False
+        return any(keyword in location_lower for keyword in self.india_keywords)
+
     def parse_location(self, location_str):
-        """Parse location string into city, state, country"""
         if not location_str:
             return '', '', 'India'
-        
-        parts = [p.strip() for p in location_str.split(',')]
+
+        parts = [part.strip() for part in location_str.split(',')]
         city = parts[0] if len(parts) > 0 else ''
         state = parts[1] if len(parts) > 1 else ''
-        
-        return city, state, 'India'
+        country = parts[2] if len(parts) > 2 else ''
+
+        if not country and 'india' in location_str.lower():
+            country = 'India'
+
+        return city, state, country
