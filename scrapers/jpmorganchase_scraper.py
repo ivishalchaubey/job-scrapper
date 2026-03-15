@@ -1,11 +1,16 @@
 import requests
 import hashlib
 import time
+import re
 from pathlib import Path
 
 from core.logging import setup_logger
 from core.webdriver_utils import setup_chrome_driver
 from config.scraper import SCRAPE_TIMEOUT, HEADLESS_MODE, FETCH_FULL_JOB_DETAILS, MAX_PAGES_TO_SCRAPE
+
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
 logger = setup_logger('jpmorganchase_scraper')
 
@@ -116,6 +121,16 @@ class JPMorganChaseScraper:
                 time.sleep(1)
 
             logger.info(f"Successfully scraped {len(all_jobs)} total jobs from {self.company_name}")
+
+            if FETCH_FULL_JOB_DETAILS:
+                logger.info("Fetching full job details...")
+                driver = self.setup_driver()
+                try:
+                    for job in all_jobs:
+                        details = self._fetch_job_details(driver, job['apply_url'])
+                        job.update(details)
+                finally:
+                    driver.quit()
 
         except Exception as e:
             logger.error(f"Error scraping {self.company_name}: {str(e)}")
@@ -266,6 +281,123 @@ class JPMorganChaseScraper:
         }
 
         return job_data
+
+    def _fetch_job_details(self, driver, url):
+        """Fetch full job details from the job detail page"""
+        try:
+            logger.info(f"Fetching details for {url}")
+            driver.get(url)
+            
+            # Wait for page to load
+            WebDriverWait(driver, 15).until(
+                EC.presence_of_element_located((By.CLASS_NAME, "job-details__title"))
+            )
+            time.sleep(2)  # Additional wait for dynamic content
+            
+            # Get description
+            description = ''
+            try:
+                desc_elem = driver.find_element(By.CLASS_NAME, "job-details__description-content")
+                description = desc_elem.text
+            except Exception as e:
+                logger.warning(f"Could not find description: {e}")
+            
+            # Extract experience from description
+            experience_level = self._extract_experience(description)
+            
+            # Get meta items
+            meta_items = []
+            try:
+                meta_items = driver.find_elements(By.CLASS_NAME, "job-meta__item")
+            except:
+                pass
+            
+            # Get posted date
+            posted_date = ''
+            try:
+                for item in meta_items:
+                    title_elem = item.find_element(By.CLASS_NAME, "job-meta__title")
+                    if "Posting Date" in title_elem.text:
+                        value_elem = item.find_element(By.CLASS_NAME, "job-meta__subitem")
+                        date_str = value_elem.text.strip()
+                        posted_date = self._parse_posted_date(date_str)
+                        break
+            except Exception as e:
+                logger.warning(f"Could not extract posted date: {e}")
+            
+            # Get employment type
+            employment_type = ''
+            try:
+                for item in meta_items:
+                    title_elem = item.find_element(By.CLASS_NAME, "job-meta__title")
+                    if "Job Schedule" in title_elem.text:
+                        value_elem = item.find_element(By.CLASS_NAME, "job-meta__subitem")
+                        employment_type = value_elem.text.strip()
+                        break
+            except:
+                pass
+            
+            # Get department from Business Unit
+            department = ''
+            try:
+                for item in meta_items:
+                    title_elem = item.find_element(By.CLASS_NAME, "job-meta__title")
+                    if "Business Unit" in title_elem.text:
+                        value_elem = item.find_element(By.CLASS_NAME, "job-meta__subitem")
+                        department = value_elem.text.strip()
+                        break
+            except:
+                pass
+            
+            # Get job function from Job Category
+            job_function = ''
+            try:
+                for item in meta_items:
+                    title_elem = item.find_element(By.CLASS_NAME, "job-meta__title")
+                    if "Job Category" in title_elem.text:
+                        value_elem = item.find_element(By.CLASS_NAME, "job-meta__subitem")
+                        job_function = value_elem.text.strip()
+                        break
+            except:
+                pass
+            
+            return {
+                'description': description,
+                'experience_level': experience_level,
+                'posted_date': posted_date,
+                'employment_type': employment_type,
+                'department': department,
+                'job_function': job_function,
+            }
+        except Exception as e:
+            logger.error(f"Error fetching details for {url}: {e}")
+            return {}
+
+    def _extract_experience(self, text):
+        """Extract experience level from job description text"""
+        if not text:
+            return ''
+        
+        # Look for patterns like "2 to 6 years' of relevant experience"
+        match = re.search(r'(\d+)\s*to\s*(\d+)\s*years?', text, re.IGNORECASE)
+        if match:
+            return f"{match.group(1)}-{match.group(2)} years"
+        
+        # Or single number like "3 years" or "2+ years"
+        match = re.search(r'(\d+\+?)\s*years?', text, re.IGNORECASE)
+        if match:
+            return f"{match.group(1)} years"
+        
+        return ''
+
+    def _parse_posted_date(self, date_str):
+        """Parse posted date from MM/DD/YYYY format to YYYY-MM-DD"""
+        try:
+            date_part = date_str.split(',')[0].strip()
+            month, day, year = date_part.split('/')
+            return f"{year}-{month.zfill(2)}-{day.zfill(2)}"
+        except:
+            return ''
 
     def parse_location(self, location_str):
         """Parse location string into city, state, country"""
