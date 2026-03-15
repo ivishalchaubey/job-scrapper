@@ -1,3 +1,5 @@
+import re
+
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -18,7 +20,7 @@ logger = setup_logger('itclimited_scraper')
 class ITCLimitedScraper:
     def __init__(self):
         self.company_name = "ITC Limited"
-        self.url = "https://recruitment.itcportal.com/jobs/Careers#summer-internship"
+        self.url = "https://recruitment.itcportal.com/jobs/Careers"
     
     def setup_driver(self):
         """Set up Chrome driver using cross-platform utility"""
@@ -203,6 +205,10 @@ class ITCLimitedScraper:
                         'status': 'active'
                     }
 
+                    # Skip jobs with invalid apply URLs (e.g., main careers page)
+                    if job_data['apply_url'] == self.url:
+                        continue
+
                     if FETCH_FULL_JOB_DETAILS and job_link:
                         full_details = self._fetch_job_details(driver, job_link)
                         job_data.update(full_details)
@@ -254,6 +260,11 @@ class ITCLimitedScraper:
                                 'remote_type': '',
                                 'status': 'active'
                             }
+
+                            # Skip jobs with invalid apply URLs (e.g., main careers page)
+                            if job_data['apply_url'] == self.url:
+                                continue
+
                             jobs.append(job_data)
                     except:
                         continue
@@ -265,36 +276,135 @@ class ITCLimitedScraper:
     
     def _fetch_job_details(self, driver, job_url):
         """Fetch full job details by visiting the job page"""
-        details = {}
-        
+        details = {
+            'description': '',
+            'posted_date': '',
+            'employment_type': '',
+            'experience_level': '',
+            'job_function': '',
+            'salary_range': '',
+            'remote_type': '',
+            'department': ''
+        }
+
         try:
+            logger.info(f"Fetching details for {job_url}")
             original_window = driver.current_window_handle
             driver.execute_script("window.open('');")
             driver.switch_to.window(driver.window_handles[-1])
-            
+
             driver.get(job_url)
-            time.sleep(3)
-            
+            time.sleep(5)  # Increased wait for page load
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            time.sleep(1)
+
+            wait = WebDriverWait(driver, 10)
+
+            # 1) Parse summary block (cw-summary-list)
             try:
-                desc_selectors = [
-                    (By.CSS_SELECTOR, 'div[class*="description"]'),
-                    (By.XPATH, "//div[contains(@class, 'job-description')]"),
-                    (By.CSS_SELECTOR, 'div.description'),
-                ]
-                
-                for selector_type, selector_value in desc_selectors:
+                # Check for shadow DOM in custom element
+                shadow_root = None
+                try:
+                    template_elem = driver.find_element(By.TAG_NAME, 'career-website-detail-template-2')
+                    shadow_root = driver.execute_script('return arguments[0].shadowRoot', template_elem)
+                    logger.info("Found shadow root in custom element")
+                except:
+                    logger.info("No shadow root found, using main document")
+
+                if shadow_root:
+                    wait.until(lambda d: shadow_root.find_elements(By.CSS_SELECTOR, '.cw-summary-list li'))
+                    summary_items = shadow_root.find_elements(By.CSS_SELECTOR, '.cw-summary-list li')
+                else:
+                    wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, '.cw-summary-list li')))
+                    summary_items = driver.find_elements(By.CSS_SELECTOR, '.cw-summary-list li')
+                logger.info(f"Found {len(summary_items)} summary items")
+                for li in summary_items:
                     try:
-                        desc_elem = driver.find_element(selector_type, selector_value)
-                        details['description'] = desc_elem.text.strip()[:2000]
-                        break
-                    except:
+                        spans = li.find_elements(By.TAG_NAME, 'span')
+                        if not spans or len(spans) < 2:
+                            continue
+                        label = spans[0].text.strip().lower()
+                        value = spans[1].text.strip()
+                        logger.info(f"Summary: {label} = {value}")
+                        if not label or not value:
+                            continue
+                        if 'date opened' in label or 'date' == label:
+                            # Normalize date to ISO if possible (MM/DD/YYYY or DD/MM/YYYY)
+                            parsed = None
+                            for fmt in ('%m/%d/%Y', '%d/%m/%Y', '%Y-%m-%d'):
+                                try:
+                                    parsed_dt = datetime.strptime(value, fmt)
+                                    parsed = parsed_dt.strftime('%Y-%m-%d')
+                                    break
+                                except:
+                                    continue
+                            details['posted_date'] = parsed or value
+                        elif 'job type' in label or 'jobtype' in label:
+                            details['employment_type'] = value
+                        elif 'work experience' in label or 'workexperience' in label or 'experience' in label:
+                            details['experience_level'] = value
+                        elif 'industry' in label:
+                            details['job_function'] = value
+                        elif 'country' in label:
+                            # handled elsewhere; ignore
+                            pass
+                        elif 'city' in label or 'state' in label or 'zip' in label:
+                            pass
+                    except Exception as e:
+                        logger.error(f"Error parsing summary item: {str(e)}")
                         continue
-            except:
-                pass
-            
+            except Exception as e:
+                logger.error(f"Error finding summary list: {str(e)}")
+
+            # 2) Description: prefer rich description container
+            desc_text = ''
+            desc_selectors = [
+                (By.ID, 'cw-rich-description'),
+                (By.ID, 'spandesc'),
+                (By.CSS_SELECTOR, 'div.cw-jobdescription'),
+                (By.CSS_SELECTOR, 'div[class*="description"]'),
+                (By.XPATH, "//div[contains(@class,'job-description') or contains(@class,'jobdescription')]")
+            ]
+
+            for sel_type, sel_val in desc_selectors:
+                try:
+                    if shadow_root:
+                        elem = shadow_root.find_element(sel_type, sel_val)
+                    else:
+                        elem = driver.find_element(sel_type, sel_val)
+                    desc_text = elem.get_attribute('innerText') or elem.text or ''
+                    desc_text = desc_text.strip()
+                    logger.info(f"Description found with {sel_val}: {len(desc_text)} chars")
+                    if desc_text and len(desc_text) > 20:
+                        break
+                except:
+                    continue
+
+            # Clean up description: collapse multiple blank lines
+            if desc_text:
+                desc_text = re.sub(r'\r\n|\r', '\n', desc_text)
+                desc_text = re.sub(r'\n{2,}', '\n\n', desc_text).strip()
+                details['description'] = desc_text[:4000]
+                logger.info(f"Description set: {len(details['description'])} chars")
+
+            # 3) Some pages include explicit 'Work Experience' text inside description; fallback extraction
+            if not details['experience_level'] and desc_text:
+                m = re.search(r'(\d+\s*(?:-\s*\d+)?\s*(?:years|year))', desc_text, re.I)
+                if m:
+                    details['experience_level'] = m.group(1).strip()
+                    logger.info(f"Experience from description: {details['experience_level']}")
+
+            # 4) Salary / remote hints (not present in many templates) - simple heuristics
+            if not details['salary_range']:
+                m_salary = re.search(r'\b(?:INR|Rs\.?|₹)\s*[\d,]+(?:\s*-\s*(?:INR|Rs\.?|₹)?\s*[\d,]+)?', desc_text or '', re.I)
+                if m_salary:
+                    details['salary_range'] = m_salary.group(0).strip()
+                    logger.info(f"Salary found: {details['salary_range']}")
+
+            # Close detail tab and return
             driver.close()
             driver.switch_to.window(original_window)
-            
+
         except Exception as e:
             logger.error(f"Error fetching job details: {str(e)}")
             try:
@@ -303,7 +413,8 @@ class ITCLimitedScraper:
                     driver.switch_to.window(driver.window_handles[0])
             except:
                 pass
-        
+
+        logger.info(f"Details extracted: {details}")
         return details
     
     def parse_location(self, location_str):
