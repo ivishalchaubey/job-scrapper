@@ -8,6 +8,8 @@ import hashlib
 import time
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urljoin
+import re
 
 from core.logging import setup_logger
 from core.webdriver_utils import setup_chrome_driver
@@ -255,7 +257,7 @@ class GoogleScraper:
                     'state': state,
                     'country': 'India',
                     'employment_type': '',
-                    'department': '',
+                    'department': self._infer_department_from_title(job_title),
                     'apply_url': job_link,
                     'posted_date': '',
                     'job_function': '',
@@ -265,9 +267,19 @@ class GoogleScraper:
                     'status': 'active'
                 }
                 
-                if FETCH_FULL_JOB_DETAILS and job_link and job_link != self.url:
-                    full_details = self._fetch_job_details(driver, job_link)
-                    job_data.update(full_details)
+                # Always attempt to fetch full details for better completeness
+                if job_link and job_link != self.url:
+                    try:
+                        full_details = self._fetch_job_details(driver, job_link)
+                        if full_details:
+                            # Do not overwrite valid listing fields with empty detail values
+                            non_empty_details = {
+                                k: v for k, v in full_details.items()
+                                if v is not None and (not isinstance(v, str) or v.strip())
+                            }
+                            job_data.update(non_empty_details)
+                    except Exception as e:
+                        logger.warning(f"Failed to fetch full details for {job_link}: {e}")
                 
                 jobs.append(job_data)
                 logger.debug(f"Extracted job {idx + 1}: {job_title}")
@@ -280,46 +292,286 @@ class GoogleScraper:
     
     def _fetch_job_details(self, driver, job_url):
         """Fetch full job details by visiting the job page"""
-        details = {}
-        
+        details = {
+            'description': '',
+            'apply_url': '',
+            'posted_date': '',
+            'employment_type': '',
+            'department': '',
+            'job_function': '',
+            'experience_level': '',
+            'salary_range': '',
+            'remote_type': '',
+            'location': '',
+            'city': '',
+            'state': '',
+            'country': 'India'
+        }
+
+        original_window = None
         try:
             original_window = driver.current_window_handle
             driver.execute_script("window.open('');")
             driver.switch_to.window(driver.window_handles[-1])
-            
-            driver.get(job_url)
-            time.sleep(3)
-            
+
+            full_job_url = urljoin(self.url, job_url)
+            driver.get(full_job_url)
+            time.sleep(2)
+
+            # Gather page text for heuristic searches
             try:
-                desc_selectors = [
-                    (By.CSS_SELECTOR, '[itemprop="description"]'),
-                    (By.CSS_SELECTOR, '.description'),
-                    (By.CSS_SELECTOR, '[class*="description"]'),
-                ]
-                
-                for selector_type, selector_value in desc_selectors:
-                    try:
-                        desc_elem = driver.find_element(selector_type, selector_value)
-                        details['description'] = desc_elem.text.strip()[:2000]
-                        break
-                    except:
-                        continue
+                body_text = driver.find_element(By.TAG_NAME, 'body').text
             except:
+                body_text = ''
+
+            # 1) Apply URL
+            try:
+                try:
+                    apply_elem = driver.find_element(By.ID, 'apply-action-button')
+                    apply_href = apply_elem.get_attribute('href') or apply_elem.get_attribute('data-href')
+                    if apply_href:
+                        details['apply_url'] = urljoin(full_job_url, apply_href)
+                except:
+                    apply_links = driver.find_elements(By.CSS_SELECTOR, 'a[href*="apply?jobId"], a[aria-label*="Apply"], a[id*="apply"]')
+                    if apply_links:
+                        details['apply_url'] = urljoin(full_job_url, apply_links[0].get_attribute('href'))
+            except Exception:
                 pass
-            
-            driver.close()
-            driver.switch_to.window(original_window)
-            
+
+            # 2) Locations (collect all shown locations)
+            try:
+                # Prefer active job header location chips to avoid pulling unrelated sidebar/listing text
+                loc_elems = driver.find_elements(By.CSS_SELECTOR, 'div.op1BBf span.pwO9Dc span.r0wTof')
+                if not loc_elems:
+                    loc_elems = driver.find_elements(By.CSS_SELECTOR, 'span.pwO9Dc span.r0wTof')
+                locs = []
+                for e in loc_elems:
+                    t = e.text.strip().strip(';').strip()
+                    t = re.sub(r'\s+', ' ', t)
+                    if t and t not in locs:
+                        locs.append(t)
+                if locs:
+                    details['location'] = '; '.join(locs)
+                    # parse first location into city/state
+                    first = locs[0]
+                    parts = [p.strip() for p in first.split(',')]
+                    if parts:
+                        details['city'] = parts[0]
+                    if len(parts) > 1:
+                        details['state'] = parts[1]
+                    details['country'] = 'India'
+            except Exception:
+                pass
+
+            # 3) Experience level (UI badge like 'Mid')
+            try:
+                exp_elems = driver.find_elements(By.CSS_SELECTOR, '.wVSTAb, button[aria-label*="experience"] .VfPpkd-vQzf8d')
+                if exp_elems:
+                    ev = ''
+                    for elem in exp_elems:
+                        candidate = elem.text.strip()
+                        if candidate in ['Early', 'Mid', 'Advanced'] or candidate.lower().startswith('entry'):
+                            ev = candidate
+                            break
+                    if ev:
+                        details['experience_level'] = ev
+            except Exception:
+                pass
+
+            # 3b) Extract years-of-experience requirement from qualifications text
+            try:
+                exp_match = re.search(
+                    r'((?:\d+\+?|\d+\s*[-–]\s*\d+)\s+years?\s+of\s+experience[^\n\.]*)',
+                    body_text,
+                    re.I,
+                )
+                if exp_match:
+                    details['experience_level'] = self._normalize_experience_value(exp_match.group(1).strip())
+                elif not details.get('experience_level'):
+                    # Fallback: minimum years only
+                    year_match = re.search(r'(\d+\+?)\s+years?\s+of\s+experience', body_text, re.I)
+                    if year_match:
+                        details['experience_level'] = self._normalize_experience_value(year_match.group(1).strip())
+            except Exception:
+                pass
+
+            # 4) Description — only keep core job sections, avoid UI/footer/legal noise
+            desc_parts = []
+            try:
+                selectors = ['div.KwJkGe', 'div.aG5W3', 'div.BDNOWe']
+                for sel in selectors:
+                    try:
+                        script = "var el = document.querySelector('" + sel.replace("'", "\\'") + "'); return el ? el.innerText : null;"
+                        txt = driver.execute_script(script)
+                        if txt and len(txt.strip()) > 30:
+                            desc_parts.append(txt.strip())
+                    except Exception:
+                        continue
+                if not desc_parts and body_text:
+                    desc_parts.append(body_text)
+                if desc_parts:
+                    full_desc = '\n\n'.join(desc_parts)
+                    details['description'] = self._clean_google_description(full_desc)[:8000]
+            except Exception:
+                pass
+
+            # 5) Posted date heuristic (search for common phrases)
+            try:
+                # look for patterns like 'Posted on March 1, 2026' or ISO dates
+                m = re.search(r'(?:Posted(?: on)?:?\s*)([A-Za-z]{3,9}\s+\d{1,2},\s*\d{4})', body_text)
+                if m:
+                    try:
+                        dt = datetime.strptime(m.group(1), '%B %d, %Y')
+                        details['posted_date'] = dt.strftime('%Y-%m-%d')
+                    except Exception:
+                        try:
+                            dt = datetime.strptime(m.group(1), '%b %d, %Y')
+                            details['posted_date'] = dt.strftime('%Y-%m-%d')
+                        except Exception:
+                            details['posted_date'] = m.group(1)
+                else:
+                    # ISO-like
+                    m2 = re.search(r'(\d{4}-\d{2}-\d{2})', body_text)
+                    if m2:
+                        details['posted_date'] = m2.group(1)
+            except Exception:
+                pass
+
+            # 6) Employment type / salary / department heuristics
+            try:
+                # Use scoped labels to avoid false positives from unrelated page text
+                employment_match = re.search(
+                    r'(?:Job\s*Type|Employment\s*Type)\s*[:\-]?\s*(Full[- ]?time|Part[- ]?time|Contract|Intern(?:ship)?)',
+                    body_text,
+                    re.I,
+                )
+                if employment_match:
+                    emp = employment_match.group(1).strip().lower()
+                    if 'full' in emp:
+                        details['employment_type'] = 'Full Time'
+                    elif 'part' in emp:
+                        details['employment_type'] = 'Part Time'
+                    elif 'intern' in emp:
+                        details['employment_type'] = 'Intern'
+                    elif 'contract' in emp:
+                        details['employment_type'] = 'Contract'
+                elif re.search(r'\bintern(ship)?\b', body_text, re.I):
+                    # Only keep this safe fallback for intern roles
+                    details['employment_type'] = 'Intern'
+
+                if re.search(r'\bremote\b', body_text, re.I):
+                    details['remote_type'] = 'Remote'
+                elif re.search(r'\bhybrid\b', body_text, re.I):
+                    details['remote_type'] = 'Hybrid'
+                elif re.search(r'\bon[-\s]?site\b', body_text, re.I):
+                    details['remote_type'] = 'On-site'
+
+                sal = re.search(r'(?:\bSalary\b[:\s]*)([\w\s\-–,\d₹$€]+)', body_text, re.I)
+                if sal:
+                    details['salary_range'] = sal.group(1).strip()
+            except Exception:
+                pass
+
         except Exception as e:
             logger.error(f"Error fetching job details: {str(e)}")
+        finally:
             try:
-                if len(driver.window_handles) > 1:
-                    driver.close()
-                    driver.switch_to.window(driver.window_handles[0])
-            except:
+                if original_window and len(driver.window_handles) > 0:
+                    # close detail tab if still open and switch back
+                    if driver.current_window_handle != original_window:
+                        driver.close()
+                        driver.switch_to.window(original_window)
+            except Exception:
                 pass
-        
+
         return details
+
+    def _infer_department_from_title(self, title):
+        """Infer a broad department from title keywords."""
+        if not title:
+            return ''
+
+        t = title.lower()
+
+        keyword_map = [
+            ('Engineering', ['engineer', 'developer', 'sre', 'site reliability', 'architect']),
+            ('Product', ['product manager', 'product management', 'group product manager']),
+            ('Data', ['data scientist', 'data engineer', 'data analyst', 'machine learning', 'ml ']),
+            ('Sales', ['account manager', 'sales', 'customer engineer', 'customer solutions', 'solutions engineer']),
+            ('Human Resources', ['people consultant', 'hr ', 'human resources', 'talent', 'recruit']),
+            ('Operations', ['operations', 'program manager', 'project manager']),
+            ('Security', ['security', 'cyber']),
+            ('Finance', ['finance', 'accounting']),
+            ('Legal', ['legal', 'counsel']),
+            ('Marketing', ['marketing', 'brand', 'growth']),
+            ('Design', ['designer', 'ux', 'ui']),
+            ('Research', ['research', 'scientist']),
+        ]
+
+        for department, keywords in keyword_map:
+            for kw in keywords:
+                if kw in t:
+                    return department
+
+        return 'General'
+
+    def _normalize_experience_value(self, exp_text):
+        """Normalize experience text to compact forms like '8 years' or '2-4 years'."""
+        if not exp_text:
+            return ''
+
+        range_match = re.search(r'(\d+)\s*[-–]\s*(\d+)\s*years?', exp_text, re.I)
+        if range_match:
+            return f"{range_match.group(1)}-{range_match.group(2)} years"
+
+        single_match = re.search(r'(\d+)\+?\s*years?', exp_text, re.I)
+        if single_match:
+            return f"{single_match.group(1)} years"
+
+        return exp_text.strip()
+
+    def _clean_google_description(self, text):
+        """Remove duplicated/UI/legal fragments from Google description blocks."""
+        if not text:
+            return ''
+
+        # Cut off legal/footer content if present
+        cut_markers = [
+            'Information collected and processed as part of your Google Careers profile',
+            'Google is proud to be an equal opportunity and affirmative action employer',
+            'To all recruitment agencies: Google does not accept agency resumes',
+        ]
+        for marker in cut_markers:
+            idx = text.find(marker)
+            if idx != -1:
+                text = text[:idx]
+
+        junk_lines = {
+            'share',
+            'apply',
+            'info_outline',
+            'x',
+            'corporate_fare',
+            'place',
+            'bar_chart',
+        }
+
+        cleaned_lines = []
+        seen = set()
+        for raw_line in text.splitlines():
+            line = re.sub(r'\s+', ' ', raw_line).strip()
+            if not line:
+                continue
+            if line.lower() in junk_lines:
+                continue
+            # Avoid repeated paragraphs/headers
+            key = line.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            cleaned_lines.append(line)
+
+        return '\n'.join(cleaned_lines).strip()
     
     def parse_location(self, location_str):
         """Parse location string into city, state, country"""
