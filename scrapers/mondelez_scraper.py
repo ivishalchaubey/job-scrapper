@@ -6,8 +6,10 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 import hashlib
 import time
+import re
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urljoin
 
 from core.logging import setup_logger
 from core.webdriver_utils import setup_chrome_driver
@@ -33,6 +35,7 @@ class MondelezScraper:
         """Scrape jobs from Mondelez careers page with pagination support"""
         jobs = []
         driver = None
+        seen_external_ids = set()
         
         try:
             logger.info(f"Starting scrape for {self.company_name}")
@@ -42,12 +45,11 @@ class MondelezScraper:
             # Wait for page to load
             time.sleep(10)
 
-            # Scroll to trigger lazy-loaded content
-            for scroll_i in range(4):
-                driver.execute_script("window.scrollTo(0, document.body.scrollHeight * %s);" % str((scroll_i + 1) / 4))
-                time.sleep(2)
+            # Scroll once to trigger lazy-loaded content
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            time.sleep(1)
             driver.execute_script("window.scrollTo(0, 0);")
-            time.sleep(2)
+            time.sleep(1)
             
             current_page = 1
             
@@ -55,7 +57,7 @@ class MondelezScraper:
                 logger.info(f"Scraping page {current_page} of {max_pages}")
                 
                 # Scrape current page
-                page_jobs = self._scrape_page(driver)
+                page_jobs = self._scrape_page(driver, seen_external_ids)
                 jobs.extend(page_jobs)
                 
                 logger.info(f"Scraped {len(page_jobs)} jobs from page {current_page}")
@@ -65,7 +67,7 @@ class MondelezScraper:
                     if not self._go_to_next_page(driver, current_page):
                         logger.info("No more pages available")
                         break
-                    time.sleep(4)  # Wait for next page to load
+                    time.sleep(2)
                 
                 current_page += 1
             
@@ -85,10 +87,10 @@ class MondelezScraper:
         """Navigate to the next page"""
         try:
             next_page_num = current_page + 1
-            
-            # Scroll to pagination area
+            old_marker = driver.find_element(By.CSS_SELECTOR, 'div.resultRenderContainer > div:nth-child(1) a')
+
             driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(1)
+            time.sleep(0.5)
             
             # Try to find and click next page button
             next_page_selectors = [
@@ -106,6 +108,7 @@ class MondelezScraper:
                     driver.execute_script("arguments[0].scrollIntoView();", next_button)
                     time.sleep(0.5)
                     driver.execute_script("arguments[0].click();", next_button)
+                    WebDriverWait(driver, 10).until(EC.staleness_of(old_marker))
                     logger.info(f"Clicked next page button")
                     return True
                 except:
@@ -118,197 +121,185 @@ class MondelezScraper:
             logger.error(f"Error navigating to next page: {str(e)}")
             return False
     
-    def _scrape_page(self, driver):
+    def _scrape_page(self, driver, seen_external_ids):
         """Scrape jobs from current page"""
         jobs = []
-        time.sleep(3)  # Wait for page content to load
-        
-        # Look for job cards
-        job_cards = []
-        selectors = [
-            (By.CSS_SELECTOR, 'div.job-card'),
-            (By.CSS_SELECTOR, 'div[class*="job"]'),
-            (By.CSS_SELECTOR, 'div.search-result'),
-            (By.XPATH, '//div[contains(@class, "result")]'),
-            (By.CSS_SELECTOR, 'a[href*="/job/"]'),
-            (By.CSS_SELECTOR, 'a[href*="/jobs/"]'),
-            (By.CSS_SELECTOR, 'a[href*="/careers/"]'),
-            (By.CSS_SELECTOR, 'div[class*="opening"]'),
-            (By.CSS_SELECTOR, 'div[class*="position"]'),
-            (By.CSS_SELECTOR, 'li[class*="job"]'),
-            (By.CSS_SELECTOR, 'div[class*="career"]'),
-            (By.CSS_SELECTOR, 'div[class*="vacancy"]'),
-            (By.TAG_NAME, 'article'),
-        ]
-        
-        for selector_type, selector_value in selectors:
-            try:
-                job_cards = driver.find_elements(selector_type, selector_value)
-                if job_cards and len(job_cards) > 0:
-                    logger.info(f"Found {len(job_cards)} job cards using selector: {selector_value}")
-                    break
-            except:
-                continue
-        
-        if not job_cards:
-            logger.warning("No job cards found with standard selectors, trying link-based fallback")
-            try:
-                all_links = driver.find_elements(By.TAG_NAME, 'a')
-                job_keywords = ['/job/', '/jobs/', '/career', '/position/', '/opening/', '/vacancy/', '/apply/']
-                seen_urls = set()
-                for link in all_links:
-                    try:
-                        href = link.get_attribute('href') or ''
-                        link_text = link.text.strip()
-                        if not link_text or len(link_text) < 3:
-                            continue
-                        if not any(kw in href.lower() for kw in job_keywords):
-                            continue
-                        if href in seen_urls:
-                            continue
-                        seen_urls.add(href)
+        wait = WebDriverWait(driver, SCRAPE_TIMEOUT)
+        wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, 'div.resultRenderContainer')))
+        time.sleep(1)
 
-                        job_id = href.split('/')[-1].split('?')[0] if href else f"mondelez_link_{len(jobs)}"
+        job_cards = driver.find_elements(By.CSS_SELECTOR, 'div.resultRenderContainer > div')
+        logger.info(f"Found {len(job_cards)} Mondelez job cards")
 
-                        job_data = {
-                            'external_id': self.generate_external_id(job_id, self.company_name),
-                            'company_name': self.company_name,
-                            'title': link_text,
-                            'description': '',
-                            'location': '',
-                            'city': '',
-                            'state': '',
-                            'country': 'India',
-                            'employment_type': '',
-                            'department': '',
-                            'apply_url': href if href else self.url,
-                            'posted_date': '',
-                            'job_function': '',
-                            'experience_level': '',
-                            'salary_range': '',
-                            'remote_type': '',
-                            'status': 'active'
-                        }
-                        jobs.append(job_data)
-                        logger.info(f"Found job via link fallback: '{link_text}'")
-                    except:
-                        continue
-            except Exception as e:
-                logger.error(f"Link-based fallback failed: {str(e)}")
-            return jobs
-
-        # Process each job card
         for idx, card in enumerate(job_cards):
             try:
-                card_text = card.text
-                if not card_text or len(card_text) < 10:
+                card_text = card.text or ''
+                if len(card_text.strip()) < 10:
                     continue
-                
-                # Extract job title
-                job_title = ""
-                job_link = ""
+
+                job_title = ''
+                job_link = ''
                 try:
-                    title_elem = card.find_element(By.TAG_NAME, 'a')
+                    title_elem = card.find_element(By.CSS_SELECTOR, 'a[href*="/careers/jobs/job?"]')
                     job_title = title_elem.text.strip()
-                    job_link = title_elem.get_attribute('href')
+                    href = title_elem.get_attribute('href')
+                    job_link = urljoin(self.url, href)
                 except:
                     job_title = card_text.split('\n')[0].strip()
-                
+
                 if not job_title or len(job_title) < 3:
                     continue
-                
-                # Generate job ID
-                job_id = f"mondelez_{idx}"
-                if job_link:
+
+                posted_date = ''
+                req_id = ''
+                location = ''
+                for p in card.find_elements(By.TAG_NAME, 'p'):
+                    line = p.text.strip()
+                    if not line:
+                        continue
+                    parsed_date = self._parse_list_date(line)
+                    if parsed_date:
+                        posted_date = parsed_date
+                    if '|' in line and 'R-' in line:
+                        parts = [x.strip() for x in line.split('|')]
+                        for part in parts:
+                            if part.startswith('R-'):
+                                req_id = part
+                        if len(parts) > 1:
+                            location = parts[1]
+
+                if not location:
                     try:
-                        job_id = job_link.split('/')[-1].split('?')[0]
+                        loc_link = card.find_element(By.CSS_SELECTOR, 'p a[href*="locationid="]')
+                        location = loc_link.text.strip()
                     except:
                         pass
-                
-                # Extract location
-                location = ""
-                city = ""
-                state = ""
-                lines = card_text.split('\n')
-                for line in lines:
-                    if 'India' in line or any(city_name in line for city_name in ['Mumbai', 'Delhi', 'Bangalore', 'Chennai', 'Hyderabad', 'Kolkata', 'Pune', 'Gurgaon']):
-                        location = line.strip()
-                        city, state, _ = self.parse_location(location)
-                        break
-                
+
+                if not location or 'India' not in location:
+                    continue
+
+                city, state, country = self.parse_location(location)
+                job_id = req_id if req_id else f"mondelez_{idx}_{hashlib.md5(job_title.encode()).hexdigest()[:8]}"
+                external_id = self.generate_external_id(job_id, self.company_name)
+                if external_id in seen_external_ids:
+                    continue
+
                 job_data = {
-                    'external_id': self.generate_external_id(job_id, self.company_name),
+                    'external_id': external_id,
                     'company_name': self.company_name,
                     'title': job_title,
                     'description': '',
                     'location': location,
                     'city': city,
                     'state': state,
-                    'country': 'India',
+                    'country': country,
                     'employment_type': '',
                     'department': '',
                     'apply_url': job_link if job_link else self.url,
-                    'posted_date': '',
+                    'posted_date': posted_date,
                     'job_function': '',
                     'experience_level': '',
                     'salary_range': '',
                     'remote_type': '',
                     'status': 'active'
                 }
-                
-                # Fetch full details if enabled
+
                 if FETCH_FULL_JOB_DETAILS and job_link:
                     full_details = self._fetch_job_details(driver, job_link)
                     job_data.update(full_details)
-                
+
+                if not job_data.get('apply_url'):
+                    job_data['apply_url'] = job_link
+                if 'remote' in (job_data.get('location', '') or '').lower():
+                    job_data['remote_type'] = 'Remote'
+
+                seen_external_ids.add(external_id)
                 jobs.append(job_data)
-                
+
             except Exception as e:
                 logger.error(f"Error extracting job {idx}: {str(e)}")
                 continue
-        
+
         return jobs
     
     def _fetch_job_details(self, driver, job_url):
         """Fetch full job details by visiting the job page"""
-        details = {}
+        details = {
+            'description': '',
+            'posted_date': '',
+            'employment_type': '',
+            'experience_level': '',
+            'job_function': '',
+            'salary_range': '',
+            'remote_type': '',
+            'department': '',
+            'apply_url': job_url,
+        }
         
         try:
-            # Open job in new tab
             original_window = driver.current_window_handle
             driver.execute_script("window.open('');")
             driver.switch_to.window(driver.window_handles[-1])
             
             driver.get(job_url)
-            time.sleep(4)
-            
-            # Extract description
+            WebDriverWait(driver, SCRAPE_TIMEOUT).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, 'div.jobDetailLeftContentWrap'))
+            )
+            time.sleep(1)
+
             try:
-                desc_selectors = [
-                    (By.CSS_SELECTOR, 'div.job-description'),
-                    (By.CSS_SELECTOR, 'div[class*="description"]'),
-                    (By.XPATH, '//div[contains(@class, "description")]'),
-                ]
-                
-                for selector_type, selector_value in desc_selectors:
-                    try:
-                        desc_elem = driver.find_element(selector_type, selector_value)
-                        if desc_elem and desc_elem.text.strip():
-                            details['description'] = desc_elem.text.strip()[:2000]
-                            break
-                    except:
+                desc_elem = driver.find_element(By.CSS_SELECTOR, 'div.jobDetailLeftContentWrap > div[data-action-detail]')
+                details['description'] = desc_elem.text.strip()[:6000]
+            except Exception as e:
+                logger.warning(f"Mondelez description not found: {e}")
+
+            try:
+                detail_rows = driver.find_elements(By.CSS_SELECTOR, 'div.jobDescWrap > div > div')
+                for row in detail_rows:
+                    ps = row.find_elements(By.TAG_NAME, 'p')
+                    if not ps:
                         continue
-            except:
+                    label = ps[0].text.strip().lower()
+                    value = ''
+                    if len(ps) > 1:
+                        value = ps[1].text.strip()
+                    else:
+                        value = row.text.replace(ps[0].text, '', 1).strip()
+
+                    if label == 'title' and not value:
+                        continue
+                    if label == 'function' and value:
+                        details['job_function'] = value
+                    elif label == 'date' and value:
+                        parsed = self._parse_detail_date(value)
+                        if parsed:
+                            details['posted_date'] = parsed
+                    elif label == 'work schedule' and value:
+                        details['employment_type'] = value
+                    elif label == 'job type' and value:
+                        details['department'] = value
+                    elif label == 'location' and value:
+                        details['location'] = value
+            except Exception as e:
+                logger.warning(f"Mondelez job details map parse failed: {e}")
+
+            try:
+                apply_btn = driver.find_element(By.CSS_SELECTOR, 'a.event_external_link[aria-label="Apply Now"]')
+                apply_href = apply_btn.get_attribute('href') or ''
+                if apply_href:
+                    details['apply_url'] = apply_href
+            except Exception:
                 pass
-            
-            # Close tab and return to search results
+
+            if details.get('description'):
+                details['experience_level'] = self._extract_experience(details['description'])
+
             driver.close()
             driver.switch_to.window(original_window)
-            time.sleep(1)
+            time.sleep(0.5)
             
         except Exception as e:
             logger.error(f"Error fetching job details: {str(e)}")
-            # Make sure we return to original window
             try:
                 if len(driver.window_handles) > 1:
                     driver.close()
@@ -317,14 +308,54 @@ class MondelezScraper:
                 pass
         
         return details
+
+    def _parse_list_date(self, date_str):
+        """Parse list page date format: Friday, March 13, 2026 -> YYYY-MM-DD"""
+        try:
+            return datetime.strptime(date_str.strip(), '%A, %B %d, %Y').strftime('%Y-%m-%d')
+        except Exception:
+            return ''
+
+    def _parse_detail_date(self, date_str):
+        """Parse detail page date format: 3/13/2026 -> YYYY-MM-DD"""
+        try:
+            month, day, year = [x.strip() for x in date_str.split('/')]
+            return f"{year}-{month.zfill(2)}-{day.zfill(2)}"
+        except Exception:
+            return ''
+
+    def _extract_experience(self, text):
+        """Extract experience range/single value from description"""
+        if not text:
+            return ''
+
+        match = re.search(r'(\d+)\s*(?:to|-|–)\s*(\d+)\s*years?', text, re.IGNORECASE)
+        if match:
+            return f"{match.group(1)}-{match.group(2)} years"
+
+        match = re.search(r'(\d+)\+?\s*years?', text, re.IGNORECASE)
+        if match:
+            return f"{match.group(1)} years"
+
+        return ''
     
     def parse_location(self, location_str):
         """Parse location string into city, state, country"""
         if not location_str:
             return '', '', 'India'
-        
+
+        if 'remote' in location_str.lower():
+            return '', '', 'India'
+
         parts = [p.strip() for p in location_str.split(',')]
         city = parts[0] if len(parts) > 0 else ''
-        state = parts[1] if len(parts) > 1 else ''
-        
+        if city.lower() == 'india':
+            city = ''
+
+        state = ''
+        if len(parts) > 2:
+            state = parts[1]
+        elif len(parts) > 1 and parts[1].lower() != 'india':
+            state = parts[1]
+
         return city, state, 'India'
