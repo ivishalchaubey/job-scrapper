@@ -1,13 +1,9 @@
-from selenium import webdriver
+import re
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
 import hashlib
-import time
 from datetime import datetime
-from pathlib import Path
 
 from core.logging import setup_logger
 from core.webdriver_utils import setup_chrome_driver
@@ -15,308 +11,279 @@ from config.scraper import SCRAPE_TIMEOUT, HEADLESS_MODE, FETCH_FULL_JOB_DETAILS
 
 logger = setup_logger('jio_scraper')
 
+
 class JioScraper:
     def __init__(self):
         self.company_name = "Jio"
+        self.base_url = "https://careers.jio.com"
         self.url = "https://careers.jio.com/frmJobCategories.aspx?func=w+cpdiT6wL4=&loc=/wASbQn4xyQ=&expreq=/wASbQn4xyQ=&flag=/wASbQn4xyQ=&poston=6JCGsKeGvVZx6Lxy4pI54VzntXOmB1aj"
-    
+
     def setup_driver(self):
-        """Set up Chrome driver using cross-platform utility"""
         return setup_chrome_driver(headless_mode=HEADLESS_MODE)
-    
+
     def generate_external_id(self, job_id, company):
-        """Generate stable external ID"""
         unique_string = f"{company}_{job_id}"
         return hashlib.md5(unique_string.encode()).hexdigest()
-    
+
     def scrape(self, max_pages=MAX_PAGES_TO_SCRAPE):
-        """Scrape jobs from Jio careers page with pagination support"""
-        jobs = []
+        """Scrape all Jio jobs across all categories, up to max_pages per category."""
+        all_jobs = []
         driver = None
-        
         try:
             logger.info(f"Starting scrape for {self.company_name}")
             driver = self.setup_driver()
-            driver.get(self.url)
-            
-            # Wait for page to load
-            wait = WebDriverWait(driver, SCRAPE_TIMEOUT)
-            time.sleep(10)  # Wait for SPA to render
 
-            # Scroll to trigger lazy loading
-            logger.info("Scrolling to trigger content loading...")
-            for i in range(5):
-                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                time.sleep(2)
-            driver.execute_script("window.scrollTo(0, 0);")
-            time.sleep(2)
+            categories = self._get_categories(driver)
+            logger.info(f"Found {len(categories)} categories")
 
-            current_page = 1
-            
-            while current_page <= max_pages:
-                logger.info(f"Scraping page {current_page} of {max_pages}")
-                
-                # Scrape current page
-                page_jobs = self._scrape_page(driver, wait)
-                jobs.extend(page_jobs)
-                
-                logger.info(f"Scraped {len(page_jobs)} jobs from page {current_page}")
-                
-                # Try to navigate to next page
-                if current_page < max_pages:
-                    if not self._go_to_next_page(driver, current_page):
-                        logger.info("No more pages available")
-                        break
-                    time.sleep(3)  # Wait for next page to load
-                
-                current_page += 1
-            
-            logger.info(f"Successfully scraped {len(jobs)} total jobs from {self.company_name}")
-            
+            for cat_name, cat_url in categories:
+                logger.info(f"Scraping category: {cat_name}")
+                try:
+                    cat_jobs = self._scrape_category(driver, cat_name, cat_url, max_pages)
+                    logger.info(f"  {len(cat_jobs)} jobs in '{cat_name}'")
+                    all_jobs.extend(cat_jobs)
+                except Exception as e:
+                    logger.error(f"  Error in category '{cat_name}': {e}")
+                    continue
+
+            logger.info(f"Total: {len(all_jobs)} jobs scraped from {self.company_name}")
         except Exception as e:
             logger.error(f"Error scraping {self.company_name}: {str(e)}")
             raise
-        
         finally:
             if driver:
                 driver.quit()
-        
-        return jobs
-    
-    def _go_to_next_page(self, driver, current_page):
-        """Navigate to the next page"""
-        try:
-            next_page_num = current_page + 1
-            next_page_selectors = [
-                (By.XPATH, f'//a[text()="{next_page_num}"]'),
-                (By.CSS_SELECTOR, f'a[aria-label="Page {next_page_num}"]'),
-                (By.XPATH, '//a[@aria-label="Next page"]'),
-                (By.XPATH, '//button[contains(text(), "Next")]'),
-                (By.CSS_SELECTOR, 'a.pagination-next'),
-            ]
-            
-            for selector_type, selector_value in next_page_selectors:
-                try:
-                    next_button = driver.find_element(selector_type, selector_value)
-                    driver.execute_script("arguments[0].scrollIntoView();", next_button)
-                    time.sleep(1)
-                    next_button.click()
-                    logger.info(f"Clicked next page button")
-                    return True
-                except:
-                    continue
-            
-            logger.warning("Could not find next page button")
-            return False
-                
-        except Exception as e:
-            logger.error(f"Error navigating to next page: {str(e)}")
-            return False
-    
-    def _scrape_page(self, driver, wait):
-        """Scrape jobs from current page"""
-        jobs = []
-        time.sleep(2)  # Wait for page content
+        return all_jobs
 
-        # Try multiple selectors for job listings
-        job_cards = []
-        selectors = [
-            (By.CSS_SELECTOR, 'div.job-card'),
-            (By.CSS_SELECTOR, 'div[class*="job"]'),
-            (By.CSS_SELECTOR, 'div[class*="opening"]'),
-            (By.CSS_SELECTOR, 'div[class*="position"]'),
-            (By.CSS_SELECTOR, 'div[class*="career"]'),
-            (By.CSS_SELECTOR, 'div[class*="role"]'),
-            (By.CSS_SELECTOR, 'li[class*="job"]'),
-            (By.CSS_SELECTOR, 'li[class*="opening"]'),
-            (By.CSS_SELECTOR, '[class*="card"]'),
-            (By.TAG_NAME, 'article'),
-        ]
+    def _get_categories(self, driver):
+        """Get all category names and URLs from the main categories page."""
+        driver.get(self.url)
+        wait = WebDriverWait(driver, SCRAPE_TIMEOUT)
+        wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, 'ul.category-list li.list-cont a')))
 
-        for selector_type, selector_value in selectors:
+        categories = []
+        items = driver.find_elements(By.CSS_SELECTOR, 'ul.category-list li.list-cont')
+        for item in items:
             try:
-                wait.until(EC.presence_of_element_located((selector_type, selector_value)))
-                job_cards = driver.find_elements(selector_type, selector_value)
-                if job_cards and len(job_cards) > 0:
-                    logger.info(f"Found {len(job_cards)} job cards using selector: {selector_value}")
-                    break
-            except:
-                continue
-
-        if job_cards:
-            for idx, card in enumerate(job_cards):
+                link = item.find_element(By.TAG_NAME, 'a')
+                href = link.get_attribute('href') or ''
+                if not href:
+                    continue
                 try:
-                    card_text = card.text
-                    if not card_text or len(card_text) < 10:
+                    name = item.find_element(By.CSS_SELECTOR, 'span[id*="lblfunctional"]').text.strip()
+                except Exception:
+                    name = link.text.strip().split('\n')[0].strip()
+                if name and href:
+                    categories.append((name, href))
+            except Exception as e:
+                logger.warning(f"Error reading category item: {e}")
+        return categories
+
+    def _scrape_category(self, driver, cat_name, cat_url, max_pages):
+        """Scrape jobs from a category page, paginating up to max_pages."""
+        jobs = []
+        driver.get(cat_url)
+        wait = WebDriverWait(driver, SCRAPE_TIMEOUT)
+        try:
+            wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, 'article')))
+        except Exception:
+            logger.warning(f"No article element found for '{cat_name}'")
+            return jobs
+
+        for page_num in range(1, max_pages + 1):
+            page_jobs = self._extract_page_jobs(driver, wait)
+            logger.info(f"  Page {page_num}: {len(page_jobs)} jobs")
+
+            for job_data in page_jobs:
+                if FETCH_FULL_JOB_DETAILS and job_data.get('apply_url'):
+                    details = self._fetch_job_details(driver, job_data['apply_url'])
+                    for key, value in details.items():
+                        if value:
+                            job_data[key] = value
+                jobs.append(job_data)
+
+            if page_num >= max_pages:
+                break
+            if not self._go_to_next_page(driver, wait):
+                logger.info(f"  No more pages for '{cat_name}' (stopped at page {page_num})")
+                break
+
+        return jobs
+
+    def _extract_page_jobs(self, driver, wait):
+        """Extract all job entries visible on the current listing page."""
+        jobs = []
+        try:
+            job_links = driver.find_elements(
+                By.CSS_SELECTOR,
+                'article h2 a[id*="MainContent_lstJoblist_hylUser"]'
+            )
+            for idx, link in enumerate(job_links):
+                try:
+                    title = link.text.strip()
+                    href = link.get_attribute('href') or ''
+                    if not title or not href or len(title) < 3:
                         continue
 
-                    job_title = ""
-                    job_link = ""
+                    job_id = self._extract_job_id(href, title)
+                    location = ''
+                    posted_date = ''
+                    job_function = ''
+
                     try:
-                        title_link = card.find_element(By.TAG_NAME, 'a')
-                        job_title = title_link.text.strip()
-                        job_link = title_link.get_attribute('href')
-                    except:
-                        job_title = card_text.split('\n')[0].strip()
+                        loc_span = driver.find_element(
+                            By.CSS_SELECTOR, f'span[id="MainContent_lstJoblist_Label2_{idx}"]'
+                        )
+                        location = loc_span.text.strip()
+                    except Exception:
+                        pass
 
-                    if not job_title or len(job_title) < 3:
-                        continue
+                    try:
+                        date_span = driver.find_element(
+                            By.CSS_SELECTOR, f'span[id="MainContent_lstJoblist_Label1_{idx}"]'
+                        )
+                        posted_date = self._parse_date(date_span.text.strip())
+                    except Exception:
+                        pass
 
-                    job_id = f"jio_{idx}"
-                    if job_link:
-                        for pattern in ['/job/', '/jobs/', '/position/']:
-                            if pattern in job_link:
-                                job_id = job_link.split(pattern)[-1].split('?')[0].split('/')[0]
-                                break
+                    try:
+                        func_span = driver.find_element(
+                            By.CSS_SELECTOR, f'span[id="MainContent_lstJoblist_lblfunctional_{idx}"]'
+                        )
+                        job_function = func_span.text.strip()
+                    except Exception:
+                        pass
 
-                    location = ""
-                    lines = card_text.split('\n')
-                    for line in lines:
-                        if any(c in line for c in ['Mumbai', 'Navi Mumbai', 'Bangalore', 'Bengaluru', 'Delhi', 'Hyderabad', 'India', 'Remote']):
-                            location = line.strip()
-                            break
-
-                    city, state, _ = self.parse_location(location)
-
-                    job_data = {
+                    loc = self.parse_location(location)
+                    jobs.append({
                         'external_id': self.generate_external_id(job_id, self.company_name),
                         'company_name': self.company_name,
-                        'title': job_title,
+                        'title': title,
                         'description': '',
                         'location': location,
-                        'city': city,
-                        'state': state,
+                        'city': loc['city'],
+                        'state': loc['state'],
                         'country': 'India',
                         'employment_type': '',
-                        'department': '',
-                        'apply_url': job_link if job_link else self.url,
-                        'posted_date': '',
-                        'job_function': '',
+                        'department': job_function,
+                        'apply_url': href,
+                        'posted_date': posted_date,
+                        'job_function': job_function,
                         'experience_level': '',
                         'salary_range': '',
                         'remote_type': '',
                         'status': 'active'
-                    }
-
-                    if FETCH_FULL_JOB_DETAILS and job_link:
-                        full_details = self._fetch_job_details(driver, job_link)
-                        job_data.update(full_details)
-
-                    jobs.append(job_data)
-
+                    })
                 except Exception as e:
-                    logger.error(f"Error extracting job {idx}: {str(e)}")
-                    continue
-
-        # FALLBACK: Link-based extraction
-        if not jobs:
-            logger.info("Trying link-based fallback for Jio...")
-            all_links = driver.find_elements(By.TAG_NAME, 'a')
-            seen_titles = set()
-            for idx, link in enumerate(all_links):
-                try:
-                    href = link.get_attribute('href') or ''
-                    text = link.text.strip()
-                    if not text or len(text) < 5 or len(text) > 200:
-                        continue
-                    job_url_patterns = ['/job/', '/jobs/', '/position/', '/career', '/opening', 'lever.co', 'greenhouse.io', 'boards.greenhouse']
-                    if any(p in href.lower() for p in job_url_patterns):
-                        if text in seen_titles:
-                            continue
-                        seen_titles.add(text)
-                        exclude_words = ['home', 'about', 'contact', 'login', 'sign', 'privacy', 'terms']
-                        if any(w in text.lower() for w in exclude_words):
-                            continue
-
-                        job_id = f"jio_link_{idx}"
-                        location = ''
-                        try:
-                            parent = link.find_element(By.XPATH, '..')
-                            parent_text = parent.text
-                            for city_name in ['Mumbai', 'Navi Mumbai', 'Bangalore', 'Bengaluru', 'Delhi', 'Hyderabad', 'India']:
-                                if city_name in parent_text:
-                                    location = city_name
-                                    break
-                        except:
-                            pass
-
-                        city, state, _ = self.parse_location(location)
-                        jobs.append({
-                            'external_id': self.generate_external_id(job_id, self.company_name),
-                            'company_name': self.company_name,
-                            'title': text,
-                            'description': '',
-                            'location': location,
-                            'city': city,
-                            'state': state,
-                            'country': 'India',
-                            'employment_type': '',
-                            'department': '',
-                            'apply_url': href if href.startswith('http') else self.url,
-                            'posted_date': '',
-                            'job_function': '',
-                            'experience_level': '',
-                            'salary_range': '',
-                            'remote_type': '',
-                            'status': 'active'
-                        })
-                except:
-                    continue
-            if jobs:
-                logger.info(f"Link-based fallback found {len(jobs)} jobs")
-
+                    logger.error(f"Error extracting job at index {idx}: {e}")
+        except Exception as e:
+            logger.error(f"Error finding job links on page: {e}")
         return jobs
-    
-    def _fetch_job_details(self, driver, job_url):
-        """Fetch full job details by visiting the job page"""
-        details = {}
-        
+
+    def _go_to_next_page(self, driver, wait):
+        """Click the Next button and wait for the page content to reload."""
         try:
-            # Open job in new tab to avoid losing search results page
-            original_window = driver.current_window_handle
+            next_btn = driver.find_element(
+                By.CSS_SELECTOR, 'input[id*="DataPager1_ctl00_lnkNext"]'
+            )
+            if not next_btn.is_enabled():
+                return False
+            if next_btn.get_attribute('disabled'):
+                return False
+
+            old_article = driver.find_element(By.CSS_SELECTOR, 'article')
+            next_btn.click()
+            WebDriverWait(driver, 15).until(EC.staleness_of(old_article))
+            WebDriverWait(driver, 15).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, 'article'))
+            )
+            return True
+        except Exception as e:
+            logger.warning(f"Could not navigate to next page: {e}")
+            return False
+
+    def _extract_job_id(self, href, title):
+        """Extract stable job ID from jbID URL param or numeric title ID."""
+        m = re.search(r'jbID=([^&]+)', href)
+        if m:
+            return m.group(1)
+        m = re.search(r'\(\s*(\d{6,})\s*\)', title)
+        if m:
+            return m.group(1)
+        return hashlib.md5(href.encode()).hexdigest()[:12]
+
+    def _parse_date(self, date_str):
+        """Parse '14 Mar 2026' → '2026-03-14'."""
+        if not date_str:
+            return ''
+        try:
+            return datetime.strptime(date_str.strip(), '%d %b %Y').strftime('%Y-%m-%d')
+        except Exception:
+            return ''
+
+    def _fetch_job_details(self, driver, job_url):
+        """Fetch extra details from the job description page in a new tab."""
+        details = {}
+        original_handle = driver.current_window_handle
+        try:
             driver.execute_script("window.open('');")
             driver.switch_to.window(driver.window_handles[-1])
-            
             driver.get(job_url)
-            time.sleep(3)
-            
-            # Extract description
+            WebDriverWait(driver, SCRAPE_TIMEOUT).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, 'div.job-details'))
+            )
+
+            desc_parts = []
+            for span_id, label in [
+                ('MainContent_lblSummRole', 'Job Responsibilities'),
+                ('MainContent_lblSkill', 'Skills & Competencies'),
+            ]:
+                try:
+                    text = driver.find_element(By.CSS_SELECTOR, f'span#{span_id}').text.strip()
+                    if text:
+                        desc_parts.append(f"{label}:\n{text}")
+                except Exception:
+                    pass
+            if desc_parts:
+                details['description'] = '\n\n'.join(desc_parts)[:5000]
+
             try:
-                desc_elem = driver.find_element(By.CSS_SELECTOR, 'div[class*="description"]')
-                details['description'] = desc_elem.text.strip()[:2000]
-            except:
+                exp = driver.find_element(By.CSS_SELECTOR, 'span#MainContent_lblExpReq').text.strip()
+                if exp:
+                    details['experience_level'] = exp[:200]
+            except Exception:
                 pass
-            
-            # Extract department
+
             try:
-                dept_elem = driver.find_element(By.CSS_SELECTOR, 'span[class*="department"]')
-                details['department'] = dept_elem.text.strip()
-            except:
+                func = driver.find_element(By.CSS_SELECTOR, 'span#MainContent_lblSec').text.strip()
+                if func:
+                    details['job_function'] = func
+            except Exception:
                 pass
-            
-            # Close tab and return to search results
-            driver.close()
-            driver.switch_to.window(original_window)
-            
+
         except Exception as e:
-            logger.error(f"Error fetching job details: {str(e)}")
-            # Make sure we return to original window
+            logger.error(f"Error fetching details from {job_url}: {e}")
+        finally:
             try:
-                if len(driver.window_handles) > 1:
-                    driver.close()
+                driver.close()
+                driver.switch_to.window(original_handle)
+            except Exception:
+                try:
                     driver.switch_to.window(driver.window_handles[0])
-            except:
-                pass
-        
+                except Exception:
+                    pass
         return details
-    
+
     def parse_location(self, location_str):
-        """Parse location string into city, state, country"""
+        """Parse Jio location string into city/state/country dict.
+
+        Examples: 'Hyderabad 13 - Sarojini Devi Road', 'Bhopal 1 - Kolar Road', 'Navsari'
+        """
+        result = {'city': '', 'state': '', 'country': 'India'}
         if not location_str:
-            return '', '', 'India'
-        
-        parts = [p.strip() for p in location_str.split(',')]
-        city = parts[0] if len(parts) > 0 else ''
-        state = parts[1] if len(parts) > 1 else ''
-        
-        return city, state, 'India'
+            return result
+        # Take the part before ' - ' as the city base, then strip trailing number
+        city_part = location_str.split(' - ')[0].strip()
+        city = re.sub(r'\s+\d+\s*$', '', city_part).strip()
+        result['city'] = city
+        return result
