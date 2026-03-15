@@ -1,6 +1,12 @@
+from datetime import datetime
+
 import requests
 import hashlib
 from pathlib import Path
+import re
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
 from core.logging import setup_logger
 from core.webdriver_utils import setup_chrome_driver
@@ -136,6 +142,15 @@ class GoldmanSachsScraper:
                         for item in items:
                             job_data = self._parse_role(item)
                             if job_data and job_data['external_id'] not in seen_ids:
+                                # Optionally fetch full HTML details for richer description
+                                if FETCH_FULL_JOB_DETAILS and job_data.get('apply_url'):
+                                    try:
+                                        details = self._fetch_role_details(job_data['apply_url'])
+                                        for k, v in details.items():
+                                            if v:
+                                                job_data[k] = v
+                                    except Exception as e:
+                                        logger.warning(f"Failed to fetch role details for {job_data.get('apply_url')}: {e}")
                                 all_jobs.append(job_data)
                                 seen_ids.add(job_data['external_id'])
                                 new_count += 1
@@ -258,6 +273,86 @@ class GoldmanSachsScraper:
         result['location'] = ', '.join(parts)
 
         return result
+
+    def _fetch_role_details(self, job_url):
+        """Open the role page and extract description, posted_date, employment_type, experience_level."""
+        details = {}
+        driver = None
+        try:
+            driver = self.setup_driver()
+            driver.get(job_url)
+            wait = WebDriverWait(driver, SCRAPE_TIMEOUT)
+
+            # Wait for detail container or job-description
+            try:
+                wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, 'div.job-description')))
+            except Exception:
+                # fallback to opportunity overview
+                try:
+                    wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, '[data-testid="opportunity-overview"]')))
+                except Exception:
+                    pass
+
+            # Description
+            try:
+                desc_elem = driver.find_element(By.CSS_SELECTOR, 'div.job-description')
+                desc_text = desc_elem.text.strip()
+                if desc_text:
+                    details['description'] = desc_text[:5000]
+            except Exception:
+                # try alternate container
+                try:
+                    alt = driver.find_element(By.CSS_SELECTOR, '[data-testid="job-description-html"]')
+                    t = alt.text.strip()
+                    if t:
+                        details['description'] = t[:5000]
+                except Exception:
+                    pass
+
+            # Experience / Corporate Title
+            try:
+                corp = driver.find_element(By.CSS_SELECTOR, '[data-testid="opportunity-field-corporateTitle"]')
+                spans = corp.find_elements(By.TAG_NAME, 'span')
+                if spans:
+                    details['experience_level'] = spans[-1].text.strip()
+            except Exception:
+                pass
+
+            # Office/city (may be more detailed on detail page)
+            try:
+                city_elem = driver.find_element(By.CSS_SELECTOR, '[data-testid="opportunity-field-cities"]')
+                spans = city_elem.find_elements(By.TAG_NAME, 'span')
+                if spans:
+                    city = spans[-1].text.strip()
+                    if city:
+                        details['city'] = city
+            except Exception:
+                pass
+
+            # posted_date may not be present; try to find 'Posted' or date-like text inside page
+            try:
+                page_text = driver.page_source
+                m = re.search(r'(Posted\s*on[:\s]*)([A-Za-z0-9,\s]+)', page_text)
+                if m:
+                    raw = m.group(2).strip()
+                    try:
+                        parsed = datetime.strptime(raw, '%B %d, %Y').strftime('%Y-%m-%d')
+                        details['posted_date'] = parsed
+                    except Exception:
+                        details['posted_date'] = raw
+            except Exception:
+                pass
+
+        except Exception as e:
+            logger.error(f"Error fetching role details from {job_url}: {e}")
+        finally:
+            try:
+                if driver:
+                    driver.quit()
+            except Exception:
+                pass
+
+        return details
 
     def parse_location(self, location_str):
         """Parse location string into city, state, country."""
