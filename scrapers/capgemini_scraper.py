@@ -1,13 +1,9 @@
-from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
 import hashlib
-import time
 from datetime import datetime
-from pathlib import Path
+import re
 
 from core.logging import setup_logger
 from core.webdriver_utils import setup_chrome_driver
@@ -18,6 +14,7 @@ logger = setup_logger('capgemini_scraper')
 class CapgeminiScraper:
     def __init__(self):
         self.company_name = "Capgemini"
+        self.base_url = "https://www.capgemini.com"
         self.url = "https://www.capgemini.com/in-en/careers/join-capgemini/job-search/?page=1&size=11&country_code=in-en"
     
     def setup_driver(self):
@@ -30,31 +27,19 @@ class CapgeminiScraper:
         return hashlib.md5(unique_string.encode()).hexdigest()
     
     def scrape(self, max_pages=MAX_PAGES_TO_SCRAPE):
-        """Scrape jobs from Capgemini careers page with pagination support"""
-        jobs = []
+        """Scrape jobs from Capgemini India search with pagination support."""
+        all_jobs = []
         driver = None
         
         try:
             logger.info(f"Starting scrape for {self.company_name}")
             driver = self.setup_driver()
             driver.get(self.url)
-            
-            # Wait for page to load
             wait = WebDriverWait(driver, SCRAPE_TIMEOUT)
-            time.sleep(10)  # Capgemini job search page needs time
-
-            # Scroll to trigger lazy-loaded content
-            logger.info("Scrolling to load dynamic content...")
-            last_height = driver.execute_script("return document.body.scrollHeight")
-            for scroll_i in range(5):
-                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                time.sleep(2)
-                new_height = driver.execute_script("return document.body.scrollHeight")
-                if new_height == last_height:
-                    break
-                last_height = new_height
-            driver.execute_script("window.scrollTo(0, 0);")
-            time.sleep(2)
+            wait.until(EC.presence_of_element_located((
+                By.CSS_SELECTOR,
+                'ul.JobList-module__job-list___pVEKw li[class*="JobRow-module__job-card-wrapper"]'
+            )))
 
             current_page = 1
             
@@ -63,20 +48,19 @@ class CapgeminiScraper:
                 
                 # Scrape current page
                 page_jobs = self._scrape_page(driver, wait)
-                jobs.extend(page_jobs)
+                all_jobs.extend(page_jobs)
                 
                 logger.info(f"Scraped {len(page_jobs)} jobs from page {current_page}")
                 
                 # Try to navigate to next page
                 if current_page < max_pages:
-                    if not self._go_to_next_page(driver, current_page):
+                    if not self._go_to_next_page(driver, wait):
                         logger.info("No more pages available")
                         break
-                    time.sleep(3)  # Wait for next page to load
                 
                 current_page += 1
             
-            logger.info(f"Successfully scraped {len(jobs)} total jobs from {self.company_name}")
+            logger.info(f"Successfully scraped {len(all_jobs)} total jobs from {self.company_name}")
             
         except Exception as e:
             logger.error(f"Error scraping {self.company_name}: {str(e)}")
@@ -86,90 +70,58 @@ class CapgeminiScraper:
             if driver:
                 driver.quit()
         
-        return jobs
+        return all_jobs
     
-    def _go_to_next_page(self, driver, current_page):
-        """Navigate to the next page"""
+    def _go_to_next_page(self, driver, wait):
+        """Navigate to next page using the Next button in pagination."""
         try:
-            next_page_num = current_page + 1
-            next_page_selectors = [
-                (By.XPATH, f'//a[text()="{next_page_num}"]'),
-                (By.CSS_SELECTOR, f'a[aria-label="Page {next_page_num}"]'),
-                (By.XPATH, '//a[@aria-label="Next page"]'),
-                (By.XPATH, '//button[contains(text(), "Next")]'),
-                (By.CSS_SELECTOR, 'a.pagination-next'),
-                (By.XPATH, '//button[@aria-label="Go to next page"]'),
-            ]
-            
-            for selector_type, selector_value in next_page_selectors:
+            first_card = driver.find_element(
+                By.CSS_SELECTOR,
+                'ul.JobList-module__job-list___pVEKw li[class*="JobRow-module__job-card-wrapper"]'
+            )
+            next_button = driver.find_element(By.CSS_SELECTOR, 'button[class*="Pagination-module__next"]')
+            if not next_button.is_enabled() or next_button.get_attribute('disabled') is not None:
+                return False
+
+            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", next_button)
+            clicked = False
+            for _ in range(3):
                 try:
-                    next_button = driver.find_element(selector_type, selector_value)
-                    driver.execute_script("arguments[0].scrollIntoView();", next_button)
-                    time.sleep(1)
                     next_button.click()
-                    logger.info(f"Clicked next page button using selector: {selector_value}")
-                    return True
-                except:
-                    continue
-            
-            logger.warning("Could not find next page button")
-            return False
-                
+                    clicked = True
+                    break
+                except Exception:
+                    # Try to move the viewport slightly and retry
+                    driver.execute_script("window.scrollBy(0, -120);")
+            if not clicked:
+                # Fallback for overlapping elements intercepting click
+                driver.execute_script("arguments[0].click();", next_button)
+
+            WebDriverWait(driver, 15).until(EC.staleness_of(first_card))
+            wait.until(EC.presence_of_element_located((
+                By.CSS_SELECTOR,
+                'ul.JobList-module__job-list___pVEKw li[class*="JobRow-module__job-card-wrapper"]'
+            )))
+            return True
         except Exception as e:
-            logger.error(f"Error navigating to next page: {str(e)}")
+            logger.warning(f"Could not find or click next page button: {str(e)}")
             return False
     
     def _scrape_page(self, driver, wait):
-        """Scrape jobs from current page"""
+        """Scrape jobs from current page using Capgemini-specific card selectors."""
         jobs = []
-        time.sleep(2)  # Wait for page content
-        
-        # Try multiple selectors for job listings
         job_cards = []
-        selectors = [
-            (By.CSS_SELECTOR, 'div.job-card'),
-            (By.CSS_SELECTOR, 'div[class*="job"]'),
-            (By.CSS_SELECTOR, 'a[href*="/job-search/"]'),
-            (By.CSS_SELECTOR, 'a[href*="/careers/"]'),
-            (By.CSS_SELECTOR, 'a[href*="/job/"]'),
-            (By.XPATH, '//div[contains(@class, "result")]'),
-            (By.TAG_NAME, 'article'),
-        ]
-
-        for selector_type, selector_value in selectors:
-            try:
-                wait.until(EC.presence_of_element_located((selector_type, selector_value)))
-                job_cards = driver.find_elements(selector_type, selector_value)
-                if job_cards and len(job_cards) > 0:
-                    logger.info(f"Found {len(job_cards)} job cards using selector: {selector_value}")
-                    break
-            except:
-                continue
-
-        # Link-based fallback
-        if not job_cards:
-            logger.warning("No job cards found with standard selectors, trying link-based fallback")
-            try:
-                all_links = driver.find_elements(By.TAG_NAME, 'a')
-                job_links_found = []
-                seen_hrefs = set()
-                for link in all_links:
-                    try:
-                        href = link.get_attribute('href') or ''
-                        text = link.text.strip()
-                        if not text or len(text) < 3 or href in seen_hrefs:
-                            continue
-                        href_lower = href.lower()
-                        if any(kw in href_lower for kw in ['/job/', '/careers/', 'capgemini.com/careers', '/job-search/']):
-                            job_links_found.append(link)
-                            seen_hrefs.add(href)
-                    except:
-                        continue
-                if job_links_found:
-                    logger.info(f"Fallback found {len(job_links_found)} job links")
-                    job_cards = job_links_found
-            except:
-                pass
+        try:
+            wait.until(EC.presence_of_element_located((
+                By.CSS_SELECTOR,
+                'ul.JobList-module__job-list___pVEKw li[class*="JobRow-module__job-card-wrapper"]'
+            )))
+            job_cards = driver.find_elements(
+                By.CSS_SELECTOR,
+                'ul.JobList-module__job-list___pVEKw li[class*="JobRow-module__job-card-wrapper"]'
+            )
+        except Exception:
+            job_cards = []
 
         if not job_cards:
             logger.warning("No job cards found")
@@ -178,38 +130,48 @@ class CapgeminiScraper:
         # Extract from job cards
         for idx, card in enumerate(job_cards):
             try:
-                card_text = card.text
-                if not card_text or len(card_text) < 10:
+                anchor = card.find_element(By.CSS_SELECTOR, 'a[class*="JobRow-module__job-card"]')
+                job_link = anchor.get_attribute('href') or ''
+                if job_link.startswith('/'):
+                    job_link = f"{self.base_url}{job_link}"
+
+                title_elem = anchor.find_element(By.CSS_SELECTOR, 'div[class*="JobRow-module__title"]')
+                job_title = title_elem.text.strip()
+                if not job_title:
                     continue
-                
-                # Get job title
-                job_title = ""
-                job_link = ""
-                try:
-                    title_link = card.find_element(By.TAG_NAME, 'a')
-                    job_title = title_link.text.strip()
-                    job_link = title_link.get_attribute('href')
-                except:
-                    job_title = card_text.split('\n')[0].strip()
-                
-                if not job_title or len(job_title) < 3:
-                    continue
-                
-                # Extract Job ID
-                job_id = f"capgemini_{idx}"
-                if job_link:
-                    job_id = hashlib.md5(job_link.encode()).hexdigest()[:12]
-                
-                # Extract location
-                location = ""
-                city = ""
-                state = ""
-                lines = card_text.split('\n')
-                for line in lines:
-                    if any(city_name in line for city_name in ['Mumbai', 'Delhi', 'Bangalore', 'Hyderabad', 'Chennai', 'Pune', 'Kolkata', 'India']):
-                        location = line.strip()
-                        city, state, _ = self.parse_location(location)
-                        break
+
+                # Extract Job ID from /in-en/jobs/{job_id}
+                m = re.search(r'/jobs/([^/?]+)', job_link)
+                job_id = m.group(1) if m else hashlib.md5(f"{job_title}_{idx}".encode()).hexdigest()[:12]
+
+                location = ''
+                city = ''
+                state = ''
+                location_elems = anchor.find_elements(By.CSS_SELECTOR, 'div[class*="JobRow-module__location"]')
+                if location_elems:
+                    location = location_elems[0].text.strip()
+                    loc = self.parse_location(location)
+                    city = loc.get('city', '')
+                    state = loc.get('state', '')
+
+                department = ''
+                employment_type = ''
+                experience_level = ''
+                feature_items = anchor.find_elements(By.CSS_SELECTOR, 'ul[class*="JobRow-module__features"] li')
+                for item in feature_items:
+                    txt = item.text.strip()
+                    cls = item.get_attribute('class') or ''
+                    if 'professional-communities' in cls:
+                        department = txt
+                    elif 'contract-type' in cls:
+                        if txt.lower() == 'permanent':
+                            employment_type = 'Full Time'
+                        elif 'fixed term' in txt.lower() or 'contract' in txt.lower():
+                            employment_type = 'Contract'
+                        else:
+                            employment_type = txt
+                    elif 'experience-level' in cls:
+                        experience_level = txt
                 
                 job_data = {
                     'external_id': self.generate_external_id(job_id, self.company_name),
@@ -220,12 +182,12 @@ class CapgeminiScraper:
                     'city': city,
                     'state': state,
                     'country': 'India',
-                    'employment_type': '',
-                    'department': '',
+                    'employment_type': employment_type,
+                    'department': department,
                     'apply_url': job_link if job_link else self.url,
                     'posted_date': '',
-                    'job_function': '',
-                    'experience_level': '',
+                    'job_function': department,
+                    'experience_level': experience_level,
                     'salary_range': '',
                     'remote_type': '',
                     'status': 'active'
@@ -245,7 +207,7 @@ class CapgeminiScraper:
         return jobs
     
     def _fetch_job_details(self, driver, job_url):
-        """Fetch full job details by visiting the job page"""
+        """Fetch full job details by visiting the job page."""
         details = {}
         
         try:
@@ -255,25 +217,68 @@ class CapgeminiScraper:
             driver.switch_to.window(driver.window_handles[-1])
             
             driver.get(job_url)
-            time.sleep(3)
-            
-            # Extract description
+            wait = WebDriverWait(driver, SCRAPE_TIMEOUT)
+            wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, 'h1')))
+
+            # Description from primary detail container
             try:
-                desc_selectors = [
-                    (By.CSS_SELECTOR, 'div[class*="description"]'),
-                    (By.XPATH, "//h2[contains(text(), 'Description')]/following-sibling::div"),
-                    (By.CSS_SELECTOR, 'div.job-description'),
-                ]
-                
-                for selector_type, selector_value in desc_selectors:
-                    try:
-                        desc_elem = driver.find_element(selector_type, selector_value)
-                        if desc_elem and desc_elem.text.strip():
-                            details['description'] = desc_elem.text.strip()[:2000]
-                            break
-                    except:
-                        continue
-            except:
+                desc_container = driver.find_element(
+                    By.CSS_SELECTOR,
+                    'div[class*="SingleJobDescription-module__description"]'
+                )
+                description = desc_container.text.strip()
+                if description:
+                    details['description'] = description[:5000]
+            except Exception:
+                pass
+
+            # Apply URL on detail page
+            try:
+                apply_link = driver.find_element(By.CSS_SELECTOR, 'a[class*="Header-module__apply"]')
+                href = apply_link.get_attribute('href') or ''
+                if href:
+                    details['apply_url'] = href
+            except Exception:
+                pass
+
+            # Detail metadata in header features (experience/community/contract/ref)
+            try:
+                meta_items = driver.find_elements(By.CSS_SELECTOR, 'div[class*="Header-module__features"] li')
+                for item in meta_items:
+                    txt = item.text.strip()
+                    cls = item.get_attribute('class') or ''
+                    if 'experience_level' in cls and txt:
+                        details['experience_level'] = txt
+                    elif 'professional_communities' in cls and txt:
+                        details['department'] = txt
+                        details['job_function'] = txt
+                    elif 'contract_type' in cls and txt:
+                        lower_txt = txt.lower()
+                        if lower_txt == 'permanent':
+                            details['employment_type'] = 'Full Time'
+                        elif 'fixed term' in lower_txt or 'contract' in lower_txt:
+                            details['employment_type'] = 'Contract'
+                        else:
+                            details['employment_type'] = txt
+                    elif 'ref' in cls:
+                        m = re.search(r'ID\s+(.+)', txt)
+                        if m:
+                            ref_job_id = m.group(1).strip()
+                            details['external_id'] = self.generate_external_id(ref_job_id, self.company_name)
+            except Exception:
+                pass
+
+            # Location can be more complete on detail page
+            try:
+                loc_elem = driver.find_element(By.CSS_SELECTOR, 'p[class*="Header-module__job-location"]')
+                loc_str = loc_elem.text.strip()
+                if loc_str:
+                    loc = self.parse_location(loc_str)
+                    details['location'] = loc_str
+                    details['city'] = loc.get('city', '')
+                    details['state'] = loc.get('state', '')
+                    details['country'] = loc.get('country', 'India')
+            except Exception:
                 pass
             
             # Close tab and return to search results
@@ -293,12 +298,19 @@ class CapgeminiScraper:
         return details
     
     def parse_location(self, location_str):
-        """Parse location string into city, state, country"""
+        """Parse location string into city/state/country dict."""
+        result = {'city': '', 'state': '', 'country': 'India'}
         if not location_str:
-            return '', '', 'India'
+            return result
         
         parts = [p.strip() for p in location_str.split(',')]
-        city = parts[0] if len(parts) > 0 else ''
-        state = parts[1] if len(parts) > 1 else ''
+        if parts:
+            result['city'] = parts[0]
+        if len(parts) >= 2:
+            result['state'] = parts[1]
+        if any('india' in p.lower() for p in parts):
+            result['country'] = 'India'
+        elif len(parts) >= 3:
+            result['country'] = parts[-1]
         
-        return city, state, 'India'
+        return result
