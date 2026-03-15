@@ -8,6 +8,7 @@ import hashlib
 import time
 import os
 import stat
+import re
 
 from core.logging import setup_logger
 from core.webdriver_utils import setup_chrome_driver
@@ -355,6 +356,18 @@ class HCLTechScraper:
                     location_parts = self.parse_location(location)
                     job_data.update(location_parts)
 
+                    # Fetch detail page summary and experience if available
+                    try:
+                        details = self._fetch_job_details(driver, job_data['apply_url'])
+                        if details.get('description'):
+                            job_data['description'] = details.get('description')
+                        if details.get('posted_date'):
+                            job_data['posted_date'] = details.get('posted_date')
+                        if details.get('experience_level'):
+                            job_data['experience_level'] = details.get('experience_level')
+                    except Exception:
+                        pass
+
                     jobs.append(job_data)
                     seen_ids.add(external_id)
                     logger.info(f"Extracted: {title} | {location}")
@@ -412,6 +425,17 @@ class HCLTechScraper:
                 try:
                     job_data = self._extract_job_from_element(elem, idx)
                     if job_data and job_data['external_id'] not in seen_ids:
+                        try:
+                            details = self._fetch_job_details(driver, job_data['apply_url'])
+                            if details.get('description'):
+                                job_data['description'] = details.get('description')
+                            if details.get('posted_date'):
+                                job_data['posted_date'] = details.get('posted_date')
+                            if details.get('experience_level'):
+                                job_data['experience_level'] = details.get('experience_level')
+                        except Exception:
+                            pass
+
                         jobs.append(job_data)
                         seen_ids.add(job_data['external_id'])
                         logger.info(f"Selenium extracted: {job_data.get('title', 'N/A')}")
@@ -542,9 +566,12 @@ class HCLTechScraper:
             driver.switch_to.window(driver.window_handles[-1])
 
             driver.get(job_url)
-            time.sleep(3)
+            time.sleep(2)
 
+            # Prefer structured description blocks used by SuccessFactors
             desc_selectors = [
+                '[itemprop="description"]',
+                '.joblayouttoken [itemprop="description"]',
                 ".job-description",
                 "#job-description",
                 "[class*='job-description']",
@@ -552,23 +579,48 @@ class HCLTechScraper:
                 ".jd-info",
                 "main"
             ]
+
+            full_text = ''
             for selector in desc_selectors:
                 try:
                     desc_elem = driver.find_element(By.CSS_SELECTOR, selector)
-                    text = desc_elem.text.strip()
-                    if text and len(text) > 50:
-                        details['description'] = text[:3000]
+                    full_text = desc_elem.get_attribute('innerText') or desc_elem.text or ''
+                    full_text = full_text.strip()
+                    if full_text and len(full_text) > 30:
                         break
                 except:
                     continue
 
-            # Posted date
-            date_selectors = ["[class*='posted']", "[class*='date']"]
+            if full_text:
+                # Extract the "Job Summary" section if present
+                m = re.search(r'Job Summary\s*(.*?)\s*(?:Key Responsibilities|Skill Requirements|Other Requirements|Key Responsibilities)', full_text, re.S | re.I)
+                if m:
+                    summary = m.group(1).strip()
+                else:
+                    # Fallback: take the first paragraph-like block
+                    parts = re.split(r'\n\s*\n', full_text)
+                    summary = parts[0].strip() if parts else full_text.strip()
+
+                details['description'] = summary[:3000]
+
+                # Extract experience years (e.g., "1 year", "2 years", "2-4 years")
+                exp_m = re.search(r'(\d+)\s*(?:-\s*(\d+))?\s*(?:years|year)\b', full_text, re.I)
+                if exp_m:
+                    if exp_m.group(2):
+                        details['experience_level'] = f"{exp_m.group(1)}-{exp_m.group(2)} years"
+                    else:
+                        # Singular/plural normalization
+                        n = int(exp_m.group(1))
+                        details['experience_level'] = f"{n} year" if n == 1 else f"{n} years"
+
+            # Posted date heuristics
+            date_selectors = ["[class*='posted']", "[class*='date']", "[class*='postedDate']"]
             for selector in date_selectors:
                 try:
                     date_elem = driver.find_element(By.CSS_SELECTOR, selector)
-                    text = date_elem.text.strip()
-                    if text and len(text) < 50:
+                    text = date_elem.get_attribute('innerText') or date_elem.text or ''
+                    text = text.strip()
+                    if text and len(text) < 80:
                         details['posted_date'] = text
                         break
                 except:
